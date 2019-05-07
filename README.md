@@ -14,15 +14,15 @@ v 3.0 1.0 1.0
 #faces as 1-based vertex index lists:
 f 2 4 3 1
 #and either:
-#(1) explicit face names:
+#(1) explicit face names: (seems like a better format and less redundant)
 T knit+
-# ---- below this line my memory of the format gets hazy ----
-#or (2) one of 'tk', 'te', 'ts' to label edges
-tk ? ? ? ?
-# and st to specify a sub-type
+# ----
+#or (2) one of 'tk', 'te', 'ts' to label edges 
+tk 1 0 1 0 #0 = loopwise and 1= yarnwise
+# and st to mark short-row faces, unused mostly
 st 14
-# also maybe 's' to specify yarn starts
-s ??
+# 's' specifies starting face(s)
+s f#
 ```
 
 
