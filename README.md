@@ -17,8 +17,8 @@ f 2 4 3 1
 #(1) explicit face names: (seems like a better format and less redundant)
 T knit+
 # ----
-#or (2) one of 'tk', 'te', 'ts' to label edges 
-tk 1 0 1 0 #0 = loopwise and 1= yarnwise
+#or (2) one of 'tk', 'te', 'ts' to label edges where 0 = loopwise and 1= yarnwise
+tk 1 0 1 0 
 # and st to mark short-row faces, unused mostly
 st 14
 # 's' specifies starting face(s)
