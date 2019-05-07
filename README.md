@@ -4,6 +4,27 @@ Augmented Stitch Meshes represent knit structures and their dependencies by embe
 
 The `.smobj` format stores an augmented stitch mesh as follows:
 
+```
+#text format, like .obj with...
+#vertices as X Y Z:
+v 1.0 2.2 1.0
+v 1.0 1.0 1.0
+v 3.0 2.2 1.0
+v 3.0 1.0 1.0
+#faces as 1-based vertex index lists:
+f 2 4 3 1
+#and either:
+#(1) explicit face names:
+T knit+
+# ---- below this line my memory of the format gets hazy ----
+#or (2) one of 'tk', 'te', 'ts' to label edges
+tk ? ? ? ?
+# and st to specify a sub-type
+st 14
+# also maybe 's' to specify yarn starts
+s ??
+```
+
 
 ## Problems To Resolve
 
