@@ -25,6 +25,15 @@ st 14
 s ??
 ```
 
+## What /Should/ Be In The File
+
+ - A collection of faces.
+ - For each face, a type (which also implies a type for all edges)
+ - Edge-to-edge connection information.
+ - Position information for each face (sufficient for unambiguous and continuous display; that is, shouldn't require optimization to get consistent connection positions)
+ - Maybe: embedding info on another mesh?
+ - Maybe: yarn ID info for knitting?
+
 
 ## Problems To Resolve
 
