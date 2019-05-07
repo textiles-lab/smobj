@@ -29,7 +29,7 @@ s ??
 ## Problems To Resolve
 
 vertices represent corner-to-corner connections between faces that, in general, aren't represented by yarn.
-(They also make it hard to translate `.knitout` directly to `.smobj`, since stacking stitches with xfer operations don't.)
+(They also make it hard to translate `.knitout` directly to `.smobj`, since stacking stitches with xfer operations can lead to cases which don't make sense in the vertices-imply-connections case.)
 
 Example:
 
@@ -39,13 +39,14 @@ Example:
 >a>b>c>
 ```
 Stitches a,b,c sit in the course below stitches d,e,f; but stitch b is dropped before e was knit.
+Unfortunately, the a^d and c^f connections imply that b's upper vertices correspond with e's lower vertices.
 
-Face types often require yarn-reflected versions, which is additional modeling burden; this could be made explicit in the format, at the price of additional loader complexity.
+Face types often require yarn-reflected versions, which is an additional modeling burden; this could be made explicit in the format, at the price of additional loader complexity.
 Knowledge of which faces are yarn-reflected versions is very useful when editing.
 
 Faces might be parameterized by (e.g.) loop size, but this also makes corner-to-corner connection over-constrained.
 
-Faces might also have different desired shapes depending on their neighbors, which also implies a fair bit of modeling (or simulation?) burden.
+Faces might also have different desired shapes depending on their neighbors, which implies a fair bit of modeling (or simulation?) burden.
 
 (Low priority) As a text format, smobj may be slower to load/save than it could be, and may lose precision.
 If there is a fast way to do better, it would be worth pursuing.
