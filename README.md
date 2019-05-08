@@ -6,17 +6,39 @@ The `.smobj` format stores an augmented stitch mesh as follows:
 
 ```
 #text format, like .obj with...
+#library of face types as name followed by edge types (+/- indicate edge direction)
+L knit+ -l +y +l -y
 #vertices as X Y Z:
 v 1.0 2.2 1.0
 v 1.0 1.0 1.0
 v 3.0 2.2 1.0
 v 3.0 1.0 1.0
-#faces as 1-based vertex index lists:
-f 2 4 3 1
-#and either:
-#(1) explicit face names: (seems like a better format and less redundant)
+#(optional) texture coorinates as vt commands:
+vt 0.0 0.0
+vt 1.0 0.0
+vt 1.0 1.0
+vt 0.0 1.0
+#(optional) extra layers of texture coordinates (same length as first list):
+vt2 0.5 0.5
+vt2 1.0 0.5
+vt2 1.0 1.0
+vt2 0.5 1.0
+#faces as 1-based vertex index lists (and, possibly, texture coordinates):
+f 2/1 4/2 3/3 1/4
+#and, for each face, a type from the library:
 T knit+
-# ----
+#finally, list of connections between faces:
+# face#/edge#, both one-based
+e 1/1 2/4
+#(optional) indicate which image corresponds to which texture coordinate:
+tex foo.jpg
+tex2 bar.jpg
+```
+
+Our format used to also contain the following, but they have been replaced:
+
+```
+# ---- old data ----
 #or (2) one of 'tk', 'te', 'ts' to label edges where 0 = loopwise and 1= yarnwise
 tk 1 0 1 0 
 # and st to mark short-row faces, unused mostly
