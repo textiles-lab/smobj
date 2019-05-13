@@ -7,7 +7,7 @@ The `.smobj` format stores an augmented stitch mesh as follows:
 ```
 #text format, like .obj with...
 #library of face types as name followed by edge types (+/- indicate edge direction)
-L knit+ -l +y +l -y
+L knit+ -lN +yN +lN -yN
 #vertices as X Y Z:
 v 1.0 2.2 1.0
 v 1.0 1.0 1.0
