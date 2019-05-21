@@ -1,0 +1,17 @@
+
+Basic flow of knitout to smobj translation:
+
+Maintain:
+ - height of each column of stitches (per needle location per bed)
+ - face/edge index at the top of each column
+ - locations of all inter-bed crossings
+ - parking locations for each yarn carrier
+
+Per instruction --
+  (1a) if yarn not in, yarn appears on carrier track at stitch-aligned location
+  (1b) if yarn is in, line is made from old location to stitch-aligned location
+  (2) line is made from carrier track to stitch edge
+  (3) stitch face is made
+  (4) line is made from stitch edge to carrier track
+  (5) whole assembly is hoisted as needed to avoid collisions
+
