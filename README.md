@@ -7,7 +7,8 @@ The `.smobj` format stores an augmented stitch mesh as follows:
 ```
 #text format, like .obj with...
 #library of face types as name followed by edge types (+/- indicate edge direction)
-L knit+ -lN +yN +lN -yN
+L knit-to-right -l +y +l -y
+L knit-to-right -l2 +y +l2 -y #face names can be "overloaded" with different edge types
 #vertices as X Y Z:
 v 1.0 2.2 1.0
 v 1.0 1.0 1.0
@@ -25,8 +26,8 @@ vt2 1.0 1.0
 vt2 0.5 1.0
 #faces as 1-based vertex index lists (and, possibly, texture coordinates):
 f 2/1 4/2 3/3 1/4
-#and, for each face, a type from the library:
-T knit+
+#and, for each face, a type from the library (1-based index into library):
+T 1
 #finally, list of connections between faces:
 # face#/edge#, both one-based
 e 1/1 2/4
@@ -46,6 +47,52 @@ st 14
 # 's' specifies starting face(s)
 s f#
 ```
+
+## Standard Face and Edge Types (Knitting)
+
+For knitting, we use `yN` (N yarn) and `lN` (N loop) edges.
+
+When translating knitout to smobj, we (will) use the following face library:
+```
+#Basic machine operations:
+#front/back knit:
+L knit-to-left -l1 -y1 +l1 +y1
+L knit-to-right -l1 +y1 +l1 -y1
+L purl-to-left -l1 -y1 +l1 +y1
+L purl-to-right -l1 +y1 +l1 -y1
+#(and versions that take lN -> lM via yM)
+
+#Tuck
+L tuck-behind-to-left -l0 -y1 +l1 +y1
+L tuck-behind-to-right -l0 +y1 +l1 -y1
+L tuck-infront-to-left -l0 -y1 +l1 +y1
+L tuck-infront-to-right -l0 +y1 +l1 -y1
+#(and versions that take lN -> l(N+M) via yM)
+
+#Split
+# top and bottom edge have two loop segments, connected to needle pair being split between
+# by convention, the left segment is the front loop and the right is the back loop
+L split-front-to-right -l1 -l1 +y1 +l1 +l2 -y1
+L split-front-to-left -l1 -l1 -y1 +l1 +l2 +y1
+#(and versions that take -lX -lY to +lZ +l(X+Y) via yZ)
+L split-back-to-right -l1 -l1 +y1 +l2 +l1 -y1
+L split-back-to-left -l1 -l1 -y1 +l2 +l1 +y1
+#(and versions that take -lX -lY to +l(X+Y) +lZ via yZ)
+
+#loop / yarn routing:
+L loop -l1 x +l1 x
+L yarn-to-right x +y1 x -y1
+L yarn-to-left x -y1 x +y1
+#yarn plating (top edge connects to front of stack):
+L yarn-plate-to-right x +y2 x -y1 -y1
+L yarn-plate-to-left x -y1 -y1 x +y2
+#also +y(N+M) from -yN, -yM
+L yarn-unplate-to-right x +y1 +y1 x -y2
+L yarn-unplate-to-left x -y2 x +y1 +y1
+#also +yN +yM from -y(N+M)
+
+```
+
 
 ## What /Should/ Be In The File
 
