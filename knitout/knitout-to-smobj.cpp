@@ -454,18 +454,28 @@ struct Translator {
 		Gizmo gizmo;
 
 		FaceEdge yarn_in = bring_carriers(dir, bed, needle, cs, &gizmo);
-
 		FaceEdge loop_in = bed[needle_index(needle)].top_edge;
 
 		std::string L = std::to_string(loop_in.count);
 		std::string Y = std::to_string(cs.size());
 
+		FaceEdge stitch_yarn_in;
+		FaceEdge stitch_yarn_out;
+
+		gizmo.faces.emplace_back(faces.size());
 		faces.emplace_back();
 		Face &face = faces.back();
 		{ //face type:
-			std::string knit_or_purl = (&bed == &front_bed ? "knit" : "purl");
-			std::string right_or_left = (dir == Right ? "right" : "left");
-			face.type = knit_or_purl + "-to-" + right_or_left + " -l" + L + " +y" + Y + " +l" + Y + " -y" + Y;
+			std::string knit_or_purl = ((&bed == &front_bed || &bed == &front_sliders) ? "knit" : "purl");
+			if (dir == Right) {
+				face.type = knit_or_purl + "-to-right -l" + L + " +y" + Y + " +l" + Y + " -y" + Y;
+				stitch_yarn_out = FaceEdge(gizmo.faces.back(), 1, cs.size(), FaceEdge::FlipNo);
+				stitch_yarn_in = FaceEdge(gizmo.faces.back(), 3, cs.size(), FaceEdge::FlipYes);
+			} else {
+				face.type = knit_or_purl + "-to-left -l" + L + " -y" + Y + " +l" + Y + " +y" + Y;
+				stitch_yarn_in = FaceEdge(gizmo.faces.back(), 1, cs.size(), FaceEdge::FlipNo);
+				stitch_yarn_out = FaceEdge(gizmo.faces.back(), 3, cs.size(), FaceEdge::FlipYes);
+			}
 		}
 		face.vertices = {
 				glm::vec3(side_index(needle, Left), 0.0f, bed.depth),
@@ -473,19 +483,15 @@ struct Translator {
 				glm::vec3(side_index(needle, Right), FaceHeight, bed.depth),
 				glm::vec3(side_index(needle, Left), FaceHeight, bed.depth),
 		};
-		gizmo.faces.emplace_back(faces.size() - 1);
 		if (loop_in.is_valid()) {
 			gizmo.connections.emplace_back(FaceEdge(gizmo.faces.back(), 0), loop_in);
 		}
 		if (yarn_in.is_valid()) {
-			if (dir == Right) {
-				gizmo.connections.emplace_back(FaceEdge(gizmo.faces.back(), 3), yarn_in);
-			} else { assert(dir == Left);
-				gizmo.connections.emplace_back(FaceEdge(gizmo.faces.back(), 1), yarn_in);
-			}
+			gizmo.connections.emplace_back(stitch_yarn_in, yarn_in);
 		}
 
 		//TODO: return carriers! (might need to add to a different gizmo, given potential overlapping travel?)
+		return_carriers(dir, bed, needle, cs, stitch_yarn_out, &gizmo);
 		
 		float lift = 0.0f;
 		{
@@ -507,6 +513,8 @@ struct Translator {
 		//register top edge with column:
 		bed[needle_index(needle)].top_edge = FaceEdge(gizmo.faces.back(), 2, cs.size());
 		bed[needle_index(needle)].top_y = faces[gizmo.faces.back()].vertices[2].y;
+
+		assert(bed[needle_index(needle)].top_edge.is_valid()); //DEBUG
 	}
 };
 
@@ -666,10 +674,9 @@ int main(int argc, char **argv) {
 	//face type library:
 	std::map< std::string, uint32_t > type_index;
 	for (auto const &f : translator->faces) {
-		type_index.insert(std::make_pair(f.type, type_index.size()+1));
-	}
-	for (auto const &ti : type_index) {
-		out << "L " << ti.first << "\n";
+		if (type_index.insert(std::make_pair(f.type, type_index.size()+1)).second) {
+			out << "L " << f.type << "\n";
+		}
 	}
 
 	//faces:
@@ -681,7 +688,7 @@ int main(int argc, char **argv) {
 			f_line += " " + std::to_string(++vertex_index);
 		}
 		out << f_line << "\n";
-		out << "T " << type_index[f.type] << "\n";
+		out << "T " << type_index[f.type] << "\n"; //DEBUG: << " # " << f.type << "\n";
 	}
 
 	return 0;
