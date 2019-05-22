@@ -4,12 +4,14 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <memory>
 #include <vector>
 #include <string>
 #include <limits>
 #include <unordered_map>
 #include <unordered_set>
 #include <map>
+#include <algorithm>
 
 #include <cassert>
 
@@ -25,6 +27,12 @@ enum Bed : char {
 	Back = 'b',
 };
 
+//indices work like this:
+// needle   next needle
+//     v       v
+// -1  0  1 2  3
+//  ^-----^-^-- where carriers park (though they travel stitch<->track slightly beside these)
+
 int32_t needle_index(int32_t needle) {
 	return needle * 3;
 }
@@ -34,10 +42,15 @@ int32_t side_index(int32_t needle, Direction dir) {
 }
 
 struct FaceEdge {
-	FaceEdge(uint32_t face_ = -1U, uint32_t edge_ = -1U, uint32_t count_ = 0) : face(face_), edge(edge_), count(count_) { }
+	enum Flip {
+		FlipNo,
+		FlipYes
+	};
+	FaceEdge(uint32_t face_ = -1U, uint32_t edge_ = -1U, uint32_t count_ = 0, Flip flip_ = FlipNo) : face(face_), edge(edge_), count(count_), flip(flip_) { }
 	uint32_t face;
 	uint32_t edge;
 	uint32_t count; //how many items (yarns/loops)
+	Flip flip; //should this connection be flipped?
 	bool is_valid() const {
 		return (face != -1U && edge != -1U);
 	}
@@ -59,7 +72,7 @@ struct Gizmo {
 };
 
 struct Column {
-	FaceEdge top_edge;
+	FaceEdge top_edge; //by convention, oriented rightwards
 	float top_y = 0;
 };
 
@@ -68,9 +81,11 @@ struct BedColumns : public std::unordered_map< int32_t, Column > {
 };
 
 struct Carrier {
-	FaceEdge edge; //is a valid edge if carrier is in, otherwise is not
-	int32_t index = 0;
 	float depth = 0.0f;
+	//info about current position:
+	FaceEdge edge; //is a valid edge if carrier is in, otherwise is not
+	//by convention, flip on the FaceEdge will be set such that the (flipped) edge points up.
+	float x = std::numeric_limits< float >::quiet_NaN();
 };
 
 //depths:
@@ -81,9 +96,12 @@ struct Carrier {
 // --- front hooks --- @ 0.75
 // --- front bed ---   @ 1.0
 
+constexpr const float FaceHeight = 1.0f;
+
 struct Translator {
 	BedColumns back_bed, back_sliders, front_sliders, front_bed;
 	std::unordered_map< std::string, Carrier > carriers;
+	float racking = 0.0f;
 
 	Translator(std::vector< std::string > const &carrier_names) {
 		back_bed.depth = -1.0f;
@@ -104,7 +122,9 @@ struct Translator {
 	//--- helper functions ---
 	std::vector< Carrier * > lookup_carriers(std::vector< std::string > const &cs) {
 		std::vector< Carrier * > ret;
+		ret.reserve(cs.size());
 		std::unordered_set< std::string > seen;
+		seen.reserve(cs.size());
 		for (auto const &cn : cs) {
 			if (!seen.insert(cn).second) {
 				throw std::runtime_error("Carrier '" + cn + "' appears twice in carrier set.");
@@ -113,6 +133,7 @@ struct Translator {
 			if (f == carriers.end()) {
 				throw std::runtime_error("Carrier '" + cn + "' does not appear in carriers list.");
 			}
+			ret.emplace_back(&f->second);
 		}
 		return ret;
 	}
@@ -124,61 +145,368 @@ struct Translator {
 		assert(0);
 	}
 
+	//bring carriers together in order to make a stitch in a given direction on a given bed/needle.
+	//(so, e.g., if dir is "Right", will bring yarns to the left of the needle to get them ready)
+	//adds yarn movement faces and tracks with gizmo; returns the live yarn edge:
+	FaceEdge bring_carriers(Direction dir, BedColumns const &bed, int32_t needle, std::vector< Carrier * > const &cs, Gizmo *gizmo_) {
+		assert(gizmo_);
+		auto &gizmo = *gizmo_;
+
+		//no carriers? nothing to do:
+		if (cs.empty()) return FaceEdge();
+
+		//compute x-coordinate to travel along based on bed, racking, and direction:
+		float travel_x; //where to travel in depth
+		float final_x; //where to arrive on the bed
+		final_x = side_index(needle, (dir == Right ? Left : Right));
+		if (&bed == &front_bed || &bed == &front_sliders) {
+			if (dir == Right) {
+				travel_x = side_index(needle, Left) + 0.25f;
+			} else { assert(dir == Left);
+				travel_x = side_index(needle, Right) - 0.25f;
+			}
+		} else { assert(&bed == &back_bed || &bed == &back_sliders);
+			//account for racking:
+			uint32_t r = int32_t(std::floor(racking));
+			if (std::floor(racking) == racking) {
+				//aligned -- get to the front bed location across from the needle:
+				if (dir == Right) {
+					travel_x = side_index(needle + r, Left) + 0.25f;
+				} else { assert(dir == Left);
+					travel_x = side_index(needle + r, Right) - 0.25f;
+				}
+			} else { assert(std::floor(racking) + 0.25f == racking);
+				//quarter pitch -- use the gap inside the indices to the right/left:
+				if (dir == Right) {
+					travel_x = side_index(needle + r, Right) + 0.25f;
+				} else { assert(dir == Left);
+					travel_x = side_index(needle + r + 1, Left) - 0.25f;
+				}
+			}
+		}
+
+		//all carriers travel in their tracks to the target index:
+		for (auto c : cs) {
+			if (c->edge.is_valid()) {
+				assert(c->x != travel_x); //carriers are parked on indices, target is always 0.25f away.
+			} else {
+				c->x = travel_x + 0.25f; //a little "carrier coming in" tail
+			}
+			//build yarn face to connect things:
+			faces.emplace_back();
+			Face &face = faces.back();
+			gizmo.faces.emplace_back(faces.size()-1);
+
+			if (c->x < travel_x) {
+				face.type = "yarn-to-right x +y1 x -y1";
+				face.vertices = {
+					glm::vec3(c->x, 0.0f, c->depth),
+					glm::vec3(travel_x, 0.0f, c->depth),
+					glm::vec3(travel_x, FaceHeight, c->depth),
+					glm::vec3(c->x, FaceHeight, c->depth),
+				};
+				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
+				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
+				if (c->edge.is_valid()) {
+					gizmo.connections.emplace_back(c->edge, yarn_in);
+				}
+				c->edge = yarn_out;
+				c->x = travel_x;
+			} else { assert(c->x > travel_x); //can't have exactly equal.
+				face.type = "yarn-to-left x -y1 x +y1";
+				face.vertices = {
+					glm::vec3(travel_x, 0.0f, c->depth),
+					glm::vec3(c->x, 0.0f, c->depth),
+					glm::vec3(c->x, FaceHeight, c->depth),
+					glm::vec3(travel_x, FaceHeight, c->depth),
+				};
+				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
+				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
+				if (c->edge.is_valid()) {
+					gizmo.connections.emplace_back(c->edge, yarn_in);
+				}
+				c->edge = yarn_out;
+				c->x = travel_x;
+			}
+		}
+
+		//Connect all carriers up to the front/back:
+
+		std::vector< Carrier * > cs_by_depth = cs;
+		std::sort(cs_by_depth.begin(), cs_by_depth.end(), [](Carrier *a, Carrier *b) {
+			return a->depth < b->depth;
+		});
+		if (cs.size() > 1) {
+			std::cerr << "TODO: handle plating when bringing yarns." << std::endl;
+		}
+		if (&bed == &front_bed || &bed == &front_sliders) {
+			FaceEdge prev = cs_by_depth.back()->edge;
+			float prev_depth = cs_by_depth.back()->depth;
+
+			//connect forward to bed depth:
+			faces.emplace_back();
+			Face &face = faces.back();
+			gizmo.faces.emplace_back(faces.size()-1);
+			std::string Y = std::to_string(prev.count);
+			face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
+			face.vertices = {
+				glm::vec3(travel_x, 0.0f, prev_depth),
+				glm::vec3(final_x, 0.0f, bed.depth),
+				glm::vec3(final_x, FaceHeight, bed.depth),
+				glm::vec3(travel_x, FaceHeight, prev_depth),
+			};
+			FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
+			FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
+
+			gizmo.connections.emplace_back(prev, yarn_in);
+
+			return yarn_out;
+		} else { assert(&bed == &back_bed || &bed == &back_sliders);
+			FaceEdge prev = cs_by_depth.front()->edge;
+			float prev_depth = cs_by_depth.front()->depth;
+
+			{ //connect backward to zero depth:
+				faces.emplace_back();
+				Face &face = faces.back();
+				gizmo.faces.emplace_back(faces.size()-1);
+				std::string Y = std::to_string(prev.count);
+				face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
+				face.vertices = {
+					glm::vec3(travel_x, 0.0f, 0.0f),
+					glm::vec3(travel_x, 0.0f, prev_depth),
+					glm::vec3(travel_x, FaceHeight, prev_depth),
+					glm::vec3(travel_x, FaceHeight, 0.0f),
+				};
+				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
+				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
+
+				gizmo.connections.emplace_back(prev, yarn_in);
+
+				prev = yarn_out;
+				prev_depth = 0.0f;
+			}
+
+			{ //connect further backward to bed:
+				faces.emplace_back();
+				Face &face = faces.back();
+				gizmo.faces.emplace_back(faces.size()-1);
+				std::string Y = std::to_string(prev.count);
+				face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
+				face.vertices = {
+					glm::vec3(final_x, 0.0f, bed.depth),
+					glm::vec3(travel_x, 0.0f, prev_depth),
+					glm::vec3(travel_x, FaceHeight, prev_depth),
+					glm::vec3(final_x, FaceHeight, bed.depth),
+				};
+				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
+				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
+
+				gizmo.connections.emplace_back(prev, yarn_in);
+
+				prev = yarn_out;
+				prev_depth = bed.depth;
+			}
+
+			return prev;
+		}
+
+	};
+
+	void return_carriers(Direction dir, BedColumns const &bed, int32_t needle, std::vector< Carrier * > const &cs, FaceEdge const &stitch_yarn_out, Gizmo *gizmo_) {
+		assert(stitch_yarn_out.is_valid());
+		assert(gizmo_);
+		auto &gizmo = *gizmo_;
+
+		//no carriers? nothing to do:
+		if (cs.empty()) return;
+
+		//compute travel location and final resting index based on bed, racking, and direction:
+		float start_x = side_index(needle, dir);
+		float final_x;
+		if (&bed == &front_bed || &bed == &front_sliders) {
+			final_x = side_index(needle, dir);
+		} else { assert(&bed == &back_bed || &bed == &back_sliders);
+			//account for racking:
+			uint32_t r = int32_t(std::floor(racking));
+			if (std::floor(racking) == racking) {
+				//aligned -- get to the front bed location across from the needle:
+				final_x = side_index(needle + r, dir);
+			} else { assert(std::floor(racking) + 0.25f == racking);
+				//quarter pitch -- use the gap inside the indices to the right/left:
+				if (dir == Right) {
+					final_x = side_index(needle + r + 1, Left);
+				} else { assert(dir == Left);
+					final_x = side_index(needle + r, Right);
+				}
+			}
+		}
+		float travel_x = final_x + (dir == Right ? -0.25f : +0.25f);
+
+		std::vector< Carrier * > cs_by_depth = cs;
+		std::sort(cs_by_depth.begin(), cs_by_depth.end(), [](Carrier *a, Carrier *b) {
+			return a->depth < b->depth;
+		});
+		if (cs.size() > 1) {
+			std::cerr << "TODO: handle plating when returning yarns." << std::endl;
+		}
+		if (&bed == &front_bed || &bed == &front_sliders) {
+			FaceEdge prev = stitch_yarn_out;
+			float prev_depth = bed.depth;
+			float prev_x = start_x;
+
+			{ //connect backward to first carrier:
+				Carrier *c = cs_by_depth.front();
+				faces.emplace_back();
+				Face &face = faces.back();
+				gizmo.faces.emplace_back(faces.size()-1);
+				std::string Y = std::to_string(prev.count);
+				face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
+				face.vertices = {
+					glm::vec3(travel_x, 0.0f, c->depth),
+					glm::vec3(prev_x, 0.0f, prev_depth),
+					glm::vec3(prev_x, FaceHeight, prev_depth),
+					glm::vec3(travel_x, FaceHeight, c->depth),
+				};
+				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
+				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
+
+				gizmo.connections.emplace_back(prev, yarn_in);
+				c->edge = yarn_out;
+
+				prev = yarn_out;
+				prev_depth = c->depth;
+				prev_x = travel_x;
+			}
+
+			//TODO: actually properly connect these things
+			for (uint32_t ci = 1; ci < cs_by_depth.size(); ++ci) {
+				cs_by_depth[ci]->edge = FaceEdge();
+			}
+
+		} else { assert(&bed == &back_bed || &bed == &back_sliders);
+			FaceEdge prev = stitch_yarn_out;
+			float prev_depth = bed.depth;
+			float prev_x = start_x;
+
+			{ //connect forward to zero depth:
+				faces.emplace_back();
+				Face &face = faces.back();
+				gizmo.faces.emplace_back(faces.size()-1);
+				std::string Y = std::to_string(prev.count);
+				face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
+				face.vertices = {
+					glm::vec3(prev_x, 0.0f, prev_depth),
+					glm::vec3(travel_x, 0.0f, 0.0f),
+					glm::vec3(travel_x, FaceHeight, 0.0f),
+					glm::vec3(prev_x, FaceHeight, prev_depth),
+				};
+				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
+				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
+
+				gizmo.connections.emplace_back(prev, yarn_in);
+
+				prev = yarn_out;
+				prev_depth = 0.0f;
+				prev_x = travel_x;
+			}
+
+			{ //connect further forward to first carrier:
+				Carrier *c = cs_by_depth.back();
+				faces.emplace_back();
+				Face &face = faces.back();
+				gizmo.faces.emplace_back(faces.size()-1);
+
+				std::string Y = std::to_string(prev.count);
+				face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
+				face.vertices = {
+					glm::vec3(prev_x, 0.0f, prev_depth),
+					glm::vec3(travel_x, 0.0f, c->depth),
+					glm::vec3(travel_x, FaceHeight, c->depth),
+					glm::vec3(prev_x, FaceHeight, prev_depth),
+				};
+				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
+				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
+
+				gizmo.connections.emplace_back(prev, yarn_in);
+				c->edge = yarn_out;
+
+				prev = yarn_out;
+				prev_depth = c->depth;
+				prev_x = travel_x;
+			}
+
+			//TODO: actually properly connect these things
+			for (uint32_t ci = 0; ci + 1 < cs_by_depth.size(); ++ci) {
+				cs_by_depth[ci]->edge = FaceEdge();
+			}
+		}
+
+		//TODO: tails from travel_x to final_x for all carriers.
+
+
+	}
+
+
 	//--- driver functions ---
 	void knit(Direction dir, BedColumns &bed, int32_t needle, std::vector< Carrier * > cs) {
 		assert(&bed == &back_bed || &bed == &front_bed);
 
 		Gizmo gizmo;
 
-		//FaceEdge edge = bring_carriers(cs, side_index(needle, (dir === Right ? Left : Right)), &gizmo);
+		FaceEdge yarn_in = bring_carriers(dir, bed, needle, cs, &gizmo);
 
 		FaceEdge loop_in = bed[needle_index(needle)].top_edge;
 
 		std::string L = std::to_string(loop_in.count);
 		std::string Y = std::to_string(cs.size());
 
-		const float H = 1.0f;
-
-		if (dir == Right) {
-			faces.emplace_back();
-			Face &face = faces.back();
-			face.type = "knit-to-right -l" + L + " +y" + Y + " +l" + Y + " -y" + Y;
-			face.vertices = {
+		faces.emplace_back();
+		Face &face = faces.back();
+		{ //face type:
+			std::string knit_or_purl = (&bed == &front_bed ? "knit" : "purl");
+			std::string right_or_left = (dir == Right ? "right" : "left");
+			face.type = knit_or_purl + "-to-" + right_or_left + " -l" + L + " +y" + Y + " +l" + Y + " -y" + Y;
+		}
+		face.vertices = {
 				glm::vec3(side_index(needle, Left), 0.0f, bed.depth),
 				glm::vec3(side_index(needle, Right), 0.0f, bed.depth),
-				glm::vec3(side_index(needle, Right), H, bed.depth),
-				glm::vec3(side_index(needle, Left), H, bed.depth),
-			};
-			faces.emplace_back(face);
-
-			gizmo.faces.emplace_back(faces.size() - 1);
-			if (loop_in.is_valid()) {
-				gizmo.connections.emplace_back(FaceEdge(gizmo.faces.back(), 0), loop_in);
-			}
-
-			float lift = 0.0f;
-			{
-				lift = std::max(lift, bed[needle_index(needle)].top_y);
-			}
-			//TODO: increase lift based on bottom/top edge conflicts in crossing area...
-
-			//DEBUG: make sure stitches are separated by a little bit:
-			lift += 0.05f;
-
-			for (auto fi : gizmo.faces) {
-				for (auto &v : faces[fi].vertices) {
-					v.y += lift;
-				}
-			}
-
-			//TODO: proper glue faces for yarn.
-
-			//register top edge with column:
-			bed[needle_index(needle)].top_edge = FaceEdge(gizmo.faces.back(), 2);
-			bed[needle_index(needle)].top_y = faces[gizmo.faces.back()].vertices[2].y;
-		} else { assert(dir == Left);
-			
+				glm::vec3(side_index(needle, Right), FaceHeight, bed.depth),
+				glm::vec3(side_index(needle, Left), FaceHeight, bed.depth),
+		};
+		gizmo.faces.emplace_back(faces.size() - 1);
+		if (loop_in.is_valid()) {
+			gizmo.connections.emplace_back(FaceEdge(gizmo.faces.back(), 0), loop_in);
 		}
+		if (yarn_in.is_valid()) {
+			if (dir == Right) {
+				gizmo.connections.emplace_back(FaceEdge(gizmo.faces.back(), 3), yarn_in);
+			} else { assert(dir == Left);
+				gizmo.connections.emplace_back(FaceEdge(gizmo.faces.back(), 1), yarn_in);
+			}
+		}
+
+		//TODO: return carriers! (might need to add to a different gizmo, given potential overlapping travel?)
+		
+		float lift = 0.0f;
+		{
+			lift = std::max(lift, bed[needle_index(needle)].top_y);
+		}
+		//TODO: increase lift based on bottom/top edge conflicts in crossing area...
+
+		//DEBUG: make sure stitches are separated by a little bit:
+		lift += 0.05f;
+
+		for (auto fi : gizmo.faces) {
+			for (auto &v : faces[fi].vertices) {
+				v.y += lift;
+			}
+		}
+
+		//TODO: proper glue faces for yarn and loop connections, if lift is big(?)
+
+		//register top edge with column:
+		bed[needle_index(needle)].top_edge = FaceEdge(gizmo.faces.back(), 2, cs.size());
+		bed[needle_index(needle)].top_y = faces[gizmo.faces.back()].vertices[2].y;
 	}
 };
 

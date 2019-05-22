@@ -29,8 +29,10 @@ f 2/1 4/2 3/3 1/4
 #and, for each face, a type from the library (1-based index into library):
 T 1
 #finally, list of connections between faces:
-# face#/edge#, both one-based
-e 1/1 2/4
+# face#/edge#, both one-based; negative edges imply *reversing* the edge
+# this allows non-orientable connections, needed for knitout
+# (NOTE: on a nicely oriented mesh, all 'e' commands will have one negative edge)
+e 1/1 2/-4
 #(optional) indicate which image corresponds to which texture coordinate:
 tex foo.jpg
 tex2 bar.jpg
