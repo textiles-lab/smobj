@@ -85,7 +85,12 @@ L split-back-to-left -l1 -l1 -y1 +l2 +l1 +y1
 L loop -l1 x +l1 x
 L yarn-to-right x +y1 x -y1
 L yarn-to-left x -y1 x +y1
-#yarn plating (top edge connects to front of stack):
+#yarn enters going left/right from diagonal bottom face, leaves going left/right from diagonal top face:
+L yarn-left-up-right -y1 x +y1 x
+L yarn-left-up-left -y1 x +y1 x
+L yarn-right-up-right -y1 x +y1 x
+L yarn-right-up-left -y1 x +y1 x
+#yarn plating (lower edge connects to bottom of stack so stack [1 2] splits to lower edge [1] and upper edge [2]):
 L yarn-plate-to-right x +y2 x -y1 -y1
 L yarn-plate-to-left x -y1 -y1 x +y2
 #also +y(N+M) from -yN, -yM
