@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <map>
+#include <set>
 #include <algorithm>
 
 #include <cassert>
@@ -66,9 +67,24 @@ struct Connection {
 	FaceEdge a,b;
 };
 
+//top edges of faces to avoid in the between-bed area:
+// (highest-first)
+struct TopEdge {
+	TopEdge(glm::vec3 const &a_, glm::vec3 const &b_) : a(a_), b(b_) {
+		if (a.y < b.y) std::swap(a,b);
+	}
+	glm::vec3 a,b;
+	//kept sorted by highest point:
+	bool operator<(TopEdge const &other) const {
+		return a.y < other.a.y;
+	}
+};
+
 struct Gizmo {
 	std::vector< uint32_t > faces;
 	std::vector< Connection > connections;
+	std::vector< TopEdge > top_edges;
+	float lift = 0.0f;
 };
 
 struct Column {
@@ -88,6 +104,60 @@ struct Carrier {
 	float x = std::numeric_limits< float >::quiet_NaN();
 };
 
+//get ranges of lines within a given threshold of each-other:
+bool close_ranges(
+	float threshold,
+	glm::vec2 const &a1, glm::vec2 const &b1,
+	glm::vec2 const &a2, glm::vec2 const &b2,
+	std::pair< float, float > *range1_, std::pair< float, float > *range2_ ) {
+	assert(range1_);
+	auto &range1 = *range1_;
+	assert(range2_);
+	auto &range2 = *range2_;
+	range1.first = 0.0f;
+	range1.second = 1.0f;
+	range2.first = 0.0f;
+	range2.second = 1.0f;
+
+	//clip to range such that all elements of range are below amount when dotted with dir:
+	auto clip = [](glm::vec2 const &a, glm::vec2 const &b, glm::vec2 const &dir, float amt, std::pair< float, float > *range) {
+		float da = glm::dot(a, dir) - amt;
+		float db = glm::dot(b, dir) - amt;
+		if (da < 0.0f && db < 0.0f) {
+			//entire range is good.
+		} else if (da > 0.0f && db > 0.0f) {
+			//clip entire range:
+			range->first = 1.0f;
+			range->second = 0.0f;
+		} else if (da <= 0.0f && db > 0.0f) {
+			range->second = std::min(range->second, (0.0f - da) / (db-da));
+		} else if (da > 0.0f && db <= 0.0f) {
+			range->first = std::max(range->first, (0.0f - da) / (db-da));
+		} else {
+			assert(0 && "unreachable case");
+		}
+	};
+
+	{ //clip range2 vs (a1-b1):
+		glm::vec2 ab1 = glm::normalize(b1-a1);
+		glm::vec2 perp1 = glm::vec2(-ab1.y, ab1.x);
+		clip(a2, b2, ab1, glm::dot(ab1, b1) + threshold, &range2);
+		clip(a2, b2, -ab1, glm::dot(-ab1, a1) + threshold, &range2);
+		clip(a2, b2, perp1, glm::dot(perp1, 0.5f*(a1+b1)) + threshold, &range2);
+		clip(a2, b2, -perp1, glm::dot(-perp1, 0.5f*(a1+b1)) + threshold, &range2);
+	}
+
+	{ //clip range1 vs (a2-b2):
+		glm::vec2 ab2 = glm::normalize(b2-a2);
+		glm::vec2 perp2 = glm::vec2(-ab2.y, ab2.x);
+		clip(a1, b1, ab2, glm::dot(ab2, b2) + threshold, &range1);
+		clip(a1, b1, -ab2, glm::dot(-ab2, a2) + threshold, &range1);
+		clip(a1, b1, perp2, glm::dot(perp2, 0.5f*(a2+b2)) + threshold, &range1);
+		clip(a1, b1, -perp2, glm::dot(-perp2, 0.5f*(a2+b2)) + threshold, &range1);
+	}
+	return range1.first <= range1.second && range2.first <= range2.second;
+}
+
 //depths:
 // --- back bed --- @ -1.0
 // --- back hooks --- @ -0.75
@@ -102,6 +172,7 @@ struct Translator {
 	BedColumns back_bed, back_sliders, front_sliders, front_bed;
 	std::unordered_map< std::string, Carrier > carriers;
 	float racking = 0.0f;
+
 
 	Translator(std::vector< std::string > const &carrier_names) {
 		back_bed.depth = -1.0f;
@@ -144,6 +215,38 @@ struct Translator {
 		if (bed == Front) return front_bed;
 		assert(0);
 	}
+
+	std::multiset< TopEdge > top_edges;
+	void check_edge(glm::vec3 const &a, glm::vec3 const &b, float *lift_) {
+		assert(lift_);
+		auto &lift = *lift_;
+
+		for (auto const &te : top_edges) {
+			//okay, all later edges are lower, stop checking:
+			if (te.a.y < std::min(a.y,b.y) + lift) break;
+			//check for intersection in the xz plane:
+			glm::vec2 a_2d(a.x, a.z);
+			glm::vec2 b_2d(b.x, b.z);
+
+			glm::vec2 te_a_2d(te.a.x, te.a.z);
+			glm::vec2 te_b_2d(te.b.x, te.b.z);
+
+			std::pair< float, float > range, te_range;
+			if (!close_ranges(0.1f, a_2d, b_2d, te_a_2d, te_b_2d, &range, &te_range)) continue;
+
+			float y = std::min(
+				glm::mix(a.y, b.y, range.first),
+				glm::mix(a.y, b.y, range.second)
+			);
+			float te_y = std::max(
+				glm::mix(te.a.y, te.b.y, te_range.first),
+				glm::mix(te.a.y, te.b.y, te_range.second)
+			);
+			lift = std::max(lift, te_y - y);
+		}
+	}
+
+
 
 	//bring carriers together in order to make a stitch in a given direction on a given bed/needle.
 	//(so, e.g., if dir is "Right", will bring yarns to the left of the needle to get them ready)
@@ -205,6 +308,9 @@ struct Translator {
 					glm::vec3(travel_x, FaceHeight, c->depth),
 					glm::vec3(c->x, FaceHeight, c->depth),
 				};
+				check_edge(face.vertices[0], face.vertices[1], &gizmo.lift);
+				gizmo.top_edges.emplace_back(face.vertices[2], face.vertices[3]);
+
 				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
 				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
 				if (c->edge.is_valid()) {
@@ -212,6 +318,7 @@ struct Translator {
 				}
 				c->edge = yarn_out;
 				c->x = travel_x;
+
 			} else { assert(c->x > travel_x); //can't have exactly equal.
 				face.type = "yarn-to-left x -y1 x +y1";
 				face.vertices = {
@@ -220,6 +327,9 @@ struct Translator {
 					glm::vec3(c->x, FaceHeight, c->depth),
 					glm::vec3(travel_x, FaceHeight, c->depth),
 				};
+				check_edge(face.vertices[0], face.vertices[1], &gizmo.lift);
+				gizmo.top_edges.emplace_back(face.vertices[2], face.vertices[3]);
+
 				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
 				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
 				if (c->edge.is_valid()) {
@@ -255,6 +365,9 @@ struct Translator {
 				glm::vec3(final_x, FaceHeight, bed.depth),
 				glm::vec3(travel_x, FaceHeight, prev_depth),
 			};
+			check_edge(face.vertices[0], face.vertices[1], &gizmo.lift);
+			gizmo.top_edges.emplace_back(face.vertices[2], face.vertices[3]);
+
 			FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
 			FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
 
@@ -277,6 +390,9 @@ struct Translator {
 					glm::vec3(travel_x, FaceHeight, prev_depth),
 					glm::vec3(travel_x, FaceHeight, 0.0f),
 				};
+				check_edge(face.vertices[0], face.vertices[1], &gizmo.lift);
+				gizmo.top_edges.emplace_back(face.vertices[2], face.vertices[3]);
+
 				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
 				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
 
@@ -298,6 +414,9 @@ struct Translator {
 					glm::vec3(travel_x, FaceHeight, prev_depth),
 					glm::vec3(final_x, FaceHeight, bed.depth),
 				};
+				check_edge(face.vertices[0], face.vertices[1], &gizmo.lift);
+				gizmo.top_edges.emplace_back(face.vertices[2], face.vertices[3]);
+
 				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
 				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
 
@@ -367,11 +486,15 @@ struct Translator {
 					glm::vec3(prev_x, FaceHeight, prev_depth),
 					glm::vec3(travel_x, FaceHeight, c->depth),
 				};
+				check_edge(face.vertices[0], face.vertices[1], &gizmo.lift);
+				gizmo.top_edges.emplace_back(face.vertices[2], face.vertices[3]);
+
 				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
 				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
 
 				gizmo.connections.emplace_back(prev, yarn_in);
 				c->edge = yarn_out;
+				c->x = final_x;
 
 				prev = yarn_out;
 				prev_depth = c->depth;
@@ -381,6 +504,7 @@ struct Translator {
 			//TODO: actually properly connect these things
 			for (uint32_t ci = 1; ci < cs_by_depth.size(); ++ci) {
 				cs_by_depth[ci]->edge = FaceEdge();
+				cs_by_depth[ci]->x = final_x;
 			}
 
 		} else { assert(&bed == &back_bed || &bed == &back_sliders);
@@ -400,6 +524,9 @@ struct Translator {
 					glm::vec3(travel_x, FaceHeight, 0.0f),
 					glm::vec3(prev_x, FaceHeight, prev_depth),
 				};
+				check_edge(face.vertices[0], face.vertices[1], &gizmo.lift);
+				gizmo.top_edges.emplace_back(face.vertices[2], face.vertices[3]);
+
 				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
 				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
 
@@ -424,11 +551,15 @@ struct Translator {
 					glm::vec3(travel_x, FaceHeight, c->depth),
 					glm::vec3(prev_x, FaceHeight, prev_depth),
 				};
+				check_edge(face.vertices[0], face.vertices[1], &gizmo.lift);
+				gizmo.top_edges.emplace_back(face.vertices[2], face.vertices[3]);
+
 				FaceEdge yarn_in = FaceEdge(gizmo.faces.back(), 3, 1, FaceEdge::FlipYes);
 				FaceEdge yarn_out = FaceEdge(gizmo.faces.back(), 1, 1, FaceEdge::FlipNo);
 
 				gizmo.connections.emplace_back(prev, yarn_in);
 				c->edge = yarn_out;
+				c->x = final_x;
 
 				prev = yarn_out;
 				prev_depth = c->depth;
@@ -438,6 +569,7 @@ struct Translator {
 			//TODO: actually properly connect these things
 			for (uint32_t ci = 0; ci + 1 < cs_by_depth.size(); ++ci) {
 				cs_by_depth[ci]->edge = FaceEdge();
+				cs_by_depth[ci]->x = final_x;
 			}
 		}
 
@@ -493,19 +625,22 @@ struct Translator {
 		//TODO: return carriers! (might need to add to a different gizmo, given potential overlapping travel?)
 		return_carriers(dir, bed, needle, cs, stitch_yarn_out, &gizmo);
 		
-		float lift = 0.0f;
-		{
-			lift = std::max(lift, bed[needle_index(needle)].top_y);
-		}
-		//TODO: increase lift based on bottom/top edge conflicts in crossing area...
+		//increase lift based on edge conflicts in stitch column:
+		gizmo.lift = std::max(gizmo.lift, bed[needle_index(needle)].top_y);
 
 		//DEBUG: make sure stitches are separated by a little bit:
-		lift += 0.05f;
+		gizmo.lift += 0.05f;
 
 		for (auto fi : gizmo.faces) {
 			for (auto &v : faces[fi].vertices) {
-				v.y += lift;
+				v.y += gizmo.lift;
 			}
+		}
+		//register top edges:
+		for (auto &te : gizmo.top_edges) {
+			te.a.y += gizmo.lift;
+			te.b.y += gizmo.lift;
+			top_edges.insert(te);
 		}
 
 		//TODO: proper glue faces for yarn and loop connections, if lift is big(?)
