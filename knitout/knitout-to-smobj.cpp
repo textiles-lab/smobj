@@ -576,9 +576,6 @@ struct Translator {
 
 	//apply gizmo lift to all faces:
 	void commit(Gizmo &gizmo) {
-		//DEBUG: space things out just a smidge:
-		gizmo.lift += 0.1f;
-
 		//apply lift value:
 		for (auto fi : gizmo.faces) {
 			for (auto &v : faces[fi].vertices) {
@@ -655,6 +652,9 @@ struct Translator {
 			//increase lift based on edge conflicts in stitch column:
 			gizmo.lift = std::max(gizmo.lift, bed[needle_index(needle)].top_y);
 
+			//DEBUG: space out a smidge:
+			gizmo.lift += 0.125f;
+
 			//apply lift and create merge faces:
 			commit(gizmo);
 
@@ -663,12 +663,6 @@ struct Translator {
 			bed[needle_index(needle)].top_y = faces[gizmo.faces.back()].vertices[2].y;
 		}
 
-
-		for (auto fi : gizmo.faces) {
-			for (auto &v : faces[fi].vertices) {
-				v.y += gizmo.lift;
-			}
-		}
 
 		//TODO: proper glue faces for yarn and loop connections, if lift is big(?)
 
@@ -714,6 +708,29 @@ struct Translator {
 					assert(0 && "unreachable case");
 				}
 				add_horizon(left, right, iv.second, c->depth);
+			}
+		}
+		for (auto bed : {&back_bed, &back_sliders, &front_sliders, &front_bed}) {
+			for (auto const &ic : *bed) {
+				int32_t needle = ic.first / 4;
+				int32_t ofs = ic.first - 4*needle;
+				if (ofs < 0) {
+					needle -= 1;
+					ofs += 4;
+				}
+				assert(needle*4 + ofs == ic.first);
+				float left, right;
+				if (ofs == 0) {
+					left = stitch_x(ic.first, Left);
+					right = stitch_x(ic.first, Right);
+				} else if (ofs == 1 || ofs == 3) {
+					assert(0 && "I don't think we use non-needle inds on bedcolumns");
+				} else if (ofs == 2) {
+					assert(0 && "I don't think we use non-needle inds on bedcolumns");
+				} else {
+					assert(0 && "unreachable case");
+				}
+				add_horizon(left, right, ic.second.top_y, bed->depth);
 			}
 		}
 	}
