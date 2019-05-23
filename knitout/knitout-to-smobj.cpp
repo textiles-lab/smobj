@@ -517,9 +517,10 @@ struct Translator {
 						FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
 						FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
 
+						//no merge needed
 						c->parked_edge = yarn_out;
 						c->parked_direction = dir;
-						c->parked_index = bring_index;
+						c->parked_index = leave_index;
 
 						gizmo.lift = std::max(gizmo.lift, c->horizon.get_value(leave_index, leave_index+1));
 						gizmo.set_lift.emplace_back([c,leave_index](float lift){
@@ -576,6 +577,10 @@ struct Translator {
 
 						//no merge needed
 
+						c->parked_edge = yarn_out;
+						c->parked_direction = dir;
+						c->parked_index = leave_index;
+
 						gizmo.lift = std::max(gizmo.lift, c->horizon.get_value(leave_index, leave_index+1));
 						gizmo.set_lift.emplace_back([c,leave_index](float lift){
 							c->horizon.raise_value(leave_index, leave_index+1, lift); //<-- set to bottom of stitch at travel enter
@@ -586,7 +591,8 @@ struct Translator {
 				}
 				if (live_above.empty() && live_above.empty()) {
 					//first/only yarn in plating:
-					assert(!live.is_valid());
+					assert(!live_to_surround.is_valid());
+					assert(!live_to_travel.is_valid());
 
 					live_to_surround = travel_to_surround;
 					live_to_travel = surround_to_travel;
@@ -622,6 +628,32 @@ struct Translator {
 
 				yarn_to_stitch = yarn_out;
 			}
+
+			//connect live edge *from* stitch:
+			{
+				assert(live_to_travel.is_valid());
+
+				faces.emplace_back();
+				gizmo.faces.emplace_back(faces.size()-1);
+				Face &face = faces.back();
+				face.type = "yarn-to-left x -y1 x +y1";
+				float x = stitch_x(surround_index, dir);
+				face.vertices = {
+					glm::vec3(x, 0.0f, live_depth),
+					glm::vec3(x, 0.0f, bed.depth),
+					glm::vec3(x, FaceHeight, bed.depth),
+					glm::vec3(x, FaceHeight, live_depth),
+				};
+				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
+				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
+
+				gizmo.connections.emplace_back(yarn_out, live_to_travel);
+
+				//NOTE: I don't think this needs lift management
+
+				yarn_from_stitch = yarn_in;
+			}
+
 
 			//TODO: similar back-to-front walk for out faces!
 
