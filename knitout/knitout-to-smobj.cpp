@@ -542,7 +542,7 @@ struct Translator {
 				faces.emplace_back();
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
-				face.type = "yarn-to-right x -y1 x +y1";
+				face.type = "yarn-to-right x +y1 x -y1";
 				float x = stitch_x(surround_index, (dir == Right ? Left : Right));
 				face.vertices = {
 					glm::vec3(x, 0.0f, live_depth),
@@ -550,8 +550,8 @@ struct Translator {
 					glm::vec3(x, FaceHeight, bed.depth),
 					glm::vec3(x, FaceHeight, live_depth),
 				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
+				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
+				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
 
 				gizmo.connections.emplace_back(live, yarn_in);
 
@@ -605,7 +605,7 @@ struct Translator {
 		FaceEdge loop_in = bed[needle_index(needle)].top_edge;
 
 		std::string L = std::to_string(loop_in.count);
-		std::string Y = std::to_string(yarn_from_stitch.count);
+		std::string Y = std::to_string(yarn_to_stitch.count);
 
 		{ //build stitch face:
 			FaceEdge stitch_yarn_in, stitch_yarn_out;
