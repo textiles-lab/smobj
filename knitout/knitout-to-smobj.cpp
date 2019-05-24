@@ -13,6 +13,7 @@
 #include <map>
 #include <set>
 #include <algorithm>
+#include <functional>
 
 #include <cassert>
 
@@ -68,6 +69,13 @@ struct Connection {
 	FaceEdge a,b;
 };
 
+struct YarnVertical {
+	YarnVertical(int32_t index_, FaceEdge const &a_, Direction da_, FaceEdge const &b_, Direction db_) : index(index_), a(a_), b(b_), da(da_), db(db_) { }
+	int32_t index;
+	FaceEdge a,b;
+	Direction da, db;
+};
+
 //top edges of faces to avoid in the between-bed area:
 // (highest-first)
 struct TopEdge {
@@ -84,6 +92,7 @@ struct TopEdge {
 struct Gizmo {
 	std::vector< uint32_t > faces;
 	std::vector< Connection > connections;
+	std::vector< YarnVertical > yarn_verticals;
 	float lift = 0.0f;
 	std::vector< std::function< void(float) > > set_lift; //called in order after lift is finalized
 };
@@ -134,7 +143,7 @@ struct Carrier {
 	//info about current parked position:
 	FaceEdge parked_edge; //is a valid edge if carrier is in, otherwise is not
 	//by convention, edge points upward
-	uint32_t parked_index = 0;
+	int32_t parked_index = 0;
 	Direction parked_direction = Right; //was it moving left or right when parked?
 	//height of parked position is not tracked (or queried?)
 };
@@ -364,10 +373,13 @@ struct Translator {
 				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
 				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
 
-				//TODO: mark for merge w/ optional yarn-*-up-* face:
+				//mark for merge w/ optional yarn-*-up-* face:
 				//  c->parked_edge (from c->parked_direction)
 				// up to
 				//  yarn_in (to Right)
+				bring_gizmo.yarn_verticals.emplace_back(c->parked_index,
+					c->parked_edge, c->parked_direction,
+					yarn_in, Right);
 
 				int32_t begin = c->parked_index;
 				int32_t end = bring_index + 1;
@@ -399,10 +411,14 @@ struct Translator {
 				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
 				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
 
-				//TODO: mark for merge w/ optional yarn-*-up-* face:
+				//mark for merge w/ optional yarn-*-up-* face:
 				//  c->parked_edge (going c->parked_direction)
 				// up to
 				//  yarn_in (going Left)
+				bring_gizmo.yarn_verticals.emplace_back(c->parked_index,
+					c->parked_edge, c->parked_direction,
+					yarn_in, Left);
+
 
 				int32_t begin = bring_index;
 				int32_t end = c->parked_index + 1;
@@ -419,6 +435,7 @@ struct Translator {
 			}
 		}
 		//Carriers are all now parked at the correct edge, so commit the "bring" gizmo / resolve lift:
+
 		commit(bring_gizmo);
 
 		//Now build the surround:
@@ -490,10 +507,15 @@ struct Translator {
 						FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
 						FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
 
-						//TODO: mark for merge w/ optional yarn-*-up-* face:
+						//mark for merge w/ optional yarn-*-up-* face:
 						//  c->parked_edge (from c->parked_direction)
 						// up to
 						//  yarn_in (to Right)
+						assert(c->parked_index == bring_index); //c should be here
+						gizmo.yarn_verticals.emplace_back(bring_index,
+							c->parked_edge, c->parked_direction,
+							yarn_in, Right);
+
 
 						gizmo.lift = std::max(gizmo.lift, c->horizon.get_value(bring_index, bring_index+1));
 						gizmo.set_lift.emplace_back([c,bring_index](float lift){
@@ -547,10 +569,16 @@ struct Translator {
 						FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
 						FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
 
-						//TODO: mark for merge w/ optional yarn-*-up-* face:
+						//mark for merge w/ optional yarn-*-up-* face:
 						//  c->parked_edge (from c->parked_direction)
 						// up to
 						//  yarn_in (to Left)
+						assert(c->parked_index == bring_index); //c should be here
+						gizmo.yarn_verticals.emplace_back(bring_index,
+							c->parked_edge, c->parked_direction,
+							yarn_in, Left);
+
+
 
 						gizmo.lift = std::max(gizmo.lift, c->horizon.get_value(bring_index, bring_index+1));
 						gizmo.set_lift.emplace_back([c,bring_index](float lift){
@@ -673,7 +701,113 @@ struct Translator {
 				v.y += gizmo.lift;
 			}
 		}
-		//TODO: build merge faces
+
+		//build yarn verticals:
+		for (auto const &yv : gizmo.yarn_verticals) {
+			float left = travel_x(yv.index, Left);
+			float right = travel_x(yv.index, Right);
+
+			std::string type = "yarn-";
+
+			//oriented bottom-to-top:
+			FaceEdge to_exit;
+			FaceEdge from_entrance;
+
+			glm::vec3 top_left;
+			glm::vec3 top_right;
+			glm::vec3 bottom_left;
+			glm::vec3 bottom_right;
+
+			{ //mitre low edge:
+				FaceEdge const &edge = yv.a;
+				Direction const &dir = yv.da;
+				assert(edge.is_valid());
+
+				Face &face = faces[edge.face];
+
+				glm::vec3 &low = face.vertices[(edge.edge + (edge.flip == FaceEdge::FlipNo ? 0 : 1)) % face.vertices.size()];
+				glm::vec3 &high = face.vertices[(edge.edge + (edge.flip == FaceEdge::FlipNo ? 1 : 0)) % face.vertices.size()];
+				assert(low.y < high.y);
+				if (dir == Right) {
+					assert(low.x == right);
+					assert(high.x == right);
+					high.x = glm::mix(left, right, 0.125f);
+					low.x = glm::mix(left, right, 0.875f);
+					type += "right";
+					from_entrance = edge;
+					bottom_left = high;
+					bottom_right = low;
+					assert(bottom_left.x < bottom_right.x);
+				} else {
+					assert(low.x == left);
+					assert(high.x == left);
+					high.x = glm::mix(left, right, 0.875f);
+					low.x = glm::mix(left, right, 0.125f);
+					type += "left";
+					from_entrance = edge;
+					bottom_left = low;
+					bottom_right = high;
+					assert(bottom_left.x < bottom_right.x);
+				}
+			}
+			type += "-up-";
+
+			{ //mitre high edge:
+				FaceEdge const &edge = yv.b;
+				Direction const &dir = yv.db;
+				assert(edge.is_valid());
+
+				Face &face = faces[edge.face];
+
+				glm::vec3 &low = face.vertices[(edge.edge + (edge.flip == FaceEdge::FlipNo ? 0 : 1)) % face.vertices.size()];
+				glm::vec3 &high = face.vertices[(edge.edge + (edge.flip == FaceEdge::FlipNo ? 1 : 0)) % face.vertices.size()];
+				assert(low.y < high.y);
+				if (dir == Right) {
+					assert(low.x == left);
+					assert(high.x == left);
+					high.x = glm::mix(left, right, 0.125f);
+					low.x = glm::mix(left, right, 0.875f);
+					type += "right";
+					to_exit = edge;
+					top_left = high;
+					top_right = low;
+					assert(top_left.x < top_right.x);
+				} else {
+					assert(low.x == right);
+					assert(high.x == right);
+					high.x = glm::mix(left, right, 0.875f);
+					low.x = glm::mix(left, right, 0.125f);
+					type += "left";
+					to_exit = edge;
+					top_left = low;
+					top_right = high;
+					assert(top_left.x < top_right.x);
+				}
+			}
+			type += " -y1 x +y1 x";
+
+			if (top_left == bottom_left && top_right == bottom_right) {
+				std::cout << "NOTE: merged case." << std::endl;
+				gizmo.connections.emplace_back(from_entrance, to_exit);
+			} else {
+				faces.emplace_back();
+				Face &face = faces.back();
+				face.type = type;
+				face.vertices = {
+					bottom_left,
+					bottom_right,
+					top_right,
+					top_left
+				};
+
+				FaceEdge yarn_in(faces.size()-1, 0, 1, (yv.da == Right ? FaceEdge::FlipNo : FaceEdge::FlipYes));
+				FaceEdge yarn_out(faces.size()-1, 0, 1, (yv.db == Right ? FaceEdge::FlipYes : FaceEdge::FlipNo));
+
+				gizmo.connections.emplace_back(from_entrance, yarn_in);
+				gizmo.connections.emplace_back(yarn_in, to_exit);
+			}
+		}
+
 		//TODO: add connections somehow? (why were these in gizmo anyway?)
 
 		//report on lift values to update horizons:
@@ -999,7 +1133,7 @@ int main(int argc, char **argv) {
 			f_line += " " + std::to_string(++vertex_index);
 		}
 		out << f_line << "\n";
-		out << "T " << type_index[f.type] << "\n"; //DEBUG: << " # " << f.type << "\n";
+		out << "T " << type_index[f.type] << " # " << f.type << "\n";
 	}
 
 	return 0;

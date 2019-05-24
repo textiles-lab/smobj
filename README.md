@@ -85,7 +85,7 @@ L split-back-to-left -l1 -l1 -y1 +l2 +l1 +y1
 L loop -l1 x +l1 x
 L yarn-to-right x +y1 x -y1
 L yarn-to-left x -y1 x +y1
-#yarn enters going left/right from diagonal bottom face, leaves going left/right from diagonal top face:
+#yarn enters going left/right into diagonal bottom face, leaves going left/right from diagonal top face:
 L yarn-left-up-right -y1 x +y1 x
 L yarn-left-up-left -y1 x +y1 x
 L yarn-right-up-right -y1 x +y1 x
