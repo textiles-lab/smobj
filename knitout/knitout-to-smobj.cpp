@@ -77,6 +77,12 @@ struct YarnVertical {
 	Direction da, db;
 };
 
+struct LoopVertical {
+	LoopVertical(int32_t index_, FaceEdge const &a_, FaceEdge const &b_) : index(index_), a(a_), b(b_) { }
+	int32_t index;
+	FaceEdge a,b;
+};
+
 //top edges of faces to avoid in the between-bed area:
 // (highest-first)
 struct TopEdge {
@@ -94,6 +100,7 @@ struct Gizmo {
 	std::vector< uint32_t > faces;
 	std::vector< Connection > connections;
 	std::vector< YarnVertical > yarn_verticals;
+	std::vector< LoopVertical > loop_verticals;
 	float lift = 0.0f;
 	std::vector< std::function< void(float) > > set_lift; //called in order after lift is finalized
 };
