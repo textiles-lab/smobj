@@ -65,8 +65,9 @@ struct Face {
 };
 
 struct Connection {
-	Connection(FaceEdge const &a_, FaceEdge const &b_) : a(a_), b(b_) { }
+	Connection(FaceEdge const &a_, FaceEdge const &b_, std::string const &why_) : a(a_), b(b_), why(why_) { }
 	FaceEdge a,b;
+	std::string why; //DEBUG
 };
 
 struct YarnVertical {
@@ -239,6 +240,7 @@ struct Translator {
 
 	//--- output ---
 	std::vector< Face > faces;
+	std::vector< Connection > connections;
 
 	//--- helper functions ---
 	std::vector< Carrier * > lookup_carriers(std::vector< std::string > const &cs) {
@@ -650,7 +652,7 @@ struct Translator {
 				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
 				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
 
-				gizmo.connections.emplace_back(live_to_surround, yarn_in);
+				gizmo.connections.emplace_back(live_to_surround, yarn_in, "A");
 
 				//NOTE: I don't think this needs lift management
 
@@ -675,7 +677,7 @@ struct Translator {
 				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
 				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
 
-				gizmo.connections.emplace_back(yarn_out, live_to_travel);
+				gizmo.connections.emplace_back(yarn_out, live_to_travel, "B");
 
 				//NOTE: I don't think this needs lift management
 
@@ -788,7 +790,7 @@ struct Translator {
 
 			if (top_left == bottom_left && top_right == bottom_right) {
 				std::cout << "NOTE: merged case." << std::endl;
-				gizmo.connections.emplace_back(from_entrance, to_exit);
+				gizmo.connections.emplace_back(from_entrance, to_exit, "merged");
 			} else {
 				faces.emplace_back();
 				Face &face = faces.back();
@@ -799,16 +801,33 @@ struct Translator {
 					top_right,
 					top_left
 				};
+				//DEBUG:
+				std::cout << face.type << std::endl;
+				for (auto v : face.vertices) {
+					std::cout << v.x << " " << v.y << " " << v.z << std::endl; //DEBUG
+				}
 
-				FaceEdge yarn_in(faces.size()-1, 0, 1, (yv.da == Right ? FaceEdge::FlipNo : FaceEdge::FlipYes));
-				FaceEdge yarn_out(faces.size()-1, 0, 1, (yv.db == Right ? FaceEdge::FlipYes : FaceEdge::FlipNo));
+				FaceEdge yarn_in(faces.size()-1, 0, 1, (yv.da == Right ? FaceEdge::FlipYes : FaceEdge::FlipNo));
+				if (yarn_in.flip == FaceEdge::FlipNo) {
+					assert(face.vertices[yarn_in.edge].y < face.vertices[(yarn_in.edge+1)%4].y);
+				} else {
+					assert(face.vertices[yarn_in.edge].y > face.vertices[(yarn_in.edge+1)%4].y);
+				}
+				FaceEdge yarn_out(faces.size()-1, 2, 1, (yv.db == Right ? FaceEdge::FlipNo : FaceEdge::FlipYes));
+				if (yarn_out.flip == FaceEdge::FlipNo) {
+					assert(face.vertices[yarn_out.edge].y < face.vertices[(yarn_out.edge+1)%4].y);
+				} else {
+					assert(face.vertices[yarn_out.edge].y > face.vertices[(yarn_out.edge+1)%4].y);
+				}
 
-				gizmo.connections.emplace_back(from_entrance, yarn_in);
-				gizmo.connections.emplace_back(yarn_in, to_exit);
+
+				gizmo.connections.emplace_back(from_entrance, yarn_in, "in");
+				gizmo.connections.emplace_back(yarn_out, to_exit, "out");
 			}
 		}
 
-		//TODO: add connections somehow? (why were these in gizmo anyway?)
+		//add connections: (NOTE: why are these in gizmo anyway?)
+		connections.insert(connections.end(), gizmo.connections.begin(), gizmo.connections.end());
 
 		//report on lift values to update horizons:
 		float lift = gizmo.lift;
@@ -868,10 +887,10 @@ struct Translator {
 			}
 
 			if (yarn_to_stitch.is_valid()) {
-				gizmo.connections.emplace_back(yarn_to_stitch, stitch_yarn_in);
+				gizmo.connections.emplace_back(yarn_to_stitch, stitch_yarn_in, "knit in");
 			}
 			if (yarn_from_stitch.is_valid()) {
-				gizmo.connections.emplace_back(stitch_yarn_out, yarn_from_stitch);
+				gizmo.connections.emplace_back(stitch_yarn_out, yarn_from_stitch, "knit out");
 			}
 
 			//increase lift based on edge conflicts in stitch column:
@@ -1134,6 +1153,46 @@ int main(int argc, char **argv) {
 		}
 		out << f_line << "\n";
 		out << "T " << type_index[f.type] << " # " << f.type << "\n";
+	}
+	
+	{ //PARANOIA: build list of edge types and check against connections!
+		std::map< std::pair< uint32_t, uint32_t >, std::string > face_edge_type;
+		for (auto const &f : translator->faces) {
+			std::vector< std::string > edge_types;
+			{
+				std::istringstream str(f.type);
+				std::string tok;
+				str >> tok; //discard name
+				while (str >> tok) {
+					edge_types.emplace_back(tok);
+				}
+			}
+			assert(edge_types.size() == f.vertices.size());
+			uint32_t fi = &f - &(translator->faces[0]);
+			for (uint32_t ei = 0; ei < edge_types.size(); ++ei) {
+				auto ret = face_edge_type.insert(std::make_pair(std::make_pair(fi, ei), edge_types[ei]));
+				assert(ret.second);
+			}
+		}
+		for (auto const &c : translator->connections) {
+			auto fa = face_edge_type.find(std::make_pair(c.a.face, c.a.edge));
+			assert(fa != face_edge_type.end());
+			auto fb = face_edge_type.find(std::make_pair(c.b.face, c.b.edge));
+			assert(fb != face_edge_type.end());
+			std::string ta = fa->second;
+			std::string tb = fb->second;
+			//std::cout << "Found " << ta << " to " << tb << " (" << c.why << ")" << std::endl;
+			assert(ta.size() == tb.size());
+			assert(ta.substr(1) == tb.substr(1));
+			assert((ta[0] == '+' && tb[0] == '-') || (ta[0] == '-' && tb[0] == '+'));
+		}
+
+	}
+
+	//edges:
+	for (auto const &c : translator->connections) {
+		out << "e " << (c.a.face+1) << "/" << (c.a.edge+1)
+		    << " " << (c.b.face+1) << "/" << (c.a.flip == c.b.flip ? "-" : "") << (c.b.edge+1) << " # " << c.why << "\n";
 	}
 
 	return 0;
