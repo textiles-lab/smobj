@@ -83,19 +83,6 @@ struct LoopVertical {
 	FaceEdge a,b;
 };
 
-//top edges of faces to avoid in the between-bed area:
-// (highest-first)
-struct TopEdge {
-	TopEdge(glm::vec3 const &a_, glm::vec3 const &b_) : a(a_), b(b_) {
-		if (a.y < b.y) std::swap(a,b);
-	}
-	glm::vec3 a,b;
-	//kept sorted by highest point:
-	bool operator<(TopEdge const &other) const {
-		return a.y < other.a.y;
-	}
-};
-
 struct Gizmo {
 	std::vector< uint32_t > faces;
 	std::vector< Connection > connections;
@@ -116,7 +103,7 @@ struct BedColumns : public std::unordered_map< int32_t, Column > {
 
 struct Horizon {
 	//returns maximum value in range (begin,end):
-	float get_value(int32_t begin, int32_t end) {
+	float get_value(int32_t begin, int32_t end) const {
 		float value = -std::numeric_limits< float >::infinity();
 		for (int32_t i = begin; i < end; ++i) {
 			auto f = values.find(i);
@@ -158,7 +145,7 @@ struct Carrier {
 
 struct Crossings {
 	//crossing indicies work with 3n being loop crossings and 3n+/-1 being yarn crossings
-	float check_crossing(int32_t front, int32_t back) {
+	float check_crossing(int32_t front, int32_t back) const {
 		float value = -std::numeric_limits< float >::infinity();
 		//TODO: could use range lookups to do better, or use height-sorting to do better:
 		for (auto const &c : crossings) {
@@ -277,19 +264,28 @@ struct Translator {
 		assert(0);
 	}
 
+	enum SetupSpecial {
+		SpecialNone,
+		SpecialStopAtShearFront
+	};
 
 	//bring carriers together in order to make a stitch in a given direction on a given bed/needle.
 	//adds both the bring-to and the come-from for the stitch to the gizmo,
 	//sets yarn_to_stitch and yarn_from_stitch properly for connection to the stitch.
 	void setup_carriers(Direction dir, BedColumns const &bed, int32_t needle, std::vector< Carrier * > const &cs,
 		Gizmo *gizmo_,
-		FaceEdge *yarn_to_stitch_, FaceEdge *yarn_from_stitch_) {
+		FaceEdge *yarn_to_stitch_, FaceEdge *yarn_from_stitch_,
+		SetupSpecial special = SpecialNone) {
 		assert(gizmo_);
 		auto &gizmo = *gizmo_;
 		assert(yarn_to_stitch_);
 		auto &yarn_to_stitch = *yarn_to_stitch_;
 		assert(yarn_from_stitch_);
 		auto &yarn_from_stitch = *yarn_from_stitch_;
+
+		if (special == SpecialStopAtShearFront) {
+			assert(&bed == &back_bed || &bed == &back_sliders);
+		}
 
 		yarn_to_stitch = FaceEdge();
 		yarn_from_stitch = FaceEdge();
@@ -343,13 +339,12 @@ struct Translator {
 			if (!c->parked_edge.is_valid()) {
 
 				c->parked_index = bring_index;
-				c->parked_direction = Left;
+				c->parked_direction = dir;
 
 				//build a parked face coming from the right:
 				faces.emplace_back();
 				bring_gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
-				face.type = "yarn-to-left x -y1 x +y1";
 				face.vertices = {
 					glm::vec3(travel_x(c->parked_index, Left), 0.0f, c->depth),
 					glm::vec3(travel_x(c->parked_index, Right), 0.0f, c->depth),
@@ -357,7 +352,15 @@ struct Translator {
 					glm::vec3(travel_x(c->parked_index, Left), FaceHeight, c->depth),
 				};
 
-				c->parked_edge = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
+				if (dir == Left) {
+					face.type = "yarn-to-left x -y1 x +y1";
+				
+					c->parked_edge = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
+				} else {
+					face.type = "yarn-to-right x +y1 x -y1";
+
+					c->parked_edge = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
+				}
 
 				bring_gizmo.lift = std::max(bring_gizmo.lift, c->horizon.get_value(bring_index, bring_index+1));
 				bring_gizmo.set_lift.emplace_back([c,bring_index](float lift){
@@ -924,6 +927,11 @@ struct Translator {
 				live_to_travel = yarn_in;
 			}
 
+			if (special == SpecialStopAtShearFront) {
+				yarn_to_stitch = live_to_surround;
+				yarn_from_stitch = live_to_travel;
+				return;
+			}
 
 			//connect shear front to shear back:
 			{
@@ -1320,12 +1328,255 @@ struct Translator {
 		}
 
 
-		//TODO: proper glue faces for yarn and loop connections, if lift is big(?)
-
 		//register top edge with column:
 
 		assert(bed[needle_index(needle)].top_edge.is_valid()); //DEBUG
 	}
+
+	void split(Direction dir, BedColumns &from_bed, int32_t from_needle, BedColumns &to_bed, int32_t to_needle, std::vector< Carrier * > cs) {
+		assert(&from_bed == &back_bed || &from_bed == &back_sliders || &from_bed == &front_sliders || &from_bed == &front_bed);
+		assert(&to_bed == &back_bed || &to_bed == &back_sliders || &to_bed == &front_sliders || &to_bed == &front_bed);
+
+		bool is_front_to_back;
+		if ( (&from_bed == &back_bed || &from_bed == &back_sliders)
+		  && (&to_bed == &front_bed || &to_bed == &front_sliders) ) {
+			is_front_to_back = false;
+		} else if ( (&from_bed == &front_bed || &from_bed == &front_sliders)
+		         && (&to_bed == &back_bed || &to_bed == &back_sliders) ) {
+			is_front_to_back = true;
+		} else {
+			throw std::runtime_error("xfer must be f <-> b");
+		}
+		if ( (&from_bed == &front_sliders || &from_bed == &back_sliders)
+		  && (&to_bed == &front_sliders || &to_bed == &back_sliders) ) {
+			throw std::runtime_error("xfer can't be fs <-> bs");
+		}
+
+		BedColumns &front_bed = (is_front_to_back ? from_bed : to_bed);
+		BedColumns &back_bed = (is_front_to_back ? to_bed : from_bed);
+		int32_t front_needle = (is_front_to_back ? from_needle : to_needle);
+		int32_t back_needle = (is_front_to_back ? to_needle : from_needle);
+		int32_t front_index = needle_index(front_needle);
+		int32_t back_index = needle_index(back_needle);
+
+		if (back_needle + racking != front_needle) {
+			throw std::runtime_error("xfer with improper racking.");
+		}
+
+		Gizmo gizmo;
+
+		//set up yarn to/from stitch @ shear plane:
+		FaceEdge yarn_to_stitch, yarn_from_stitch;
+		setup_carriers(dir, back_bed, back_needle, cs, &gizmo, &yarn_to_stitch, &yarn_from_stitch, SpecialStopAtShearFront);
+
+		{ //determine lift based on a clear lane to front and back:
+			//(this is a bit heavy-handed, as it could clear based on front/back loop existence)
+			float R = 0.125f; //lift a bit more to avoid yarns overlapping the top of other travelling loops
+			gizmo.lift = std::max(gizmo.lift, this->front_bed[front_index].top_y + R);
+			gizmo.lift = std::max(gizmo.lift, this->front_sliders[front_index].top_y + R);
+			gizmo.lift = std::max(gizmo.lift, this->back_sliders[back_index].top_y + R);
+			gizmo.lift = std::max(gizmo.lift, this->back_bed[back_index].top_y + R);
+			for (auto const &nc : carriers) {
+				gizmo.lift = std::max(gizmo.lift, nc.second.horizon.get_value(front_index, front_index+1) + R);
+			}
+			gizmo.lift = std::max(gizmo.lift, crossings.check_crossing(front_index, back_index) + R);
+
+			gizmo.set_lift.emplace_back([this,front_index,back_index](float lift){
+				float top = lift + FaceHeight;
+				//TODO: could set some lower if no to-front / to-back output loop
+
+				this->front_bed[front_index].top_y = top;
+				this->front_sliders[front_index].top_y = top;
+				this->back_bed[back_index].top_y = top;
+				this->back_sliders[back_index].top_y = top;
+				for (auto &nc : carriers) {
+					nc.second.horizon.raise_value(front_index, front_index+1, top);
+				}
+				crossings.add_crossing(front_index, back_index, top);
+			});
+		}
+
+		//set up connections to front/back beds:
+		FaceEdge front_loop_to_stitch, back_loop_to_stitch;
+		FaceEdge front_loop_from_stitch, back_loop_from_stitch;
+		{
+			FaceEdge front_loop_in = front_bed[needle_index(front_needle)].top_edge;
+			FaceEdge back_loop_in = back_bed[needle_index(back_needle)].top_edge;
+			if (front_loop_in.is_valid() && front_loop_in.count > 0) {
+				faces.emplace_back();
+				gizmo.faces.emplace_back(faces.size()-1);
+				Face &face = faces.back();
+
+				std::string L = std::to_string(front_loop_in.count);
+				face.type = "loop -l" + L +" x +l" + L + " x";
+				float left = stitch_x(front_index, Left);
+				float right = stitch_x(front_index, Right);
+				face.vertices = {
+					glm::vec3(left, 0.0f, front_bed.depth),
+					glm::vec3(right, 0.0f, front_bed.depth),
+					glm::vec3(glm::mix(left, right, 0.5f), 0.0f, ShearFront),
+					glm::vec3(left, 0.0f, ShearFront),
+				};
+
+				FaceEdge loop_in(gizmo.faces.back(), 0, front_loop_in.count, FaceEdge::FlipNo);
+				FaceEdge loop_out(gizmo.faces.back(), 2, front_loop_in.count, FaceEdge::FlipYes);
+
+				gizmo.loop_verticals.emplace_back(front_index, front_loop_in, loop_in);
+
+				front_loop_to_stitch = loop_out;
+			}
+
+			if (back_loop_in.is_valid() && back_loop_in.count > 0) {
+				faces.emplace_back();
+				gizmo.faces.emplace_back(faces.size()-1);
+				Face &face = faces.back();
+
+				std::string L = std::to_string(back_loop_in.count);
+				face.type = "loop -l" + L +" x +l" + L + " x";
+				float back_left = stitch_x(back_index, Left);
+				float back_right = stitch_x(back_index, Right);
+				float left = stitch_x(front_index, Left);
+				float right = stitch_x(front_index, Right);
+				face.vertices = {
+					glm::vec3(back_left, 0.0f, back_bed.depth),
+					glm::vec3(back_right, 0.0f, back_bed.depth),
+					glm::vec3(right, 0.0f, ShearFront),
+					glm::vec3(glm::mix(left, right, 0.5f), 0.0f, ShearFront),
+				};
+
+				FaceEdge loop_in(gizmo.faces.back(), 0, back_loop_in.count, FaceEdge::FlipNo);
+				FaceEdge loop_out(gizmo.faces.back(), 2, back_loop_in.count, FaceEdge::FlipYes);
+
+				gizmo.loop_verticals.emplace_back(back_index, back_loop_in, loop_in);
+
+				back_loop_to_stitch = loop_out;
+			}
+
+			uint32_t front_loop_out_count = (is_front_to_back ? cs.size() : front_loop_in.count + back_loop_in.count);
+			if (front_loop_out_count > 0) {
+				faces.emplace_back();
+				gizmo.faces.emplace_back(faces.size()-1);
+				Face &face = faces.back();
+
+				std::string L = std::to_string(front_loop_out_count);
+				face.type = "loop -l" + L +" x +l" + L + " x";
+				float left = stitch_x(front_index, Left);
+				float right = stitch_x(front_index, Right);
+				face.vertices = {
+					glm::vec3(left, FaceHeight, ShearFront),
+					glm::vec3(glm::mix(left, right, 0.5f), FaceHeight, ShearFront),
+					glm::vec3(right, FaceHeight, front_bed.depth),
+					glm::vec3(left, FaceHeight, front_bed.depth),
+				};
+
+				FaceEdge loop_in(gizmo.faces.back(), 0, front_loop_out_count, FaceEdge::FlipNo);
+				FaceEdge loop_out(gizmo.faces.back(), 2, front_loop_out_count, FaceEdge::FlipYes);
+
+				front_loop_from_stitch = loop_in;
+
+				this->front_bed[front_index].top_edge = loop_out;
+			} else {
+				this->front_bed[front_index].top_edge = FaceEdge();
+			}
+
+			uint32_t back_loop_out_count = (is_front_to_back ? front_loop_in.count + back_loop_in.count : cs.size());
+			if (back_loop_out_count > 0) {
+				faces.emplace_back();
+				gizmo.faces.emplace_back(faces.size()-1);
+				Face &face = faces.back();
+
+				std::string L = std::to_string(back_loop_out_count);
+				face.type = "loop -l" + L +" x +l" + L + " x";
+				float left = stitch_x(front_index, Left);
+				float right = stitch_x(front_index, Right);
+				float back_left = stitch_x(back_index, Left);
+				float back_right = stitch_x(back_index, Right);
+				face.vertices = {
+					glm::vec3(glm::mix(left, right, 0.5f), FaceHeight, ShearFront),
+					glm::vec3(right, FaceHeight, ShearFront),
+					glm::vec3(back_right, FaceHeight, back_bed.depth),
+					glm::vec3(back_left, FaceHeight, back_bed.depth),
+				};
+
+				FaceEdge loop_in(gizmo.faces.back(), 0, back_loop_out_count, FaceEdge::FlipNo);
+				FaceEdge loop_out(gizmo.faces.back(), 2, back_loop_out_count, FaceEdge::FlipYes);
+
+				back_loop_from_stitch = loop_in;
+
+				this->back_bed[back_index].top_edge = loop_out;
+			} else {
+				this->back_bed[back_index].top_edge = FaceEdge();
+			}
+
+
+		}
+
+		
+		//build stitch @ shear plane:
+		{
+			faces.emplace_back();
+			gizmo.faces.emplace_back(faces.size()-1);
+			Face &face = faces.back();
+
+			face.type = "split-";
+			face.type += (is_front_to_back ? "front" : "back");
+			face.type += "-to-";
+			face.type += (dir == Right ? "right" : "left");
+			face.type += " -l" + std::to_string(front_loop_to_stitch.count);
+			face.type += " -l" + std::to_string(back_loop_to_stitch.count);
+			face.type += (dir == Right ? " +y" : " -y") + std::to_string(cs.size());
+			face.type += " +l" + std::to_string(back_loop_from_stitch.count);
+			face.type += " +l" + std::to_string(front_loop_from_stitch.count);
+			face.type += (dir == Right ? " -y" : " +y") + std::to_string(cs.size());
+
+			float left = stitch_x(front_index, Left);
+			float right = stitch_x(front_index, Right);
+
+			face.vertices = {
+					glm::vec3(left, 0.0f, ShearFront),
+					glm::vec3(glm::mix(left,right,0.5f), 0.0f, ShearFront),
+					glm::vec3(right, 0.0f, ShearFront),
+					glm::vec3(right, FaceHeight, ShearFront),
+					glm::vec3(glm::mix(left,right,0.5f), FaceHeight, ShearFront),
+					glm::vec3(left, FaceHeight, ShearFront),
+			};
+
+			//connect to loops/yarns:
+			if (dir == Right) {
+				if (yarn_to_stitch.is_valid()) {
+					gizmo.connections.emplace_back(yarn_to_stitch, FaceEdge(gizmo.faces.back(), 5, cs.size(), FaceEdge::FlipYes), "yarn to split-right");
+				}
+				if (yarn_from_stitch.is_valid()) {
+					gizmo.connections.emplace_back(yarn_from_stitch, FaceEdge(gizmo.faces.back(), 2, cs.size(), FaceEdge::FlipNo), "yarn to split-right");
+				}
+			} else { assert(dir == Left);
+				if (yarn_to_stitch.is_valid()) {
+					gizmo.connections.emplace_back(yarn_to_stitch, FaceEdge(gizmo.faces.back(), 2, cs.size(), FaceEdge::FlipNo), "yarn to split-left");
+				}
+				if (yarn_from_stitch.is_valid()) {
+					gizmo.connections.emplace_back(yarn_from_stitch, FaceEdge(gizmo.faces.back(), 5, cs.size(), FaceEdge::FlipYes), "yarn to split-left");
+				}
+			}
+
+			if (front_loop_to_stitch.is_valid()) {
+				gizmo.connections.emplace_back(front_loop_to_stitch, FaceEdge(gizmo.faces.back(), 0, front_loop_to_stitch.count, FaceEdge::FlipNo), "front loop to split");
+			}
+			if (back_loop_to_stitch.is_valid()) {
+				gizmo.connections.emplace_back(back_loop_to_stitch, FaceEdge(gizmo.faces.back(), 1, front_loop_to_stitch.count, FaceEdge::FlipNo), "back loop to split");
+			}
+			if (front_loop_from_stitch.is_valid()) {
+				gizmo.connections.emplace_back(front_loop_from_stitch, FaceEdge(gizmo.faces.back(), 4, front_loop_from_stitch.count, FaceEdge::FlipYes), "front loop from split");
+			}
+			if (back_loop_from_stitch.is_valid()) {
+				gizmo.connections.emplace_back(back_loop_from_stitch, FaceEdge(gizmo.faces.back(), 3, back_loop_from_stitch.count, FaceEdge::FlipYes), "back loop from split");
+			}
+
+		}
+
+		//apply lift and create merge faces:
+		commit(gizmo);
+	}
+
 
 
 	//----- DEBUG helpers -----
@@ -1542,6 +1793,25 @@ int main(int argc, char **argv) {
 
 		} else if (tokens[0] == "tuck") {
 		} else if (tokens[0] == "split") {
+			//split D N N2 CS
+			if (tokens.size() < 4) throw std::runtime_error("split must have at least three parameters.");
+			Direction dir;
+			parse_direction(tokens[1], &dir);
+			Bed bed;
+			int32_t needle;
+			parse_bedneedle(tokens[2], &bed, &needle);
+			Bed bed2;
+			int32_t needle2;
+			parse_bedneedle(tokens[3], &bed2, &needle2);
+			std::vector< std::string > carriers(tokens.begin() + 4, tokens.end());
+
+			translator->split(
+				dir,
+				translator->lookup_bed(bed), needle,
+				translator->lookup_bed(bed2), needle2,
+				translator->lookup_carriers(carriers)
+			);
+
 		} else if (tokens[0] == "rack") {
 			//rack R
 			if (tokens.size() != 2) throw std::runtime_error("rack should have exactly one parameter.");
