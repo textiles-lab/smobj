@@ -1093,7 +1093,6 @@ struct Translator {
 			}
 
 			if (top_left == bottom_left && top_right == bottom_right) {
-				std::cout << "NOTE: merged case." << std::endl;
 				gizmo.connections.emplace_back(lv.a, lv.b, "merged loop");
 			} else {
 				faces.emplace_back();
@@ -1474,9 +1473,9 @@ struct Translator {
 
 				front_loop_from_stitch = loop_in;
 
-				this->front_bed[front_index].top_edge = loop_out;
+				front_bed[front_index].top_edge = loop_out;
 			} else {
-				this->front_bed[front_index].top_edge = FaceEdge();
+				front_bed[front_index].top_edge = FaceEdge();
 			}
 
 			uint32_t back_loop_out_count = (is_front_to_back ? front_loop_in.count + back_loop_in.count : cs.size());
@@ -1503,9 +1502,9 @@ struct Translator {
 
 				back_loop_from_stitch = loop_in;
 
-				this->back_bed[back_index].top_edge = loop_out;
+				back_bed[back_index].top_edge = loop_out;
 			} else {
-				this->back_bed[back_index].top_edge = FaceEdge();
+				back_bed[back_index].top_edge = FaceEdge();
 			}
 
 
@@ -1811,7 +1810,22 @@ int main(int argc, char **argv) {
 				translator->lookup_bed(bed2), needle2,
 				translator->lookup_carriers(carriers)
 			);
+		} else if (tokens[0] == "xfer") {
+			//xfer N N2
+			if (tokens.size() != 3) throw std::runtime_error("xfer must have exactly three parameters.");
+			Bed bed;
+			int32_t needle;
+			parse_bedneedle(tokens[1], &bed, &needle);
+			Bed bed2;
+			int32_t needle2;
+			parse_bedneedle(tokens[2], &bed2, &needle2);
 
+			translator->split(
+				Right,
+				translator->lookup_bed(bed), needle,
+				translator->lookup_bed(bed2), needle2,
+				std::vector< Carrier * >()
+			);
 		} else if (tokens[0] == "rack") {
 			//rack R
 			if (tokens.size() != 2) throw std::runtime_error("rack should have exactly one parameter.");
