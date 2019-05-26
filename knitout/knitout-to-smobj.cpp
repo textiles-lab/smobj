@@ -65,7 +65,13 @@ struct Face {
 };
 
 struct Connection {
-	Connection(FaceEdge const &a_, FaceEdge const &b_, std::string const &why_) : a(a_), b(b_), why(why_) { }
+	Connection(FaceEdge const &a_, FaceEdge const &b_, std::string const &why_) : a(a_), b(b_), why(why_) {
+		//DEBUG:
+		if (a.count != b.count) {
+			std::cerr << "Count mis-match " << a.count << " vs " << b.count << " for \"" << why << "\"" << std::endl;
+			assert(a.count == b.count);
+		}
+	}
 	FaceEdge a,b;
 	std::string why; //DEBUG
 };
@@ -502,6 +508,7 @@ struct Translator {
 						live_above.emplace_back(cs_by_depth[j]);
 					}
 				}
+
 				//build face to connect from/to vertical travel:
 				FaceEdge travel_to_surround;
 				FaceEdge surround_to_travel;
@@ -631,7 +638,7 @@ struct Translator {
 						surround_to_travel = yarn_in;
 					}
 				}
-				if (live_above.empty() && live_above.empty()) {
+				if (live_above.empty() && live_below.empty()) {
 					//first/only yarn in plating:
 					assert(!live_to_surround.is_valid());
 					assert(!live_to_travel.is_valid());
@@ -641,8 +648,35 @@ struct Translator {
 					live_depth = c->depth;
 
 				} else {
-					//TODO: build split and merge faces
-					assert("TODO: plating!");
+					assert(live_to_surround.count == live_above.size() + live_below.size());
+					assert(live_to_travel.count == live_above.size() + live_below.size());
+
+					PSMParams psm;
+
+					psm.start_z = live_depth;
+					psm.add_z = c->depth;
+					//NOTE: when moving to "to-back" version, will need to edit this:
+					psm.end_z = glm::mix(psm.add_z, (i + 1 < cs_by_depth.size() ? cs_by_depth[i+1]->depth : bed.depth), 0.5f);
+					psm.split_z = glm::mix(psm.start_z, psm.add_z, 0.5f);
+					psm.merge_z = glm::mix(psm.add_z, psm.end_z, 0.5f);
+					psm.live_above = live_above.size();
+					psm.live_below = live_below.size();
+
+					//std::cout << "(" << psm.start_z << ", " << psm.split_z << ", " << psm.add_z << ", " << psm.merge_z << ", " << psm.end_z << ")" << std::endl; //DEBUG
+
+					psm.x = stitch_x(surround_index, (dir == Right ? Left : Right));
+					psm.inward = true;
+					psm.live = live_to_surround;
+					psm.travel = travel_to_surround;
+					live_to_surround = plating_split_merge(psm, &gizmo);
+
+					psm.x = stitch_x(surround_index, dir);
+					psm.inward = false;
+					psm.live = live_to_travel;
+					psm.travel = surround_to_travel;
+					live_to_travel = plating_split_merge(psm, &gizmo);
+
+					live_depth = psm.end_z;
 				}
 			}
 
@@ -653,7 +687,8 @@ struct Translator {
 				faces.emplace_back();
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
-				face.type = "yarn-to-right x +y1 x -y1";
+				std::string Y = std::to_string(live_to_surround.count);
+				face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
 				float x = stitch_x(surround_index, (dir == Right ? Left : Right));
 				face.vertices = {
 					glm::vec3(x, 0.0f, live_depth),
@@ -661,8 +696,8 @@ struct Translator {
 					glm::vec3(x, FaceHeight, bed.depth),
 					glm::vec3(x, FaceHeight, live_depth),
 				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
+				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, live_to_surround.count, FaceEdge::FlipYes);
+				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, live_to_surround.count, FaceEdge::FlipNo);
 
 				gizmo.connections.emplace_back(live_to_surround, yarn_in, "A");
 
@@ -678,7 +713,8 @@ struct Translator {
 				faces.emplace_back();
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
-				face.type = "yarn-to-left x -y1 x +y1";
+				std::string Y = std::to_string(live_to_travel.count);
+				face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
 				float x = stitch_x(surround_index, dir);
 				face.vertices = {
 					glm::vec3(x, 0.0f, live_depth),
@@ -686,14 +722,18 @@ struct Translator {
 					glm::vec3(x, FaceHeight, bed.depth),
 					glm::vec3(x, FaceHeight, live_depth),
 				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
+				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, live_to_travel.count, FaceEdge::FlipNo);
+				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, live_to_travel.count, FaceEdge::FlipYes);
 
 				gizmo.connections.emplace_back(yarn_out, live_to_travel, "B");
 
 				//NOTE: I don't think this needs lift management
 
 				yarn_from_stitch = yarn_in;
+				if (yarn_from_stitch.count != yarn_to_stitch.count) {
+					std::cerr << "NOTE: DEBUG -- not connecting yarn_from_stitch" << std::endl;
+					yarn_from_stitch = FaceEdge(); //DEBUG!!
+				}
 			}
 
 		} else { assert(&bed == &back_bed || &bed == &back_sliders);
@@ -863,7 +903,7 @@ struct Translator {
 						surround_to_travel = yarn_in;
 					}
 				}
-				if (live_above.empty() && live_above.empty()) {
+				if (live_above.empty() && live_below.empty()) {
 					//first/only yarn in plating:
 					assert(!live_to_surround.is_valid());
 					assert(!live_to_travel.is_valid());
@@ -874,7 +914,7 @@ struct Translator {
 
 				} else {
 					//TODO: build split and merge faces
-					assert("TODO: plating!");
+					assert(0 && "TODO: plating!");
 				}
 			}
 
@@ -1054,6 +1094,283 @@ struct Translator {
 
 	}
 
+	// Split works like this (viewed from the left):
+	//    ,|,
+	// ,|' |-|-|
+	//|-|--|--'
+	// ^---------- split into above/below
+	//    ^------- route to above/below new edge
+	//       ^-^-- two-step merge
+	//^-- start_z
+	//  ^-- split_z
+	//     ^-- add_z (== carrier depth)
+	//       ^-- merge_z
+	//         ^-- end_z
+
+	struct PSMParams {
+		float x = std::numeric_limits< float >::quiet_NaN();
+		bool inward = false;
+
+		float start_z = std::numeric_limits< float >::quiet_NaN();
+		float split_z = std::numeric_limits< float >::quiet_NaN();
+		float add_z = std::numeric_limits< float >::quiet_NaN();
+		float merge_z = std::numeric_limits< float >::quiet_NaN();
+		float end_z = std::numeric_limits< float >::quiet_NaN();
+
+		FaceEdge live; //edge with what came before
+		uint32_t live_above = -1U;
+		uint32_t live_below = -1U;
+		FaceEdge travel; //edge with travel
+	};
+
+
+	FaceEdge plating_split_merge(PSMParams const &p, Gizmo *gizmo_) {
+		assert(p.x == p.x);
+		assert(p.start_z == p.start_z);
+		assert(p.split_z == p.split_z);
+		assert(p.add_z == p.add_z);
+		assert(p.merge_z == p.merge_z);
+		assert(p.end_z == p.end_z);
+
+		float const &x = p.x;
+		float const &start_z = p.start_z;
+		float const &split_z = p.split_z;
+		float const &add_z = p.add_z;
+		float const &merge_z = p.merge_z;
+		float const &end_z = p.end_z;
+
+		assert(start_z < split_z);
+		assert(split_z < add_z);
+		assert(add_z < merge_z);
+		assert(merge_z < end_z);
+
+		assert(p.live.count == p.live_above + p.live_below);
+
+		assert(p.travel.count); //no much point in doing otherwise.
+
+		assert(gizmo_);
+		auto &gizmo = *gizmo_;
+
+		std::string travel = (p.inward ? "yarn-to-right" : "yarn-to-left");
+		std::string split = (p.inward ? "yarn-unplate-to-right" : "yarn-plate-to-left");
+		std::string merge = (p.inward ? "yarn-plate-to-right" : "yarn-unplate-to-left");
+		std::string in_sign = (p.inward ? "-" : "+");
+		std::string out_sign = (p.inward ? "+" : "-");
+
+		FaceEdge top_edge, bottom_edge; //<-- used to track live edges
+		{ //split face
+			faces.emplace_back();
+			gizmo.faces.emplace_back(faces.size()-1);
+			Face &face = faces.back();
+			FaceEdge yarn_in;
+			if (p.live_above && p.live_below) {
+				std::string Y = std::to_string(p.live_above + p.live_below);
+				std::string YT = std::to_string(p.live_above);
+				std::string YB = std::to_string(p.live_below);
+				face.type = split + " x " + out_sign + "y" + YB + " " + out_sign + "y" + YT + " x " + in_sign + "y" + Y;
+				face.vertices = {
+					glm::vec3(x, 0.0f, start_z),
+					glm::vec3(x, 0.0f, split_z),
+					glm::vec3(x, 0.5f * FaceHeight, split_z),
+					glm::vec3(x, FaceHeight, split_z),
+					glm::vec3(x, FaceHeight, start_z),
+				};
+				yarn_in = FaceEdge(faces.size()-1, 4, p.live_above + p.live_below, FaceEdge::FlipYes);
+				bottom_edge = FaceEdge(faces.size()-1, 1, p.live_below, FaceEdge::FlipNo);
+				top_edge = FaceEdge(faces.size()-1, 2, p.live_above, FaceEdge::FlipNo);
+			} else if (p.live_above) {
+				std::string Y = std::to_string(p.live_above);
+				face.type = travel + " x " + out_sign + "y" + Y + " x " + in_sign + "y" + Y;
+				face.vertices = {
+					glm::vec3(x, 0.0f, start_z),
+					glm::vec3(x, 0.5f * FaceHeight, split_z),
+					glm::vec3(x, FaceHeight, split_z),
+					glm::vec3(x, FaceHeight, start_z),
+				};
+				yarn_in = FaceEdge(faces.size()-1, 3, p.live_above, FaceEdge::FlipYes);
+				bottom_edge = FaceEdge();
+				top_edge = FaceEdge(faces.size()-1, 1, p.live_above, FaceEdge::FlipNo);
+			} else { assert(p.live_below);
+				std::string Y = std::to_string(p.live_below);
+				face.type = travel + " x " + out_sign + "y" + Y + " x " + in_sign + "y" + Y;
+				face.vertices = {
+					glm::vec3(x, 0.0f, start_z),
+					glm::vec3(x, 0.0f, split_z),
+					glm::vec3(x, 0.5f * FaceHeight, split_z),
+					glm::vec3(x, FaceHeight, start_z),
+				};
+				yarn_in = FaceEdge(faces.size()-1, 3, p.live_below, FaceEdge::FlipYes);
+				bottom_edge = FaceEdge(faces.size()-1, 1, p.live_below, FaceEdge::FlipNo);
+				top_edge = FaceEdge();
+			}
+
+			gizmo.connections.emplace_back(p.live, yarn_in, "plate split");
+		}
+
+		//routing faces:
+		if (top_edge.count) { //top travel face
+			faces.emplace_back();
+			gizmo.faces.emplace_back(faces.size()-1);
+			Face &face = faces.back();
+			std::string Y = std::to_string(top_edge.count);
+			face.type = travel + " x " + out_sign + "y" + Y + " x " + in_sign + "y" + Y;
+			face.vertices = {
+				glm::vec3(x, 0.5f*FaceHeight, split_z),
+				glm::vec3(x, (2.0f/3.0f)*FaceHeight, add_z),
+				glm::vec3(x, 1.0f*FaceHeight, add_z),
+				glm::vec3(x, 1.0f*FaceHeight, split_z),
+			};
+			//in:
+			FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, top_edge.count, FaceEdge::FlipYes);
+			gizmo.connections.emplace_back(top_edge, yarn_in, "split top");
+
+			//out:
+			FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, top_edge.count, FaceEdge::FlipNo);
+			top_edge = yarn_out;
+		}
+		if (bottom_edge.count) { //bottom travel face
+			faces.emplace_back();
+			gizmo.faces.emplace_back(faces.size()-1);
+			Face &face = faces.back();
+			std::string Y = std::to_string(bottom_edge.count);
+			face.type = travel + " x " + out_sign + "y" + Y + " x " + in_sign + "y" + Y;
+			face.vertices = {
+				glm::vec3(x, 0.0f*FaceHeight, split_z),
+				glm::vec3(x, 0.0f*FaceHeight, add_z),
+				glm::vec3(x, (1.0f/3.0f)*FaceHeight, add_z),
+				glm::vec3(x, 0.5f*FaceHeight, split_z),
+			};
+			//in:
+			FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, bottom_edge.count, FaceEdge::FlipYes);
+			gizmo.connections.emplace_back(bottom_edge, yarn_in, "split bottom");
+
+			//out:
+			FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, bottom_edge.count, FaceEdge::FlipNo);
+			bottom_edge = yarn_out;
+		}
+
+		{ //fix middle edge to be shorter:
+			auto get_vertex = [this](FaceEdge const &fe, uint8_t vertex) -> glm::vec3 & {
+				if ((fe.flip == FaceEdge::FlipNo) == (vertex == 0)) {
+					return faces[fe.face].vertices[fe.edge];
+				} else {
+					return faces[fe.face].vertices[(fe.edge+1)%faces[fe.face].vertices.size()];
+				}
+			};
+			glm::vec3 &bottom = get_vertex(p.travel, 0);
+			glm::vec3 &top = get_vertex(p.travel, 1);
+			assert(bottom.y == 0.0f);
+			bottom.y = (1.0f/3.0f)*FaceHeight;
+			assert(top.y == FaceHeight);
+			top.y = (2.0f/3.0f)*FaceHeight;
+		}
+
+		{ //merge: top step
+			faces.emplace_back();
+			gizmo.faces.emplace_back(faces.size()-1);
+			Face &face = faces.back();
+
+			FaceEdge yarn_bottom_in, yarn_out;
+			if (top_edge.count) {
+				std::string YT = std::to_string(top_edge.count);
+				std::string YB = std::to_string(p.travel.count);
+				std::string Y = std::to_string(top_edge.count+p.travel.count);
+				face.type = merge + " x " + out_sign + "y" + Y + " x " + in_sign + "y" + YT + " " + in_sign + "y" + YB;
+				face.vertices = {
+					glm::vec3(x, (1.0f/3.0f)*FaceHeight, add_z),
+					glm::vec3(x, 0.5f*FaceHeight, merge_z),
+					glm::vec3(x, 1.0f*FaceHeight, merge_z),
+					glm::vec3(x, 1.0f*FaceHeight, add_z),
+					glm::vec3(x, (2.0f/3.0f)*FaceHeight, add_z),
+				};
+				//in:
+				yarn_bottom_in = FaceEdge(faces.size()-1, 4, p.travel.count, FaceEdge::FlipYes);
+				FaceEdge yarn_top_in = FaceEdge(faces.size()-1, 3, top_edge.count, FaceEdge::FlipYes);
+				gizmo.connections.emplace_back(top_edge, yarn_top_in, "plate merge top");
+
+				yarn_out = FaceEdge(faces.size()-1, 1, p.travel.count+top_edge.count, FaceEdge::FlipNo);
+			} else {
+				std::string Y = std::to_string(p.travel.count);
+				face.type = travel + " x " + out_sign + "y" + Y + " x " + in_sign + "y" + Y;
+				face.vertices = {
+					glm::vec3(x, (1.0f/3.0f)*FaceHeight, add_z),
+					glm::vec3(x, 0.5f*FaceHeight, merge_z),
+					glm::vec3(x, 1.0f*FaceHeight, merge_z),
+					glm::vec3(x, (2.0f/3.0f)*FaceHeight, add_z),
+				};
+				//in:
+				yarn_bottom_in = FaceEdge(faces.size()-1, 3, p.travel.count, FaceEdge::FlipYes);
+				yarn_out = FaceEdge(faces.size()-1, 1, p.travel.count, FaceEdge::FlipNo);
+			}
+			gizmo.connections.emplace_back(p.travel, yarn_bottom_in, "plate merge main");
+
+			//out:
+			top_edge = yarn_out;
+		}
+		if (bottom_edge.count) { //merge: bottom travel face
+			faces.emplace_back();
+			gizmo.faces.emplace_back(faces.size()-1);
+			Face &face = faces.back();
+			std::string Y = std::to_string(bottom_edge.count);
+			face.type = travel + " x " + out_sign + "y" + Y + " x " + in_sign + "y" + Y;
+			face.vertices = {
+				glm::vec3(x, 0.0f*FaceHeight, add_z),
+				glm::vec3(x, 0.0f*FaceHeight, merge_z),
+				glm::vec3(x, 0.5f*FaceHeight, merge_z),
+				glm::vec3(x, (1.0f/3.0f)*FaceHeight, add_z),
+			};
+			//in:
+			FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, bottom_edge.count, FaceEdge::FlipYes);
+			gizmo.connections.emplace_back(bottom_edge, yarn_in, "merge bottom travel");
+
+			//out:
+			FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, bottom_edge.count, FaceEdge::FlipNo);
+			bottom_edge = yarn_out;
+		}
+
+		{ //merge: second step
+			faces.emplace_back();
+			gizmo.faces.emplace_back(faces.size()-1);
+			Face &face = faces.back();
+			FaceEdge yarn_top_in, yarn_out;
+			if (bottom_edge.count) {
+				std::string YT = std::to_string(top_edge.count);
+				std::string YB = std::to_string(bottom_edge.count);
+				std::string Y = std::to_string(top_edge.count+bottom_edge.count);
+				face.type = merge + " x " + out_sign + "y" + Y + " x " + in_sign + "y" + YT + " " + in_sign + "y" + YB;
+				face.vertices = {
+					glm::vec3(x, 0.0f*FaceHeight, merge_z),
+					glm::vec3(x, 0.0f*FaceHeight, end_z),
+					glm::vec3(x, 1.0f*FaceHeight, end_z),
+					glm::vec3(x, 1.0f*FaceHeight, merge_z),
+					glm::vec3(x, 0.5f*FaceHeight, merge_z),
+				};
+				FaceEdge yarn_bottom_in = FaceEdge(faces.size()-1, 4, bottom_edge.count, FaceEdge::FlipYes);
+				yarn_top_in = FaceEdge(faces.size()-1, 3, top_edge.count, FaceEdge::FlipYes);
+				yarn_out = FaceEdge(faces.size()-1, 1, bottom_edge.count+top_edge.count, FaceEdge::FlipNo);
+
+				gizmo.connections.emplace_back(bottom_edge, yarn_bottom_in, "plate merge bottom");
+			} else {
+				std::string Y = std::to_string(top_edge.count);
+				face.type = travel + " x " + out_sign + "y" + Y + " x " + in_sign + "y" + Y;
+				face.vertices = {
+					glm::vec3(x, 0.5f*FaceHeight, merge_z),
+					glm::vec3(x, 0.0f*FaceHeight, end_z),
+					glm::vec3(x, 1.0f*FaceHeight, end_z),
+					glm::vec3(x, 1.0f*FaceHeight, merge_z),
+				};
+				yarn_top_in = FaceEdge(faces.size()-1, 3, top_edge.count, FaceEdge::FlipYes);
+				yarn_out = FaceEdge(faces.size()-1, 1, top_edge.count, FaceEdge::FlipNo);
+			}
+
+			assert(top_edge.count >= 1);
+			gizmo.connections.emplace_back(top_edge, yarn_top_in, "plate merge top2");
+
+			return yarn_out;
+		}
+
+	}
+
 	//apply gizmo lift to all faces:
 	void commit(Gizmo &gizmo) {
 		//apply lift value:
@@ -1112,11 +1429,11 @@ struct Translator {
 				//	std::cout << v.x << " " << v.y << " " << v.z << std::endl; //DEBUG
 				//}
 
-				FaceEdge loop_in(faces.size()-1, 0, 1, FaceEdge::FlipNo);
-				FaceEdge loop_out(faces.size()-1, 2, 1, FaceEdge::FlipYes);
+				FaceEdge loop_in(faces.size()-1, 0, lv.a.count, FaceEdge::FlipNo);
+				FaceEdge loop_out(faces.size()-1, 2, lv.a.count, FaceEdge::FlipYes);
 
-				gizmo.connections.emplace_back(lv.a, loop_in, "in");
-				gizmo.connections.emplace_back(loop_out, lv.b, "out");
+				gizmo.connections.emplace_back(lv.a, loop_in, "lv in");
+				gizmo.connections.emplace_back(loop_out, lv.b, "lv out");
 			}
 
 
@@ -1240,8 +1557,8 @@ struct Translator {
 				}
 
 
-				gizmo.connections.emplace_back(from_entrance, yarn_in, "in");
-				gizmo.connections.emplace_back(yarn_out, to_exit, "out");
+				gizmo.connections.emplace_back(from_entrance, yarn_in, "yv in");
+				gizmo.connections.emplace_back(yarn_out, to_exit, "yv out");
 			}
 		}
 
@@ -1256,6 +1573,82 @@ struct Translator {
 	}
 
 	//--- driver functions ---
+
+	void tuck(Direction dir, BedColumns &bed, int32_t needle, std::vector< Carrier * > cs) {
+		assert(&bed == &back_bed || &bed == &front_bed);
+
+		//a-miss doesn't show up in output:
+		if (cs.empty()) return;
+
+		Gizmo gizmo;
+
+		//set up yarn to/from stitch:
+		FaceEdge yarn_to_stitch, yarn_from_stitch;
+		setup_carriers(dir, bed, needle, cs, &gizmo, &yarn_to_stitch, &yarn_from_stitch);
+
+		FaceEdge loop_in = bed[needle_index(needle)].top_edge;
+
+
+		{ //build stitch face:
+			FaceEdge stitch_yarn_in, stitch_yarn_out;
+
+			faces.emplace_back();
+			gizmo.faces.emplace_back(faces.size()-1);
+			Face &face = faces.back();
+			{ //face type:
+				std::string L = std::to_string(loop_in.count);
+				std::string Y = std::to_string(yarn_to_stitch.count);
+				std::string S = std::to_string(yarn_to_stitch.count + loop_in.count);
+
+				std::string behind_or_infront = (&bed == &front_bed ? "behind" : "infront");
+				if (dir == Right) {
+					face.type = "tuck-" + behind_or_infront + "-to-right -l" + L + " +y" + Y + " +l" + S + " -y" + Y;
+					stitch_yarn_out = FaceEdge(gizmo.faces.back(), 1, cs.size(), FaceEdge::FlipNo);
+					stitch_yarn_in = FaceEdge(gizmo.faces.back(), 3, cs.size(), FaceEdge::FlipYes);
+				} else {
+					face.type = "tuck-" + behind_or_infront + "-to-left -l" + L + " -y" + Y + " +l" + S + " +y" + Y;
+					stitch_yarn_in = FaceEdge(gizmo.faces.back(), 1, cs.size(), FaceEdge::FlipNo);
+					stitch_yarn_out = FaceEdge(gizmo.faces.back(), 3, cs.size(), FaceEdge::FlipYes);
+				}
+			}
+			int32_t stitch_index = needle_index(needle);
+			face.vertices = {
+					glm::vec3(stitch_x(stitch_index, Left), 0.0f, bed.depth),
+					glm::vec3(stitch_x(stitch_index, Right), 0.0f, bed.depth),
+					glm::vec3(stitch_x(stitch_index, Right), FaceHeight, bed.depth),
+					glm::vec3(stitch_x(stitch_index, Left), FaceHeight, bed.depth),
+			};
+			
+			if (loop_in.is_valid()) {
+				gizmo.loop_verticals.emplace_back(stitch_index, loop_in, FaceEdge(gizmo.faces.back(), 0, loop_in.count));
+
+				//mark for loop connection:
+				// loop_in
+				// up to
+				// FaceEdge(gizmo.faces.back(), 0)
+			}
+
+			if (yarn_to_stitch.is_valid()) {
+				gizmo.connections.emplace_back(yarn_to_stitch, stitch_yarn_in, "tuck in");
+			}
+			if (yarn_from_stitch.is_valid()) {
+				gizmo.connections.emplace_back(stitch_yarn_out, yarn_from_stitch, "tuck out");
+			}
+
+			//increase lift based on edge conflicts in stitch column:
+			gizmo.lift = std::max(gizmo.lift, bed[needle_index(needle)].top_y);
+
+			//apply lift and create merge faces:
+			commit(gizmo);
+
+			//register loop with column:
+			bed[needle_index(needle)].top_edge = FaceEdge(gizmo.faces.back(), 2, yarn_to_stitch.count + loop_in.count, FaceEdge::FlipYes);
+			bed[needle_index(needle)].top_y = faces[gizmo.faces.back()].vertices[2].y;
+		}
+
+	}
+
+
 	void knit(Direction dir, BedColumns &bed, int32_t needle, std::vector< Carrier * > cs) {
 		assert(&bed == &back_bed || &bed == &front_bed);
 
@@ -1267,8 +1660,12 @@ struct Translator {
 
 		FaceEdge loop_in = bed[needle_index(needle)].top_edge;
 
-		std::string L = std::to_string(loop_in.count);
-		std::string Y = std::to_string(yarn_to_stitch.count);
+		if (loop_in.count == 0 && cs.size() == 0) {
+			//skip a no-op stitch.
+			std::cout << "NOTE: skipping a 'knit' that does nothing." << std::endl;
+			return;
+		}
+
 
 		{ //build stitch face:
 			FaceEdge stitch_yarn_in, stitch_yarn_out;
@@ -1277,6 +1674,8 @@ struct Translator {
 			gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 			{ //face type:
+				std::string L = std::to_string(loop_in.count);
+				std::string Y = std::to_string(cs.size());
 				std::string knit_or_purl = ((&bed == &front_bed || &bed == &front_sliders) ? "knit" : "purl");
 				if (dir == Right) {
 					face.type = knit_or_purl + "-to-right -l" + L + " +y" + Y + " +l" + Y + " -y" + Y;
@@ -1315,9 +1714,6 @@ struct Translator {
 			//increase lift based on edge conflicts in stitch column:
 			gizmo.lift = std::max(gizmo.lift, bed[needle_index(needle)].top_y);
 
-			//DEBUG: space out a smidge:
-			//gizmo.lift += 0.125f;
-
 			//apply lift and create merge faces:
 			commit(gizmo);
 
@@ -1325,11 +1721,6 @@ struct Translator {
 			bed[needle_index(needle)].top_edge = FaceEdge(gizmo.faces.back(), 2, cs.size(), FaceEdge::FlipYes);
 			bed[needle_index(needle)].top_y = faces[gizmo.faces.back()].vertices[2].y;
 		}
-
-
-		//register top edge with column:
-
-		assert(bed[needle_index(needle)].top_edge.is_valid()); //DEBUG
 	}
 
 	void split(Direction dir, BedColumns &from_bed, int32_t from_needle, BedColumns &to_bed, int32_t to_needle, std::vector< Carrier * > cs) {
@@ -1791,6 +2182,21 @@ int main(int argc, char **argv) {
 			);
 
 		} else if (tokens[0] == "tuck") {
+			//tuck D N CS
+			if (tokens.size() < 3) throw std::runtime_error("tuck must have at least two parameters.");
+			Direction dir;
+			parse_direction(tokens[1], &dir);
+			Bed bed;
+			int32_t needle;
+			parse_bedneedle(tokens[2], &bed, &needle);
+			std::vector< std::string > carriers(tokens.begin() + 3, tokens.end());
+
+			translator->tuck(
+				dir,
+				translator->lookup_bed(bed),
+				needle,
+				translator->lookup_carriers(carriers)
+			);
 		} else if (tokens[0] == "split") {
 			//split D N N2 CS
 			if (tokens.size() < 4) throw std::runtime_error("split must have at least three parameters.");
@@ -1899,7 +2305,7 @@ int main(int argc, char **argv) {
 			assert(fb != face_edge_type.end());
 			std::string ta = fa->second;
 			std::string tb = fb->second;
-			//std::cout << "Found " << ta << " to " << tb << " (" << c.why << ")" << std::endl;
+			std::cout << "Found " << ta << " to " << tb << " (" << c.why << ")" << std::endl;
 			assert(ta.size() == tb.size());
 			assert(ta.substr(1) == tb.substr(1));
 			assert((ta[0] == '+' && tb[0] == '-') || (ta[0] == '-' && tb[0] == '+'));
