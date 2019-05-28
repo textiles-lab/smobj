@@ -1952,7 +1952,7 @@ struct Translator {
 				gizmo.connections.emplace_back(front_loop_to_stitch, FaceEdge(gizmo.faces.back(), 0, front_loop_to_stitch.count, FaceEdge::FlipNo), "front loop to split");
 			}
 			if (back_loop_to_stitch.is_valid()) {
-				gizmo.connections.emplace_back(back_loop_to_stitch, FaceEdge(gizmo.faces.back(), 1, front_loop_to_stitch.count, FaceEdge::FlipNo), "back loop to split");
+				gizmo.connections.emplace_back(back_loop_to_stitch, FaceEdge(gizmo.faces.back(), 1, back_loop_to_stitch.count, FaceEdge::FlipNo), "back loop to split");
 			}
 			if (front_loop_from_stitch.is_valid()) {
 				gizmo.connections.emplace_back(front_loop_from_stitch, FaceEdge(gizmo.faces.back(), 4, front_loop_from_stitch.count, FaceEdge::FlipYes), "front loop from split");
