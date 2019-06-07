@@ -684,8 +684,35 @@ struct Translator {
 					live_depth = c->depth;
 
 				} else {
-					//TODO: build split and merge faces
-					assert(0 && "TODO: plating!");
+					assert(live_to_surround.count == live_above.size() + live_below.size());
+					assert(live_to_travel.count == live_above.size() + live_below.size());
+
+					PSMParams psm;
+
+					psm.start_z = live_depth;
+					psm.add_z = c->depth;
+					psm.end_z = glm::mix(psm.add_z, (i > 0 ? cs_by_depth[i-1]->depth : 0.0f), 0.5f);
+					psm.split_z = glm::mix(psm.start_z, psm.add_z, 0.5f);
+					psm.merge_z = glm::mix(psm.add_z, psm.end_z, 0.5f);
+					psm.live_above = live_above.size();
+					psm.live_below = live_below.size();
+
+					//std::cout << "(" << psm.start_z << ", " << psm.split_z << ", " << psm.add_z << ", " << psm.merge_z << ", " << psm.end_z << ")" << std::endl; //DEBUG
+
+					psm.x = stitch_x(surround_index, (dir == Right ? Left : Right));
+					psm.inward = true;
+					psm.live = live_to_surround;
+					psm.travel = travel_to_surround;
+					live_to_surround = plating_split_merge(psm, &gizmo);
+
+					psm.x = stitch_x(surround_index, dir);
+					psm.inward = false;
+					psm.live = live_to_travel;
+					psm.travel = surround_to_travel;
+					live_to_travel = plating_split_merge(psm, &gizmo);
+
+					live_depth = psm.end_z;
+
 				}
 			}
 
@@ -696,7 +723,8 @@ struct Translator {
 				faces.emplace_back();
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
-				face.type = "yarn-to-left x -y1 x +y1";
+				std::string Y = std::to_string(live_to_surround.count);
+				face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
 				float x = stitch_x(surround_index, (dir == Right ? Left : Right));
 				face.vertices = {
 					glm::vec3(x, 0.0f, ShearFront),
@@ -704,8 +732,8 @@ struct Translator {
 					glm::vec3(x, FaceHeight, live_depth),
 					glm::vec3(x, FaceHeight, ShearFront),
 				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
+				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, live_to_surround.count, FaceEdge::FlipNo);
+				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, live_to_surround.count, FaceEdge::FlipYes);
 
 				gizmo.connections.emplace_back(live_to_surround, yarn_in, "live to shear front");
 
@@ -720,7 +748,8 @@ struct Translator {
 				faces.emplace_back();
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
-				face.type = "yarn-to-right x +y1 x -y1";
+				std::string Y = std::to_string(live_to_travel.count);
+				face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
 				float x = stitch_x(surround_index, dir);
 				face.vertices = {
 					glm::vec3(x, 0.0f, ShearFront),
@@ -728,8 +757,8 @@ struct Translator {
 					glm::vec3(x, FaceHeight, live_depth),
 					glm::vec3(x, FaceHeight, ShearFront),
 				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
+				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, live_to_travel.count, FaceEdge::FlipYes);
+				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, live_to_travel.count, FaceEdge::FlipNo);
 
 				gizmo.connections.emplace_back(yarn_out, live_to_travel, "shear front to live");
 
@@ -751,7 +780,8 @@ struct Translator {
 				faces.emplace_back();
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
-				face.type = "yarn-to-left x -y1 x +y1";
+				std::string Y = std::to_string(live_to_surround.count);
+				face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
 				float back_x = stitch_x(needle_index(needle), (dir == Right ? Left : Right));
 				float x = stitch_x(surround_index, (dir == Right ? Left : Right));
 				face.vertices = {
@@ -760,8 +790,8 @@ struct Translator {
 					glm::vec3(x, FaceHeight, ShearFront),
 					glm::vec3(back_x, FaceHeight, ShearBack),
 				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
+				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, live_to_surround.count, FaceEdge::FlipNo);
+				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, live_to_surround.count, FaceEdge::FlipYes);
 
 				gizmo.connections.emplace_back(live_to_surround, yarn_in, "shear front to back");
 
@@ -783,7 +813,8 @@ struct Translator {
 				faces.emplace_back();
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
-				face.type = "yarn-to-right x +y1 x -y1";
+				std::string Y = std::to_string(live_to_travel.count);
+				face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
 				float back_x = stitch_x(needle_index(needle), dir);
 				float x = stitch_x(surround_index, dir);
 				face.vertices = {
@@ -792,8 +823,8 @@ struct Translator {
 					glm::vec3(x, FaceHeight, ShearFront),
 					glm::vec3(back_x, FaceHeight, ShearBack),
 				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
+				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, live_to_travel.count, FaceEdge::FlipYes);
+				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, live_to_travel.count, FaceEdge::FlipNo);
 
 				gizmo.connections.emplace_back(yarn_out, live_to_travel, "shear front to live");
 
@@ -818,7 +849,8 @@ struct Translator {
 				faces.emplace_back();
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
-				face.type = "yarn-to-left x -y1 x +y1";
+				std::string Y = std::to_string(live_to_surround.count);
+				face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
 				float back_x = stitch_x(needle_index(needle), (dir == Right ? Left : Right));
 				face.vertices = {
 					glm::vec3(back_x, 0.0f, bed.depth),
@@ -826,8 +858,8 @@ struct Translator {
 					glm::vec3(back_x, FaceHeight, ShearBack),
 					glm::vec3(back_x, FaceHeight, bed.depth),
 				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
+				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, live_to_surround.count, FaceEdge::FlipNo);
+				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, live_to_surround.count, FaceEdge::FlipYes);
 
 				gizmo.connections.emplace_back(live_to_surround, yarn_in, "shear back to bed");
 
@@ -843,7 +875,8 @@ struct Translator {
 				faces.emplace_back();
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
-				face.type = "yarn-to-right x +y1 x -y1";
+				std::string Y = std::to_string(live_to_travel.count);
+				face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
 				float back_x = stitch_x(needle_index(needle), dir);
 				face.vertices = {
 					glm::vec3(back_x, 0.0f, bed.depth),
@@ -851,8 +884,8 @@ struct Translator {
 					glm::vec3(back_x, FaceHeight, ShearBack),
 					glm::vec3(back_x, FaceHeight, bed.depth),
 				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
+				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, live_to_travel.count, FaceEdge::FlipYes);
+				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, live_to_travel.count, FaceEdge::FlipNo);
 
 				gizmo.connections.emplace_back(yarn_out, live_to_travel, "bed to shear back");
 
@@ -992,7 +1025,7 @@ struct Translator {
 
 	struct PSMParams {
 		float x = std::numeric_limits< float >::quiet_NaN();
-		bool inward = false;
+		bool inward = false; //is yarn heading toward surround or away from surround?
 
 		float start_z = std::numeric_limits< float >::quiet_NaN();
 		float split_z = std::numeric_limits< float >::quiet_NaN();
@@ -1022,10 +1055,12 @@ struct Translator {
 		float const &merge_z = p.merge_z;
 		float const &end_z = p.end_z;
 
+/*
 		assert(start_z < split_z);
 		assert(split_z < add_z);
 		assert(add_z < merge_z);
 		assert(merge_z < end_z);
+*/
 
 		assert(p.live.count == p.live_above + p.live_below);
 
@@ -2215,7 +2250,7 @@ int main(int argc, char **argv) {
 			assert(fb != face_edge_type.end());
 			std::string ta = fa->second;
 			std::string tb = fb->second;
-			std::cout << "Found " << ta << " to " << tb << " (" << c.why << ")" << std::endl;
+			//std::cout << "Found " << ta << " to " << tb << " (" << c.why << ")" << std::endl;
 			assert(ta.size() == tb.size());
 			assert(ta.substr(1) == tb.substr(1));
 			assert((ta[0] == '+' && tb[0] == '-') || (ta[0] == '-' && tb[0] == '+'));
