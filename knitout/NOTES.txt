@@ -18,6 +18,5 @@ Per instruction --
 -----
 
 TODO:
- - Implement "miss" instruction.
  - Check: does leading carrier end up on the front or the back when pulling a loop to the back during plating? (Currently, face library assumes it ends up to the back.)
  - Consider making yarn travel faces shorter somehow.
