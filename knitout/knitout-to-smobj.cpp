@@ -145,11 +145,17 @@ struct Carrier {
 
 	//info about current parked position:
 	bool ready = false; //has 'in' been called? I.e. is the carrier ready to be in?
+
 	FaceEdge parked_edge; //is a valid edge if carrier is in, otherwise is not
 	//by convention, edge points upward
 	int32_t parked_index = 0;
 	Direction parked_direction = Right; //was it moving left or right when parked?
 	//height of parked position is not tracked (or queried?)
+
+	//last stitch is used to kick carriers as needed:
+	BedColumns const *last_bed = nullptr;
+	int32_t last_needle = 0;
+	Direction last_dir = Right;
 };
 
 struct Crossings {
@@ -310,7 +316,7 @@ struct Translator {
 		}
 
 		//yarn is going to have two parts:
-		// - the "bring", which gets carriers to the lift lanes at the proper side of the stitch
+		// - the "bring", which gets carriers to the lift lanes at the proper side of the stitch (and moves other carriers out of the way)
 		// - the "surround", which gets carriers to/from the stitch along the carrier travel lanes
 		//The "bring" is going to be assembled and committed first,
 		//  and the "surround" will be added to the same gizmo as the stitch.
@@ -322,68 +328,41 @@ struct Translator {
 		//where does carrier end up:
 		int32_t leave_index;
 
-		if (&bed == &front_bed || &bed == &front_sliders) {
-			//front bed: just align with needle
-			bring_index = side_index(needle, (dir == Right ? Left : Right));
-			surround_index = needle_index(needle);
-			leave_index = side_index(needle, dir);
-		} else { assert(&bed == &back_bed || &bed == &back_sliders);
-			//back bed: account for racking
-			uint32_t r = int32_t(std::floor(racking));
-			if (std::floor(racking) == racking) { //aligned racking
-				bring_index = side_index(needle+r, (dir == Right ? Left : Right));
-				surround_index = needle_index(needle+r);
-				leave_index = side_index(needle+r, dir);
-			} else { assert(std::floor(racking) + 0.25f == racking); //quarter pitch -- use 4*n+2 index
-				if (dir == Right) {
-					bring_index = side_index(needle + r, Right);
-					leave_index = side_index(needle + r + 1, Left);
-				} else { assert(dir == Left);
-					bring_index = side_index(needle + r + 1, Left);
-					leave_index = side_index(needle + r, Right);
+		auto carrier_indices = [this](Direction dir, BedColumns const &bed, int32_t needle,
+			int32_t *bring_index, int32_t *surround_index, int32_t *leave_index) {
+
+			if (&bed == &front_bed || &bed == &front_sliders) {
+				//front bed: just align with needle
+				if (bring_index) *bring_index = side_index(needle, (dir == Right ? Left : Right));
+				if (surround_index) *surround_index = needle_index(needle);
+				if (leave_index) *leave_index = side_index(needle, dir);
+			} else { assert(&bed == &back_bed || &bed == &back_sliders);
+				//back bed: account for racking
+				uint32_t r = int32_t(std::floor(racking));
+				if (std::floor(racking) == racking) { //aligned racking
+					if (bring_index) *bring_index = side_index(needle+r, (dir == Right ? Left : Right));
+					if (surround_index) *surround_index = needle_index(needle+r);
+					if (leave_index) *leave_index = side_index(needle+r, dir);
+				} else { assert(std::floor(racking) + 0.25f == racking); //quarter pitch -- use 4*n+2 index
+					if (dir == Right) {
+						if (bring_index) *bring_index = side_index(needle + r, Right);
+						if (leave_index) *leave_index = side_index(needle + r + 1, Left);
+					} else { assert(dir == Left);
+						if (bring_index) *bring_index = side_index(needle + r + 1, Left);
+						if (leave_index) *leave_index = side_index(needle + r, Right);
+					}
+					if (surround_index) *surround_index = needle_index(needle+r)+2;
 				}
-				surround_index = needle_index(needle+r)+2;
 			}
-		}
+		};
+
+		carrier_indices(dir, bed, needle, &bring_index, &surround_index, &leave_index);
 
 		//First, build 'bring':
 		Gizmo bring_gizmo;
 
-		//all carriers travel in their tracks to the target index:
-		for (auto c : cs) {
-			//If carrier is out, it appears at bring_index:
-			if (!c->parked_edge.is_valid()) {
-
-				c->parked_index = bring_index;
-				c->parked_direction = dir;
-
-				//build a parked face coming from the right:
-				faces.emplace_back();
-				bring_gizmo.faces.emplace_back(faces.size()-1);
-				Face &face = faces.back();
-				face.vertices = {
-					glm::vec3(travel_x(c->parked_index, Left), 0.0f, c->depth),
-					glm::vec3(travel_x(c->parked_index, Right), 0.0f, c->depth),
-					glm::vec3(travel_x(c->parked_index, Right), FaceHeight, c->depth),
-					glm::vec3(travel_x(c->parked_index, Left), FaceHeight, c->depth),
-				};
-
-				if (dir == Left) {
-					face.type = "yarn-to-left x -y1 x +y1";
-				
-					c->parked_edge = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
-				} else {
-					face.type = "yarn-to-right x +y1 x -y1";
-
-					c->parked_edge = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
-				}
-
-				bring_gizmo.lift = std::max(bring_gizmo.lift, c->horizon.get_value(bring_index, bring_index+1));
-				bring_gizmo.set_lift.emplace_back([c,bring_index](float lift){
-					c->horizon.raise_value(bring_index, bring_index+1, lift); //<-- lift set to bottom of stitch at travel enter
-				});
-
-			}
+		auto bring_carrier = [&bring_gizmo,this](Carrier *c, int32_t bring_index) {
+			assert(c->parked_edge.is_valid());
 
 			//build bring face:
 			if (c->parked_index < bring_index) {
@@ -463,7 +442,74 @@ struct Translator {
 				c->parked_edge = yarn_out;
 				c->parked_direction = Left;
 			}
+
+		};
+
+		//all non-active carriers get kicked if the surround index (i.e., where the yarn is moved) is between that carrier's parked position and its logical position.
+		{
+			std::unordered_set< Carrier * > used(cs.begin(), cs.end());
+			for (auto &cn : carriers) {
+				Carrier *c = &cn.second;
+				if (used.count(c)) continue;
+				if (!c->last_bed) continue;
+				int32_t logical_index;
+				carrier_indices(c->last_dir, *c->last_bed, c->last_needle, nullptr, nullptr, &logical_index);
+				/*std::cout << "Carrier " << c->name << ":" << std::endl;
+				std::cout << "    parked index: " << c->parked_index << std::endl;
+				std::cout << "    logical index: " << logical_index << std::endl;
+				std::cout << " vs surround index: " << surround_index << std::endl;*/
+				assert(c->parked_index != surround_index);
+				assert(logical_index != surround_index);
+				if ((c->parked_index < surround_index) == (logical_index < surround_index)) continue;
+				//std::cout << "    !!KICKING!!" << std::endl;
+				bring_carrier(c, logical_index);
+			}
 		}
+
+		//all carriers travel in their tracks to the target index:
+		for (auto c : cs) {
+			//If carrier is out, it appears at bring_index:
+			if (!c->parked_edge.is_valid()) {
+
+				c->parked_index = bring_index;
+				c->parked_direction = dir;
+
+				//build a parked face coming from the right:
+				faces.emplace_back();
+				bring_gizmo.faces.emplace_back(faces.size()-1);
+				Face &face = faces.back();
+				face.vertices = {
+					glm::vec3(travel_x(c->parked_index, Left), 0.0f, c->depth),
+					glm::vec3(travel_x(c->parked_index, Right), 0.0f, c->depth),
+					glm::vec3(travel_x(c->parked_index, Right), FaceHeight, c->depth),
+					glm::vec3(travel_x(c->parked_index, Left), FaceHeight, c->depth),
+				};
+
+				if (dir == Left) {
+					face.type = "yarn-to-left x -y1 x +y1";
+				
+					c->parked_edge = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
+				} else {
+					face.type = "yarn-to-right x +y1 x -y1";
+
+					c->parked_edge = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
+				}
+
+				bring_gizmo.lift = std::max(bring_gizmo.lift, c->horizon.get_value(bring_index, bring_index+1));
+				bring_gizmo.set_lift.emplace_back([c,bring_index](float lift){
+					c->horizon.raise_value(bring_index, bring_index+1, lift); //<-- lift set to bottom of stitch at travel enter
+				});
+
+			}
+			bring_carrier(c, bring_index);
+
+			//also (preemptively) update last_* info:
+			c->last_dir = dir;
+			c->last_bed = &bed;
+			c->last_needle = needle;
+		}
+
+
 		//Carriers are all now parked at the correct edge, so commit the "bring" gizmo / resolve lift:
 
 		commit(bring_gizmo);
@@ -725,7 +771,7 @@ struct Translator {
 				Face &face = faces.back();
 				std::string Y = std::to_string(live_to_surround.count);
 				face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
-				float x = stitch_x(surround_index, (dir == Right ? Left : Right));
+				float x = travel_x(bring_index, (dir == Right ? Right : Left));
 				face.vertices = {
 					glm::vec3(x, 0.0f, ShearFront),
 					glm::vec3(x, 0.0f, live_depth),
@@ -750,7 +796,8 @@ struct Translator {
 				Face &face = faces.back();
 				std::string Y = std::to_string(live_to_travel.count);
 				face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
-				float x = stitch_x(surround_index, dir);
+				//float x = stitch_x(surround_index, dir);
+				float x = travel_x(leave_index, (dir == Right ? Left : Right));
 				face.vertices = {
 					glm::vec3(x, 0.0f, ShearFront),
 					glm::vec3(x, 0.0f, live_depth),
@@ -783,7 +830,8 @@ struct Translator {
 				std::string Y = std::to_string(live_to_surround.count);
 				face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
 				float back_x = stitch_x(needle_index(needle), (dir == Right ? Left : Right));
-				float x = stitch_x(surround_index, (dir == Right ? Left : Right));
+				//float x = stitch_x(surround_index, (dir == Right ? Left : Right));
+				float x = travel_x(bring_index, (dir == Right ? Right : Left));
 				face.vertices = {
 					glm::vec3(back_x, 0.0f, ShearBack),
 					glm::vec3(x, 0.0f, ShearFront),
@@ -816,7 +864,8 @@ struct Translator {
 				std::string Y = std::to_string(live_to_travel.count);
 				face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
 				float back_x = stitch_x(needle_index(needle), dir);
-				float x = stitch_x(surround_index, dir);
+				//float x = stitch_x(surround_index, dir);
+				float x = travel_x(leave_index, (dir == Right ? Left : Right));
 				face.vertices = {
 					glm::vec3(back_x, 0.0f, ShearBack),
 					glm::vec3(x, 0.0f, ShearFront),
@@ -1509,6 +1558,10 @@ struct Translator {
 			c->parked_edge = FaceEdge();
 			c->parked_index = 0;
 			c->parked_direction = Right;
+
+			c->last_dir = Right;
+			c->last_needle = 0;
+			c->last_bed = nullptr;
 		}
 	}
 

@@ -19,6 +19,5 @@ Per instruction --
 
 TODO:
  - Implement "miss" instruction.
- - Move carrier when parked adjacent to back stitch and kickbacks require such a motion. (E.g., when stitch is made then bed is racked.)
  - Check: does leading carrier end up on the front or the back when pulling a loop to the back during plating? (Currently, face library assumes it ends up to the back.)
  - Consider making yarn travel faces shorter somehow.
