@@ -73,21 +73,21 @@ The specific chunks and their order:
   Header: 'unit'
   Size: 12*N
   Contents: N unit descriptors stored as:
-  struct {
-    uint32_t name_begin; //index of first character of unit name
-	uint32_t name_end; //index of last character of unit name
-	float length; //default/reccomendd length of given unit <-- might remove this
-  }
+    struct {
+      uint32_t name_begin; //index of first character of unit name
+      uint32_t name_end; //index of last character of unit name
+      float length; //default/reccomendd length of given unit <-- might remove this
+    }
   NOTE: the first unit will always be named '1' and will always represent absolute lengths.
 (5) Checkpoints:
   Header: 'chk.'
   Size: 12*N
   Contents: N checkpoints stored as:
-  struct {
-  	uint32_t point; //point to add slack after
-	float slack; //amount of slack to add
-	uint32_t unit; //unit of slack
-  }
+    struct {
+      uint32_t point; //point to add slack after
+      float slack; //amount of slack to add
+      uint32_t unit; //unit of slack
+    }
 ```
 
 Note that each "Checkpoint" structure adds yarn length between that checkpoint and the next *checkpoint* (or the end of the yarn) -- this is different than adding length between checkpoints and their next yarn point.
