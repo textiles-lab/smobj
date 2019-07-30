@@ -40,6 +40,10 @@ This repository contains a few utilities that make it easy to work with .smobj f
 ## .knitout to .smobj (Work in Progress)
 
 The `knitout-to-smobj` utility converts knitout instructions to an smobj description.
+```
+./knitout-to-smobj <input.knitout> <output.smobj>
+```
+
 Given the nature of the conversion, the output file often contains elongated yarns, though the yarn length checkpoints it produces should provide a more reasonable notion of how much they need to be shrunk.
 
 ### TODO
@@ -48,7 +52,11 @@ Given the nature of the conversion, the output file often contains elongated yar
 
 ## .smobj to .yarns (Work in Progress)
 
-The `smobj-to-yarns` utility loads a smobj file and face library and exports a `.yarns` file which describes the yarn paths described by the file.
+The `smobj-to-yarns` utility loads a face library and smobj file and exports a `.yarns` file which describes the yarn paths described by the file.
+```
+./smobj-to-yarns <input.smobj> <input-library.sf> <output.yarns>
+```
+
 It uses the notion of generalized barycentric coordinates to warp the face from the library.
 
 ### TODO
