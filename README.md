@@ -6,48 +6,23 @@ The `.smobj` format stores an augmented stitch mesh as follows:
 
 ```
 #text format, like .obj with...
-#library of face types as name followed by edge types (+/- indicate edge direction)
+#library of face types as name followed by edge types (+/- indicate edge direction; edge labels are arbitrary strings)
 L knit-to-right -l +y +l -y
-L knit-to-right -l2 +y +l2 -y #face names can be "overloaded" with different edge types
+L knit-to-right -l2 +y +l2 -y #face names include the edge types, so this is different than the previous face
 #vertices as X Y Z:
 v 1.0 2.2 1.0
 v 1.0 1.0 1.0
 v 3.0 2.2 1.0
 v 3.0 1.0 1.0
-#(optional) texture coorinates as vt commands:
-vt 0.0 0.0
-vt 1.0 0.0
-vt 1.0 1.0
-vt 0.0 1.0
-#(optional) extra layers of texture coordinates (same length as first list):
-vt2 0.5 0.5
-vt2 1.0 0.5
-vt2 1.0 1.0
-vt2 0.5 1.0
 #faces as 1-based vertex index lists (and, possibly, texture coordinates):
-f 2/1 4/2 3/3 1/4
+f 2 4 3 1
 #and, for each face, a type from the library (1-based index into library):
 T 1
-#finally, list of connections between faces:
+#list of connections between faces:
 # face#/edge#, both one-based; negative edges imply *reversing* the edge
 # this allows non-orientable connections, needed for knitout
 # (NOTE: on a nicely oriented mesh, all 'e' commands will have one negative edge)
 e 1/1 2/-4
-#(optional) indicate which image corresponds to which texture coordinate:
-tex foo.jpg
-tex2 bar.jpg
-```
-
-Our format used to also contain the following, but they have been replaced:
-
-```
-# ---- old data ----
-#or (2) one of 'tk', 'te', 'ts' to label edges where 0 = loopwise and 1= yarnwise
-tk 1 0 1 0 
-# and st to mark short-row faces, unused mostly
-st 14
-# 's' specifies starting face(s)
-s f#
 ```
 
 ## Standard Face and Edge Types (Knitting)
@@ -99,6 +74,47 @@ L yarn-unplate-to-left x -y2 x +y1 +y1
 #also +yN +yM from -y(N+M)
 
 ```
+
+
+
+
+# Notes and Work-In-Progress Stuff
+
+## Deprecated Things
+
+Our format used to also contain the following, but they have been replaced:
+
+```
+# ---- old data ----
+#or (2) one of 'tk', 'te', 'ts' to label edges where 0 = loopwise and 1= yarnwise
+tk 1 0 1 0 
+# and st to mark short-row faces, unused mostly
+st 14
+# 's' specifies starting face(s)
+s f#
+```
+
+## Extension: Texture Coordinates
+
+One may add texture coordinates to smobj files as follows:
+```
+#(optional) texture coorinates as vt commands:
+vt 0.0 0.0
+vt 1.0 0.0
+vt 1.0 1.0
+vt 0.0 1.0
+#(optional) extra layers of texture coordinates (same length as first list):
+vt2 0.5 0.5
+vt2 1.0 0.5
+vt2 1.0 1.0
+vt2 0.5 1.0
+#faces include texture coordinates [as per .obj]:
+f 2/1 4/2 3/3 1/4
+#(optional) indicate which image corresponds to which texture coordinate:
+tex foo.jpg
+tex2 bar.jpg
+```
+
 
 
 ## What /Should/ Be In The File
