@@ -6,7 +6,7 @@ The `.smobj` format stores an augmented stitch mesh as follows:
 
 ```
 #text format, like .obj with...
-#library of face types as name followed by edge types (+/- indicate edge direction; edge labels are arbitrary strings)
+#library of face types as name followed by edge types (+/- indicate [optional] edge direction; edge labels are arbitrary strings)
 L knit-to-right -l +y +l -y
 L knit-to-right -l2 +y +l2 -y #face names include the edge types, so this is different than the previous face
 #vertices as X Y Z:
@@ -69,9 +69,9 @@ It uses the notion of generalized barycentric coordinates to warp the face from 
 This section describes the face library our knitout-to-smobj code uses to represent the result of machine knitting.
 This library is stored in the `faces/knitout.sf` file.
 
-For knitting, we use `yN` (N yarn) and `lN` (N loop) edges.
+The library includes `yN` (N yarn), `lN` (N loop), and 'x' (empty) edges.
 
-When translating knitout to smobj, we (will) use the following face library:
+Here are the face types; edges are named in CCW order from the bottom left:
 ```
 #Basic machine operations:
 #front/back knit:
