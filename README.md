@@ -18,14 +18,48 @@ v 3.0 1.0 1.0
 f 2 4 3 1
 #and, for each face, a type from the library (1-based index into library):
 T 1
+#(optional) 1-based line number of knitout file that made this face (use 0 if line not known):
+ln 15
 #list of connections between faces:
 # face#/edge#, both one-based; negative edges imply *reversing* the edge
 # this allows non-orientable connections, needed for knitout
 # (NOTE: on a nicely oriented mesh, all 'e' commands will have one negative edge)
 e 1/1 2/-4
+#(optional) list of checkpoints on yarns and desited length between them:
+# checkpoint list starts with unit library:
+U n #unit definition -- there is a length unit called 'n'
+U s65 #unit definition -- there is a length unit called 's65'
+c 1/1/1 1.0 1 2.0 2 #checkpoint at face/edge/yarn crossing with 1.0*n + 2.0*s65 length following
+c 1/3/1 #last checkpoint on a yarn will have zero following length
 ```
 
-## Standard Face and Edge Types (Knitting)
+# Utilities
+
+This repository contains a few utilities that make it easy to work with .smobj files.
+
+## .knitout to .smobj (Work in Progress)
+
+The `knitout-to-smobj` utility converts knitout instructions to an smobj description.
+Given the nature of the conversion, the output file often contains elongated yarns, though the yarn length checkpoints it produces should provide a more reasonable notion of how much they need to be shrunk.
+
+### TODO
+ - Does not yet include yarn checkpoints
+ - Does not yet output line numbers
+
+## .smobj to .yarns (Work in Progress)
+
+The `smobj-to-yarns` utility loads a smobj file and face library and exports a `.yarns` file which describes the yarn paths described by the file.
+It uses the notion of generalized barycentric coordinates to warp the face from the library.
+
+### TODO
+ - Code needs to be moved from development repository.
+ - Utility and file format needs to be updated to support yarn checkpoints
+ - Utility and file format needs to be updated to support line numbers
+
+# Standard Face and Edge Types (Knitout)
+
+This section describes the face library our knitout-to-smobj code uses to represent the result of machine knitting.
+This library is stored in the `faces/knitout.sf` file.
 
 For knitting, we use `yN` (N yarn) and `lN` (N loop) edges.
 
