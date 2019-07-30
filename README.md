@@ -33,6 +33,67 @@ c 1/1/1 1.0 1 2.0 2 #checkpoint at face/edge/yarn crossing with 1.0*n + 2.0*s65 
 c 1/3/1 #last checkpoint on a yarn will have zero following length
 ```
 
+# `.yarns`: a format for yarn curves
+
+The yarn format stores one or more yarns as polylines.
+Typically, these polylines are interpreted for viewing by conecting subsequent midpoints with quadratic bezier curves in order to create a smooth path.
+
+A `.yarns` file consists of several chunks, where each chunk contains a 4-byte header, a 4-byte size (length of chunk data in bytes), and a flat array of uniform data elements.
+
+In other words, each chunk corresponds to a `vector< T >` for some `T`.
+
+The specific chunks and their order:
+```
+(1) Points
+  Header: 'f3..'
+  Size: 12*N
+  Contents: N point locations stored as floating point numbers:
+    struct {
+	  float x;
+	  float y;
+	  float z;
+	}
+(2) Yarn Information
+  Header: 'yarn'
+  Size: 16*N
+  Contents: N yarn descriptors stored as:
+    struct {
+	  uint32_t point_begin; //index of first point in yarn
+	  uint32_t point_end; //index of last+1 point in yarn
+	  //Note that yarns will *not* overlap in the points list
+	  float radius; //radius of yarn
+	  uint8_t r,g,b,a; //color for yarn
+	}
+[remaining sections are work-in-progress]
+(3) Strings
+  Header: 'strs'
+  Size: N
+  Contents: N bytes of string data
+(4) Units
+  Header: 'unit'
+  Size: 12*N
+  Contents: N unit descriptors stored as:
+  struct {
+    uint32_t name_begin; //index of first character of unit name
+	uint32_t name_end; //index of last character of unit name
+	float length; //default/reccomendd length of given unit <-- might remove this
+  }
+  NOTE: the first unit will always be named '1' and will always represent absolute lengths.
+(5) Checkpoints:
+  Header: 'chk.'
+  Size: 12*N
+  Contents: N checkpoints stored as:
+  struct {
+  	uint32_t point; //point to add slack after
+	float slack; //amount of slack to add
+	uint32_t unit; //unit of slack
+  }
+```
+
+Note that each "Checkpoint" structure adds yarn length between that checkpoint and the next *checkpoint* (or the end of the yarn) -- this is different than adding length between checkpoints and their next yarn point.
+This ambiguity is required because the allocation of length to yarn segments is generally not known.
+
+
 # Utilities
 
 This repository contains a few utilities that make it easy to work with .smobj files.
