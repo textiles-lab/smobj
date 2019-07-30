@@ -1,4 +1,4 @@
-# smobj: a format for augmented-stitch-mesh-like things
+# `.smobj`: a format for augmented-stitch-mesh-like things
 
 Augmented Stitch Meshes represent knit structures and their dependencies by embedding yarns in the faces of a (tri/quad/pentagon/etc) mesh, and associating types and directions with each edge.
 
