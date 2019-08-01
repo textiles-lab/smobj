@@ -48,7 +48,7 @@ The specific chunks and their order:
 ```
 (1) Points
   Header: 'f3..'
-  Size: 12*N
+  Size: 12*
   Contents: N point locations stored as floating point numbers:
     struct {
 	  float x;
@@ -87,13 +87,13 @@ The specific chunks and their order:
   Contents: N checkpoints stored as:
     struct {
       uint32_t point; //point to add slack after
-      float slack; //amount of slack to add
-      uint32_t unit; //unit of slack
+      float length; //amount of length to add
+      uint32_t unit; //unit of length
     }
-(6) Line Numbers:
-  Header: 'line'
+(6) Source Line Numbers:
+  Header: 'src.'
   Size: 4*N
-  Contents: N line numbers (same length as points) stored as 32-bit unsigned integers
+  Contents: N source line numbers (same length as points) stored as 32-bit unsigned integers
   NOTE: line numbers correspond to the line number for the smobj face that created the next segment. Line numbers for the last point in a yarn are set to the same value as the second-to-last by convention.
 ```
 

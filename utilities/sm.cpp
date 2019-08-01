@@ -55,6 +55,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			}
 			if (signature.edges.size() < 3) throw std::runtime_error("degenerate face type");
 			library.emplace_back(signature);
+			mesh.library.emplace_back(signature.key());
 		} else if (cmd == "v") {
 			glm::vec3 v;
 			if (!(str >> v.x >> v.y >> v.z)) throw std::runtime_error("failed to read x y z after v");
@@ -207,7 +208,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			throw std::runtime_error("face/library edge count mismatch.");
 		}
 		mesh.faces[i].type = types[i];
-		mesh.faces[i].line = lines[i];
+		mesh.faces[i].line_number = lines[i];
 	}
 
 
@@ -379,6 +380,93 @@ void StitchFaces::save(std::string const &filename) {
 }
 #endif
 
+//------------------------------------------------
+
+//helper for writing vectors of data:
+template< typename T >
+static void write(std::ostream &out, std::string magic, std::vector< T > const &data) {
+	assert(magic.size() == 4);
+	uint32_t size = sizeof(T) * data.size();
+	out.write(magic.c_str(), 4);
+	out.write(reinterpret_cast< const char * >(&size), sizeof(uint32_t));
+	out.write(reinterpret_cast< const char * >(data.data()), sizeof(T)*data.size());
+}
+
+void sm::Yarns::save(std::string const &filename) const {
+	std::ofstream out(filename, std::ios::binary);
+
+	//arrays-of-structures that will be written:
+	static_assert(sizeof(glm::vec3) == 12, "vec3 is packed");
+	std::vector< glm::vec3 > out_points;
+
+	struct YarnInfo {
+		uint32_t point_begin;
+		uint32_t point_end;
+		float radius;
+		glm::u8vec4 color;
+	};
+	static_assert(sizeof(YarnInfo) == 16, "YarnInfo is packed");
+	std::vector< YarnInfo > out_yarns;
+
+	std::vector< char > out_strings;
+
+	struct UnitInfo {
+		uint32_t name_begin;
+		uint32_t name_end;
+		float length;
+	};
+	static_assert(sizeof(UnitInfo) == 12, "UnitInfo is packed");
+	std::vector< UnitInfo > out_units;
+
+	struct CheckpointInfo {
+		uint32_t point;
+		float length;
+		uint32_t unit;
+	};
+	static_assert(sizeof(CheckpointInfo) == 12, "CheckpointInfo is packed");
+	std::vector< CheckpointInfo > out_checkpoints;
+
+	std::vector< uint32_t > out_line_numbers;
+
+	//fill the arrays:
+
+	for (auto const &unit : units) {
+		//PERHAPS: if (&unit == &units[0]) assert(unit.name == "1" && unit.length == 1.0f);
+		out_units.emplace_back();
+		out_units.back().name_begin = out_strings.size();
+		out_strings.insert(out_strings.end(), unit.name.begin(), unit.name.end());
+		out_units.back().name_end = out_strings.size();
+		out_units.back().length = unit.length;
+	}
+
+	for (auto const &yarn : yarns) {
+		assert(yarn.points.size() == yarn.line_numbers.size());
+
+		for (auto const &cp : yarn.checkpoints) {
+			assert(cp.unit < units.size());
+
+			out_checkpoints.emplace_back();
+			out_checkpoints.back().point = cp.point + out_points.size();
+			out_checkpoints.back().length = cp.length;
+			out_checkpoints.back().unit = cp.unit;
+		}
+		out_yarns.emplace_back();
+		out_yarns.back().point_begin = out_points.size();
+		out_points.insert(out_points.end(), yarn.points.begin(), yarn.points.end());
+		out_line_numbers.insert(out_line_numbers.end(), yarn.line_numbers.begin(), yarn.line_numbers.end());
+		out_yarns.back().point_end = out_points.size();
+		out_yarns.back().radius = yarn.radius;
+		out_yarns.back().color = yarn.color;
+	}
+
+	write(out, "f3..", out_points);
+	write(out, "yarn", out_yarns);
+	write(out, "strs", out_strings);
+	write(out, "unit", out_units);
+	write(out, "chk.", out_checkpoints);
+	write(out, "src.", out_line_numbers);
+
+}
 
 
 //------------------------------------------------
@@ -439,6 +527,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 
 		for (auto const &face : mesh.faces) {
 			//no yarns in face without type:
+			assert(face.type < mesh_library.size());
 			if (!mesh_library[face.type]) continue;
 			auto const &sf = *mesh_library[face.type];
 			for (uint32_t yi = 0; yi < sf.yarns.size(); ++yi) {
@@ -901,12 +990,14 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 					mismatch += glm::length(pt - yarns.yarns.back().points.back());
 					//average just in case
 					yarns.yarns.back().points.back() = 0.5f * (yarns.yarns.back().points.back() + pt);
+					yarns.yarns.back().line_numbers.back() = face.line_number;
 				} else {
 					yarns.yarns.back().points.emplace_back(pt);
+					yarns.yarns.back().line_numbers.emplace_back(face.line_number);
 				}
 			}
 		}
-		//TODO: for circular yarns, make sure things match exactly.
+		//TODO: for circular yarns, make sure first/last points match exactly.
 	}
 	std::cout << "Total boundary mis-match from chains (should be very small): " << mismatch << std::endl;
 
