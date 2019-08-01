@@ -27,9 +27,11 @@ ln 15
 e 1/1 2/-4
 #(optional) list of checkpoints on yarns and desited length between them:
 # checkpoint list starts with unit library:
-U n #unit definition -- there is a length unit called 'n'
-U s65 #unit definition -- there is a length unit called 's65'
-c 1/1/1 1.0 1 2.0 2 #checkpoint at face/edge/yarn crossing with 1.0*n + 2.0*s65 length following
+U 1 1.0 #unit definition -- there is a length unit called '1' with [default] length '1.0'
+#By convention, the first unit will always be called '1' and will always have length '1.0'
+U n 0.4 #unit definition -- there is a length unit called 'n' with [default] length '0.4'
+U s65 0.2 #unit definition -- there is a length unit called 's65' with [default] length '0.2'
+c 1/1/1 0.1 1 1.0 2 2.0 3 #checkpoint at face/edge/yarn crossing with 1.0*n + 2.0*s65 length following
 c 1/3/1 #last checkpoint on a yarn will have zero following length
 ```
 
@@ -88,6 +90,11 @@ The specific chunks and their order:
       float slack; //amount of slack to add
       uint32_t unit; //unit of slack
     }
+(6) Line Numbers:
+  Header: 'line'
+  Size: 4*N
+  Contents: N line numbers (same length as points) stored as 32-bit unsigned integers
+  NOTE: line numbers correspond to the line number for the smobj face that created the next segment. Line numbers for the last point in a yarn are set to the same value as the second-to-last by convention.
 ```
 
 Note that each "Checkpoint" structure adds yarn length between that checkpoint and the next *checkpoint* (or the end of the yarn) -- this is different than adding length between checkpoints and their next yarn point.
