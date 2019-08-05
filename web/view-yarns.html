@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>'.yarns' viewer</title>
+<style>
+#dropTarget {
+	position:fixed;
+	left:0;
+	bottom:0;
+	width:100%;
+	height:100%;
+
+	background:#ccc;
+	outline:4px dashed #eee;
+	outline-offset:-20px;
+	z-index:100;
+	visibility:hidden;
+}
+#dropTarget.active {
+	visibility:visible;
+	background:#eee;
+	outline-color:#ccc;
+}
+#file {
+	display:none;
+}
+#fileLabel span {
+	cursor:pointer;
+	text-decoration:underline;
+}
+#canvas {
+	width:80vw;
+	height:80vh;
+}
+</style>
+<script src="sm.js"></script>
+</head>
+<body>
+
+
+<!-- controls bar at the top of the window !-->
+<div id="view-controls">
+<input id="file" type="file" />
+<label id="fileLabel" for="file"><span>Choose an .yarns file</span> or drag one into the window to visualize it.</label>
+</div>
+
+<div id="view-3d">
+<canvas id="canvas" width="120" height="120"></canvas>
+</div>
+
+<!-- full-window drop target --!>
+<div id="dropTarget"></div>
+
+<script>
+function readFile(file) {
+	console.log("Attempting to read file: '" + file.name + "'");
+
+	if (readFile.reader) {
+		readFile.reader.abort();
+		delete readFile.reader;
+	}
+
+	let reader = readFile.reader = new FileReader();
+	reader.onload = function(){
+		console.log("File was " + reader.result.byteLength + " bytes long.");
+		window.yarns = sm.Yarns.fromArrayBuffer(reader.result);
+	};
+	reader.readAsArrayBuffer(file);
+}
+
+var dropTarget = document.getElementById("dropTarget");
+//dragging into the window also loads files:
+dropTarget.addEventListener('dragover', function(evt){
+	dropTarget.classList.add("active");
+	evt.preventDefault();
+	return false;
+});
+dropTarget.addEventListener('dragleave', function(evt){
+	dropTarget.classList.remove("active");
+	evt.preventDefault();
+	return false;
+});
+dropTarget.addEventListener('drop', function(evt){
+	dropTarget.classList.remove("active");
+	try {
+		file.value = "";
+		readFile(evt.dataTransfer.files[0]);
+	} catch (e) {
+		console.log(e);
+	}
+	evt.preventDefault();
+	return false;
+});
+
+//dragging into the window shows the target:
+document.addEventListener('dragover', function(evt){
+	dropTarget.classList.add("active");
+	evt.preventDefault();
+	return false;
+});
+
+var file = document.getElementById("file");
+file.addEventListener('change', function(evt){
+	try {
+		readFile(file.files[0]);
+	} catch (e) {
+		console.log(e);
+	}
+	evt.preventDefault();
+	return false;
+});
+file.addEventListener('click', function(evt){
+	file.value = ""; //reset so 'change' event fires
+});
+</script>
+
+</body>
+</html>

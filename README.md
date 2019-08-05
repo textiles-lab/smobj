@@ -90,6 +90,7 @@ The specific chunks and their order:
       float length; //amount of length to add
       uint32_t unit; //unit of length
     }
+  NOTE: checkpoints must be stored sorted by (point, unit)
 (6) Source Line Numbers:
   Header: 'src.'
   Size: 4*N
