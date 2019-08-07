@@ -55,7 +55,14 @@ The specific chunks and their order:
 	  float y;
 	  float z;
 	}
-(2) Yarn Information
+
+(2) Source Line Numbers:
+  Header: 'src.'
+  Size: 4*N
+  Contents: N source line numbers (same length as points) stored as 32-bit unsigned integers
+  NOTE: line numbers correspond to the line number for the smobj face that created the next segment. Line numbers for the last point in a yarn are set to the same value as the second-to-last by convention.
+
+(3) Yarn Information
   Header: 'yarn'
   Size: 16*N
   Contents: N yarn descriptors stored as:
@@ -67,11 +74,11 @@ The specific chunks and their order:
 	  uint8_t r,g,b,a; //color for yarn
 	}
 [remaining sections are work-in-progress]
-(3) Strings
+(4) Strings
   Header: 'strs'
   Size: N
   Contents: N bytes of string data
-(4) Units
+(5) Units
   Header: 'unit'
   Size: 12*N
   Contents: N unit descriptors stored as:
@@ -81,7 +88,7 @@ The specific chunks and their order:
       float length; //default/reccomendd length of given unit <-- might remove this
     }
   NOTE: the first unit will always be named '1' and will always represent absolute lengths.
-(5) Checkpoints:
+(6) Checkpoints:
   Header: 'chk.'
   Size: 12*N
   Contents: N checkpoints stored as:
@@ -91,11 +98,6 @@ The specific chunks and their order:
       uint32_t unit; //unit of length
     }
   NOTE: checkpoints must be stored sorted by (point, unit)
-(6) Source Line Numbers:
-  Header: 'src.'
-  Size: 4*N
-  Contents: N source line numbers (same length as points) stored as 32-bit unsigned integers
-  NOTE: line numbers correspond to the line number for the smobj face that created the next segment. Line numbers for the last point in a yarn are set to the same value as the second-to-last by convention.
 ```
 
 Note that each "Checkpoint" structure adds yarn length between that checkpoint and the next *checkpoint* (or the end of the yarn) -- this is different than adding length between checkpoints and their next yarn point.

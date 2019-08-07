@@ -26,7 +26,7 @@ struct Mesh {
 	//NOTE: vertex and type indices are 0-based, unlike in .smobj file:
 	struct Face : public std::vector< uint32_t > {
 		uint32_t type = -1U;
-		uint32_t line_number = 0; //1-based line number; 0 means 'unknown'
+		uint32_t source = 0; //1-based source line number; 0 means 'unknown'
 	};
 	std::vector< Face > faces;
 
@@ -129,7 +129,7 @@ struct Yarns {
 	//yarns:
 	struct Yarn {
 		std::vector< glm::vec3 > points;
-		std::vector< uint32_t > line_numbers;
+		std::vector< uint32_t > sources; //source line numbers
 		struct Checkpoint {
 			uint32_t point;
 			float length;

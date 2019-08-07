@@ -55,10 +55,9 @@ sm.Yarns.fromArrayBuffer = function(buffer) {
 		return gotSize / itemSize;
 	}
 
-	const points = [];
-
 	const pointsCount = getCount('f3..', 12);
 	console.log(pointsCount + " points.");
+	const points = [];
 	for (let i = 0; i < pointsCount; ++i) {
 		let x = getFloat32();
 		let y = getFloat32();
@@ -70,6 +69,26 @@ sm.Yarns.fromArrayBuffer = function(buffer) {
 		return points.slice(3*begin, 3*end);
 	}
 
+	const sourcesCount = getCount('src.', 4);
+	console.log(sourcesCount + " sources.");
+	const sources = [];
+	for (let i = 0; i < sourcesCount; ++i) {
+		const source = getUint32();
+		sources.push(source);
+	}
+	if (3*sources.length !== points.length) {
+		throw new Error("Yarns file should have as many sources as points.");
+	}
+
+	//helper: get sources from range
+	function getSources(begin, end) {
+		return sources.slice(begin, end);
+	}
+
+	//build map for checkpoint sorting:
+	const pointToYarnIndex = new Array(points.length);
+	const yarnPointBegin = [];
+
 	const yarnInfosCount = getCount('yarn', 16);
 	console.log(yarnInfosCount + " yarnInfos.");
 	for (let i = 0; i < yarnInfosCount; ++i) {
@@ -80,7 +99,22 @@ sm.Yarns.fromArrayBuffer = function(buffer) {
 		const g = getUint8();
 		const b = getUint8();
 		const a = getUint8();
-		//TODO: store yarn info!
+		if (!(pointBegin <= pointEnd && pointEnd < points.length)) {
+			throw new Error("Invalid point indices [" + pointBegin + ", " + pointEnd + ") of " + points.length + " in yarn info.");
+		}
+		yarns.yarns.push({
+			points:getPoints(pointBegin, pointEnd),
+			sources:getSources(pointBegin, pointEnd),
+			radius:radius,
+			color:{ r:r, g:g, b:b, a:a },
+			checkpoints:[]
+		});
+
+		//update checkpoint lookup map:
+		yarnPointBegin.push(pointBegin);
+		for (let p = pointBegin; p < pointEnd; ++p) {
+			pointToYarnIndex[p] = i;
+		}
 	}
 
 	const stringsBytes = getCount('strs', 1);
@@ -118,20 +152,24 @@ sm.Yarns.fromArrayBuffer = function(buffer) {
 		if (unit >= yarns.units.length) {
 			throw new Error("Checkpoint with out-of-range unit index " + unit + ".");
 		}
-		//TODO: store checkpoint in proper yarn
+		//store checkpoint in proper yarn:
+		const yarnIndex = pointToYarnIndex(point);
+		if (typeof(yarnIndex) !== 'number') {
+			throw new Error("Checkpoint " + point + " doesn't lie in a yarn.");
+		}
+		yarns.yarns[yarnIndex].push({
+			point:point-yarnBeginPoint[yarnIndex],
+			length:length,
+			unit:unit
+		});
 	}
 
-	const sourcesCount = getCount('src.', 4);
-	console.log(sourcesCount + " sources.");
-	const sources = [];
-	for (let i = 0; i < sourcesCount; ++i) {
-		const source = getUint32();
-		sources.push(source);
-	}
 
-	if (3*sources.length !== points.length) {
-		throw new Error("Yarns file should have as many sources as points.");
-	}
+	yarns.yarns.forEach(function(yarn){
+		yarn.sources = sources.slice(yarn.pointsBegin, yarn.pointsEnd);
+		delete yarn.pointsBegin;
+		delete yarn.pointsEnd;
+	});
 
 
 	return yarns;

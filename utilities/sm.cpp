@@ -34,7 +34,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 
 	std::vector< Signature > library; //name edge0 .. edgeN
 	std::vector< uint32_t > types;
-	std::vector< uint32_t > lines;
+	std::vector< uint32_t > sources;
 
 	std::ifstream in(filename, std::ios::binary);
 	std::string line;
@@ -99,7 +99,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			int32_t idx;
 			if (!(str >> idx)) throw std::runtime_error("expecting line number after ln");
 			if (idx < 0) throw std::runtime_error("invalid line number index '" + std::to_string(idx) + "'");
-			lines.emplace_back(idx);
+			sources.emplace_back(idx);
 			std::string temp;
 			if (str >> temp) throw std::runtime_error("trailing junk (" + temp + "...) in ln line");
 
@@ -200,15 +200,15 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 	}
 
 	if (types.size() != mesh.faces.size()) throw std::runtime_error("should be a 'T' for every face.");
-	if (lines.empty()) lines.resize(mesh.faces.size(), 0);
-	if (lines.size() != mesh.faces.size()) throw std::runtime_error("should be a 'ln' for every face or for no faces.");
+	if (sources.empty()) sources.resize(mesh.faces.size(), 0);
+	if (sources.size() != mesh.faces.size()) throw std::runtime_error("should be a 'ln' for every face or for no faces.");
 
 	for (uint32_t i = 0; i < types.size(); ++i) {
 		if (mesh.faces[i].size() != library[types[i]].edges.size()) {
 			throw std::runtime_error("face/library edge count mismatch.");
 		}
 		mesh.faces[i].type = types[i];
-		mesh.faces[i].line_number = lines[i];
+		mesh.faces[i].source = sources[i];
 	}
 
 
@@ -426,7 +426,7 @@ void sm::Yarns::save(std::string const &filename) const {
 	static_assert(sizeof(CheckpointInfo) == 12, "CheckpointInfo is packed");
 	std::vector< CheckpointInfo > out_checkpoints;
 
-	std::vector< uint32_t > out_line_numbers;
+	std::vector< uint32_t > out_sources;
 
 	//fill the arrays:
 
@@ -440,7 +440,7 @@ void sm::Yarns::save(std::string const &filename) const {
 	}
 
 	for (auto const &yarn : yarns) {
-		assert(yarn.points.size() == yarn.line_numbers.size());
+		assert(yarn.points.size() == yarn.sources.size());
 
 		for (auto const &cp : yarn.checkpoints) {
 			assert(cp.unit < units.size());
@@ -453,18 +453,18 @@ void sm::Yarns::save(std::string const &filename) const {
 		out_yarns.emplace_back();
 		out_yarns.back().point_begin = out_points.size();
 		out_points.insert(out_points.end(), yarn.points.begin(), yarn.points.end());
-		out_line_numbers.insert(out_line_numbers.end(), yarn.line_numbers.begin(), yarn.line_numbers.end());
+		out_sources.insert(out_sources.end(), yarn.sources.begin(), yarn.sources.end());
 		out_yarns.back().point_end = out_points.size();
 		out_yarns.back().radius = yarn.radius;
 		out_yarns.back().color = yarn.color;
 	}
 
 	write(out, "f3..", out_points);
+	write(out, "src.", out_sources);
 	write(out, "yarn", out_yarns);
 	write(out, "strs", out_strings);
 	write(out, "unit", out_units);
 	write(out, "chk.", out_checkpoints);
-	write(out, "src.", out_line_numbers);
 
 }
 
@@ -990,10 +990,10 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 					mismatch += glm::length(pt - yarns.yarns.back().points.back());
 					//average just in case
 					yarns.yarns.back().points.back() = 0.5f * (yarns.yarns.back().points.back() + pt);
-					yarns.yarns.back().line_numbers.back() = face.line_number;
+					yarns.yarns.back().sources.back() = face.source;
 				} else {
 					yarns.yarns.back().points.emplace_back(pt);
-					yarns.yarns.back().line_numbers.emplace_back(face.line_number);
+					yarns.yarns.back().sources.emplace_back(face.source);
 				}
 			}
 		}
