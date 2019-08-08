@@ -1,3 +1,5 @@
+#define GLM_ENABLE_EXPERIMENTAL
+
 #include "sm.hpp"
 
 #include <glm/gtx/hash.hpp>
