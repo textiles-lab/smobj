@@ -66,6 +66,7 @@ function readFile(file) {
 	reader.onload = function(){
 		console.log("File was " + reader.result.byteLength + " bytes long.");
 		window.yarns = sm.Yarns.fromArrayBuffer(reader.result);
+		resetCamera();
 		uploadYarns();
 		requestRedraw();
 	};
@@ -133,6 +134,211 @@ file.addEventListener('click', function(evt){
 const canvas = document.getElementById("canvas");
 const gl = canvas.getContext('webgl');
 
+//------- camera -------
+const camera = {
+	target:{x:0.0, y:0.0, z:0.0},
+	radius:2.5,
+	azimuth:0.0,
+	elevation:0.0,
+	fovy:60.0,
+	aspect:1.0
+};
+
+camera.computeUp = function camera_computeUp() {
+	return {
+		x:Math.sin(camera.azimuth)*-Math.sin(camera.elevation),
+		y:Math.cos(camera.elevation),
+		z:Math.cos(camera.azimuth)*-Math.sin(camera.elevation)
+	};
+};
+
+camera.computeRight = function camera_computeRight() {
+	return {
+		x:Math.cos(camera.azimuth),
+		y:0.0,
+		z:-Math.sin(camera.azimuth)
+	};
+};
+
+camera.computeOut = function camera_computeOut() {
+	return {
+		x:Math.sin(camera.azimuth)*Math.cos(camera.elevation),
+		y:Math.sin(camera.elevation),
+		z:Math.cos(camera.azimuth)*Math.cos(camera.elevation)
+	};
+};
+
+function resetCamera() {
+	//compute yarns bounding box:
+	let min = {x:Infinity, y:Infinity, z:Infinity};
+	let max = {x:-Infinity, y:-Infinity, z:-Infinity};
+	yarns.yarns.forEach(function(yarn){
+		for (let i = 0; i + 2 < yarn.points.length; i += 3) {
+			min.x = Math.min(min.x, yarn.points[i+0] - yarn.radius);
+			min.y = Math.min(min.y, yarn.points[i+1] - yarn.radius);
+			min.z = Math.min(min.z, yarn.points[i+2] - yarn.radius);
+			max.x = Math.max(max.x, yarn.points[i+0] + yarn.radius);
+			max.y = Math.max(max.y, yarn.points[i+1] + yarn.radius);
+			max.z = Math.max(max.z, yarn.points[i+2] + yarn.radius);
+		}
+	});
+
+	if (min.x > max.x) {
+		//no yarn geometry
+		min.x = -1.0; min.y = -1.0; min.z = -1.0;
+		max.x = -1.0; max.y = -1.0; max.z = -1.0;
+	}
+
+	camera.target.x = 0.5 * (min.x + max.x);
+	camera.target.y = 0.5 * (min.y + max.y);
+	camera.target.z = 0.5 * (min.z + max.z);
+
+	console.log(min,max);
+
+	camera.radius = 0.5 * (max.y - min.y) / Math.tan(0.5 * camera.fovy * Math.PI / 180.0) + 0.5 * (max.z - min.z);
+	camera.azimuth = 0.0;
+	camera.elevation = 0.0;
+
+	requestRedraw();
+}
+
+const oldMouse = {x:NaN, y:NaN};
+let camFlipX = false;
+
+function relativeMouse(evt, elt) {
+	//based on: https://developer.mozilla.org/en-US/docs/Web/API/Element/mousemove_event
+	const rect = elt.getBoundingClientRect();
+	return {
+		x:evt.clientX - rect.left,
+		y:evt.clientY - rect.top
+	};
+}
+
+canvas.addEventListener('wheel', function(evt){
+	evt.preventDefault();
+	const zoom = Math.pow(0.5, 0.02 * evt.deltaY);
+	camera.radius *= zoom;
+	if (camera.radius < 1.0) camera.radius = 1.0;
+	if (camera.radius > 1000.0) camera.radius = 1000.0;
+	requestRedraw();
+	return false;
+});
+
+canvas.addEventListener('mousedown', function(evt){
+	const mouse = relativeMouse(evt, canvas);
+	oldMouse.x = mouse.x;
+	oldMouse.y = mouse.y;
+	camFlipX = (camera.computeUp().y < 0.0);
+	evt.preventDefault();
+	return false;
+});
+
+canvas.addEventListener('mousemove', function(evt){
+	const mouse = relativeMouse(evt, canvas);
+	if (oldMouse.x === oldMouse.x) {
+		if (evt.buttons & 1) {
+			if (evt.shiftKey) {
+				const up = camera.computeUp();
+				const right = camera.computeRight();
+
+				const x = camera.radius * (mouse.x - oldMouse.x) / canvas.height;
+				const y = camera.radius * (mouse.y - oldMouse.y) / canvas.height;
+
+				camera.target.x += right.x * x + up.x * y;
+				camera.target.y += right.y * x + up.y * y;
+				camera.target.z += right.z * x + up.z * y;
+			} else {
+				camera.azimuth += (camFlipX ? -1.0 : 1.0) * (mouse.x - oldMouse.x) / canvas.height;
+				camera.elevation += (mouse.y - oldMouse.y) / canvas.height;
+			}
+			requestRedraw();
+		}
+	}
+	oldMouse.x = mouse.x;
+	oldMouse.y = mouse.y;
+	evt.preventDefault();
+	return false;
+});
+
+canvas.addEventListener('mouseup', function(evt){
+	oldMouse.x = NaN;
+	oldMouse.y = NaN;
+	evt.preventDefault();
+	return false;
+});
+
+function dot(a, b) {
+	return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+function cross(a, b) {
+	return {
+		x: a.y * b.z - a.z * b.y,
+		y: a.z * b.x - a.x * b.z,
+		z: a.x * b.y - a.y * b.x
+	};
+}
+function normalize(vec) {
+	var len = Math.sqrt(dot(vec, vec));
+	return { x:vec.x / len, y:vec.y / len, z:vec.z / len };
+}
+function lookAt(eye, target, up) {
+	var out = normalize({ x:eye.x - target.x, y:eye.y - target.y, z:eye.z - target.z });
+	var proj = dot(up, out);
+	up = normalize({ x:up.x - proj * out.x, y:up.y - proj * out.y, z:up.z - proj * out.z });
+
+	var right = cross(out, up);
+
+	var offset = { x: -dot(eye, right), y: -dot(eye, up), z: -dot(eye, out) };
+
+	return new Float32Array([
+		right.x, up.x, out.x, 0.0,
+		right.y, up.y, out.y, 0.0,
+		right.z, up.z, out.z, 0.0,
+		offset.x, offset.y, offset.z, 1.0
+	]);
+}
+
+function perspective(fovy, aspect, zNear) {
+	var f = 1 / Math.tan(fovy/2 * Math.PI / 180.0);
+	return new Float32Array([
+		f / aspect, 0.0, 0.0, 0.0,
+		0.0, f, 0.0, 0.0,
+		0.0, 0.0, -1, -1.0,
+		0.0, 0.0,-2.0 * zNear, 0.0
+	]);
+}
+function mul(A, B) {
+	var out = new Float32Array(16);
+	for (var r = 0; r < 4; ++r) {
+		for (var c = 0; c < 4; ++c) {
+			var val = 0.0;
+			for (var k = 0; k < 4; ++k) {
+				val += A[k * 4 + r] * B[c * 4 + k];
+			}
+			out[4 * c + r] = val;
+		}
+	}
+	return out;
+}
+
+function computeMVP() {
+	const P = perspective(camera.fovy, camera.aspect, 0.1);
+	const out = camera.computeOut();
+	const up = camera.computeUp();
+	const MV = lookAt(
+		{
+			x:camera.target.x+camera.radius*out.x,
+			y:camera.target.y+camera.radius*out.y,
+			z:camera.target.z+camera.radius*out.z
+		},
+		camera.target,
+		up
+	);
+	return mul(P, MV);
+}
+
+
+//------- rendering -------
 
 function initShaderProgram(vsSource, fsSource) {
 	function loadShader(type, source) {
@@ -203,8 +409,6 @@ const colorProgram = initShaderProgram(
 	}
 `);
 
-let aspect = 1.0;
-
 const yarnsBuffer = gl.createBuffer();
 const yarnStarts = [];
 
@@ -229,15 +433,16 @@ function uploadYarns() {
 function uploadTest() {
 	//clear yarnStarts array:
 	yarnStarts.splice(0,yarnStarts.length);
-
 	
 	let Positions = [
-		0,0,0,
-		1,1,0,
-		0,1,0,
+		0.1,0,0,
 		1,0,0,
+		0,0.1,0,
+		0,1,0,
+		0,0,0.1,
+		0,0,1,
 	];
-	yarnStarts.push(0, Positions.length/3);
+	yarnStarts.push(0, 2, 4, 6);
 
 	gl.bindBuffer(gl.ARRAY_BUFFER, yarnsBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Positions), gl.STATIC_DRAW);
@@ -256,8 +461,7 @@ function redraw() {
 		canvas.width = width;
 		canvas.height = height;
 		gl.viewport(0,0,width,height);
-		aspect = width / height;
-		console.log(width, height);
+		camera.aspect = width / height;
 	})();
 
 	gl.clearColor(0.1, 0.1, 0.1, 1.0);
@@ -281,12 +485,13 @@ function redraw() {
 	gl.uniformMatrix4fv(
 		colorProgram.uniformLocations.mvp_mat4,
 		false,
-		[
+		computeMVP()
+		/*[
 			0.1, 0.0, 0.0, 0.0,
 			0.0, 0.1, 0.0, 0.0,
 			0.0, 0.0, 0.1, 0.0,
 			0.0, 0.0, 0.0, 1.0
-		]
+		]*/
 	);
 
 	for (let i = 0; i + 1 < yarnStarts.length; ++i) {
@@ -294,13 +499,17 @@ function redraw() {
 	}
 }
 
-uploadTest();
-redraw();
-
 function requestRedraw() {
-	//TODO: window.requestAnimationFrame
-	redraw();
+	if (requestRedraw.requested) return;
+	requestRedraw.requested = true;
+	window.requestAnimationFrame(function(ts){
+		delete requestRedraw.requested;
+		redraw();
+	});
 }
+
+uploadTest();
+requestRedraw();
 
 </script>
 </body>
