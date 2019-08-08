@@ -389,65 +389,41 @@ function initShaderProgram(vsSource, fsSource) {
 	return programInfo;
 }
 
-const colorProgram = initShaderProgram(
-`
-	uniform mat4 mvp_mat4;
+</script>
+<script src="renderers.lines.js"></script>
+<script>
 
-	attribute vec4 Position;
-	attribute vec4 Color;
+let renderer = renderers.lines;
 
-	varying vec4 color;
+function setTestYarns() {
+	yarns = new sm.Yarns();
 
-	void main() {
-		gl_Position = mvp_mat4 * Position;
-		color = Color;
-	}
-`,`
-	varying lowp vec4 color;
-	void main() {
-		gl_FragColor = color;
-	}
-`);
+	yarns.yarns.push({
+		points:[
+			0.0, 0.0, 0.0,
+			1.0, 0.0, 0.0,
+			1.0, 1.0, 0.0,
+			1.0, 1.0, 1.0,
+			0.0, 1.0, 1.0,
+			0.0, 0.0, 1.0,
+		],
+		sources:[
+			0, 0, 0, 0, 0, 0
+		],
+		radius:0.1,
+		color:{ r:1.0, g:0.5, b:0.5, a:1.0 }
+	});
 
-const yarnsBuffer = gl.createBuffer();
-const yarnStarts = [];
+
+	resetCamera();
+	uploadYarns();
+	requestRedraw();
+
+}
 
 function uploadYarns() {
-	//clear yarnStarts array:
-	yarnStarts.splice(0,yarnStarts.length);
-
-	//accmulate Position attribs for all yarns:
-	let Positions = [];
-	yarns.yarns.forEach(function(yarn){
-		yarnStarts.push(Positions.length / 3);
-		Positions = Positions.concat(yarn.points);
-	});
-	yarnStarts.push(Positions.length / 3);
-
-	gl.bindBuffer(gl.ARRAY_BUFFER, yarnsBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Positions), gl.STATIC_DRAW);
-
+	renderer.uploadYarns();
 }
-
-
-function uploadTest() {
-	//clear yarnStarts array:
-	yarnStarts.splice(0,yarnStarts.length);
-	
-	let Positions = [
-		0.1,0,0,
-		1,0,0,
-		0,0.1,0,
-		0,1,0,
-		0,0,0.1,
-		0,0,1,
-	];
-	yarnStarts.push(0, 2, 4, 6);
-
-	gl.bindBuffer(gl.ARRAY_BUFFER, yarnsBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Positions), gl.STATIC_DRAW);
-}
-
 
 function redraw() {
 	//make sure canvas size matches element size:
@@ -464,39 +440,7 @@ function redraw() {
 		camera.aspect = width / height;
 	})();
 
-	gl.clearColor(0.1, 0.1, 0.1, 1.0);
-	gl.clear(gl.COLOR_BUFFER_BIT);
-
-	gl.useProgram(colorProgram.program);
-	gl.bindBuffer(gl.ARRAY_BUFFER, yarnsBuffer);
-
-	gl.vertexAttrib4f(colorProgram.attribLocations.Color, 1.0, 0.0, 1.0, 1.0);
-	gl.disableVertexAttribArray(colorProgram.attribLocations.Color);
-
-	gl.vertexAttribPointer(colorProgram.attribLocations.Position,
-		3, //size
-		gl.FLOAT, //type
-		false, //normalize
-		12, //stride
-		0 //offset
-	);
-	gl.enableVertexAttribArray(colorProgram.attribLocations.Position);
-
-	gl.uniformMatrix4fv(
-		colorProgram.uniformLocations.mvp_mat4,
-		false,
-		computeMVP()
-		/*[
-			0.1, 0.0, 0.0, 0.0,
-			0.0, 0.1, 0.0, 0.0,
-			0.0, 0.0, 0.1, 0.0,
-			0.0, 0.0, 0.0, 1.0
-		]*/
-	);
-
-	for (let i = 0; i + 1 < yarnStarts.length; ++i) {
-		gl.drawArrays(gl.LINE_STRIP, yarnStarts[i], yarnStarts[i+1]-yarnStarts[i]);
-	}
+	renderer.redraw();
 }
 
 function requestRedraw() {
@@ -508,7 +452,7 @@ function requestRedraw() {
 	});
 }
 
-uploadTest();
+setTestYarns();
 requestRedraw();
 
 </script>
