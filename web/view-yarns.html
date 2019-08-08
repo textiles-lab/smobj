@@ -38,7 +38,7 @@
 <body>
 
 
-<!-- controls bar at the top of the window !-->
+<!-- controls bar at the top of the window -->
 <div id="view-controls">
 <input id="file" type="file" />
 <label id="fileLabel" for="file"><span>Choose an .yarns file</span> or drag one into the window to visualize it.</label>
@@ -52,6 +52,8 @@
 <div id="dropTarget"></div>
 
 <script>
+//--------------------------------------
+//File loading code
 function readFile(file) {
 	console.log("Attempting to read file: '" + file.name + "'");
 
@@ -64,6 +66,8 @@ function readFile(file) {
 	reader.onload = function(){
 		console.log("File was " + reader.result.byteLength + " bytes long.");
 		window.yarns = sm.Yarns.fromArrayBuffer(reader.result);
+		uploadYarns();
+		requestRedraw();
 	};
 	reader.readAsArrayBuffer(file);
 }
@@ -114,5 +118,190 @@ file.addEventListener('click', function(evt){
 });
 </script>
 
+<script>
+
+</script>
+
+<script>
+"use strict";
+//--------------------------------------
+//Yarn visualizer code
+
+//NOTE: based largely on the MDN WebGL tutorials at:
+// https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Tutorial/Getting_started_with_WebGL
+
+const canvas = document.getElementById("canvas");
+const gl = canvas.getContext('webgl');
+
+
+function initShaderProgram(vsSource, fsSource) {
+	function loadShader(type, source) {
+		const shader = gl.createShader(type);
+		gl.shaderSource(shader, source);
+		gl.compileShader(shader);
+		if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+			console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+			gl.deleteShader(shader);
+			return null;
+		}
+		return shader;
+	}
+
+	const vertexShader = loadShader(gl.VERTEX_SHADER, vsSource);
+	const fragmentShader = loadShader(gl.FRAGMENT_SHADER, fsSource);
+
+	const shaderProgram = gl.createProgram();
+	gl.attachShader(shaderProgram, vertexShader);
+	gl.attachShader(shaderProgram, fragmentShader);
+	gl.linkProgram(shaderProgram);
+
+	if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+		console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(shaderProgram));
+		return null;
+	}
+
+	const programInfo = {
+		program: shaderProgram,
+		attribLocations: {
+		},
+		uniformLocations: {
+		},
+	};
+
+	const attribCount = gl.getProgramParameter(shaderProgram, gl.ACTIVE_ATTRIBUTES);
+	for (let i = 0; i < attribCount; ++i) {
+		const attrib = gl.getActiveAttrib(shaderProgram, i);
+		programInfo.attribLocations[attrib.name] = gl.getAttribLocation(shaderProgram, attrib.name);
+	}
+
+	const uniformCount = gl.getProgramParameter(shaderProgram, gl.ACTIVE_UNIFORMS);
+	for (let i = 0; i < uniformCount; ++i) {
+		const uniform = gl.getActiveUniform(shaderProgram, i);
+		programInfo.uniformLocations[uniform.name] = gl.getUniformLocation(shaderProgram, uniform.name);
+	}
+
+	return programInfo;
+}
+
+const colorProgram = initShaderProgram(
+`
+	uniform mat4 mvp_mat4;
+
+	attribute vec4 Position;
+	attribute vec4 Color;
+
+	varying vec4 color;
+
+	void main() {
+		gl_Position = mvp_mat4 * Position;
+		color = Color;
+	}
+`,`
+	varying lowp vec4 color;
+	void main() {
+		gl_FragColor = color;
+	}
+`);
+
+let aspect = 1.0;
+
+const yarnsBuffer = gl.createBuffer();
+const yarnStarts = [];
+
+function uploadYarns() {
+	//clear yarnStarts array:
+	yarnStarts.splice(0,yarnStarts.length);
+
+	//accmulate Position attribs for all yarns:
+	let Positions = [];
+	yarns.yarns.forEach(function(yarn){
+		yarnStarts.push(Positions.length / 3);
+		Positions = Positions.concat(yarn.points);
+	});
+	yarnStarts.push(Positions.length / 3);
+
+	gl.bindBuffer(gl.ARRAY_BUFFER, yarnsBuffer);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Positions), gl.STATIC_DRAW);
+
+}
+
+
+function uploadTest() {
+	//clear yarnStarts array:
+	yarnStarts.splice(0,yarnStarts.length);
+
+	
+	let Positions = [
+		0,0,0,
+		1,1,0,
+		0,1,0,
+		1,0,0,
+	];
+	yarnStarts.push(0, Positions.length/3);
+
+	gl.bindBuffer(gl.ARRAY_BUFFER, yarnsBuffer);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Positions), gl.STATIC_DRAW);
+}
+
+
+function redraw() {
+	//make sure canvas size matches element size:
+	(function resize() {
+		const style = getComputedStyle(canvas);
+		window.style = style;
+		//TODO: multiply by window.devicePixelRatio for "high-res" mode?
+		const width = Math.round(parseFloat(style.width));
+		const height = Math.round(parseFloat(style.height));
+
+		canvas.width = width;
+		canvas.height = height;
+		gl.viewport(0,0,width,height);
+		aspect = width / height;
+		console.log(width, height);
+	})();
+
+	gl.clearColor(0.1, 0.1, 0.1, 1.0);
+	gl.clear(gl.COLOR_BUFFER_BIT);
+
+	gl.useProgram(colorProgram.program);
+	gl.bindBuffer(gl.ARRAY_BUFFER, yarnsBuffer);
+
+	gl.vertexAttrib4f(colorProgram.attribLocations.Color, 1.0, 0.0, 1.0, 1.0);
+	gl.disableVertexAttribArray(colorProgram.attribLocations.Color);
+
+	gl.vertexAttribPointer(colorProgram.attribLocations.Position,
+		3, //size
+		gl.FLOAT, //type
+		false, //normalize
+		12, //stride
+		0 //offset
+	);
+	gl.enableVertexAttribArray(colorProgram.attribLocations.Position);
+
+	gl.uniformMatrix4fv(
+		colorProgram.uniformLocations.mvp_mat4,
+		false,
+		[
+			0.1, 0.0, 0.0, 0.0,
+			0.0, 0.1, 0.0, 0.0,
+			0.0, 0.0, 0.1, 0.0,
+			0.0, 0.0, 0.0, 1.0
+		]
+	);
+
+	for (let i = 0; i + 1 < yarnStarts.length; ++i) {
+		gl.drawArrays(gl.LINE_STRIP, yarnStarts[i], yarnStarts[i+1]-yarnStarts[i]);
+	}
+}
+
+uploadTest();
+redraw();
+
+function requestRedraw() {
+	//TODO: window.requestAnimationFrame
+	redraw();
+}
+
+</script>
 </body>
 </html>
