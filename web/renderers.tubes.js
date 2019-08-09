@@ -25,8 +25,8 @@ const colorProgram = initShaderProgram(
 	}
 `);
 
-const yarnsBuffer = gl.createBuffer();
-const yarnStarts = [];
+const attribsBuffer = gl.createBuffer();
+let attribsCount = 0;
 
 function quadraticBSpline(points, minDistance, maxAngle) {
 	//need at least 3 points (6 coordinates) to make a curve
@@ -138,9 +138,27 @@ function quadraticBSpline(points, minDistance, maxAngle) {
 	return poly;
 }
 
+//when using a data view to store Float32 values, do they need to be marked as little endian?
+const FLOAT32_LITTLE_ENDIAN = function() {
+	let array = new ArrayBuffer(4);
+	let f32 = new Float32Array(array);
+	let data = new DataView(array);
+	f32[0] = 1.0;
+	if (data.getFloat32(0, false) === f32[0]) {
+		assert(data.getFloat32(0, true) !== f32[0]);
+		return false;
+	} else if (data.getFloat32(0, true) === f32[0]) {
+		assert(data.getFloat32(0, false) !== f32[0]);
+		return true;
+	}
+};
+
+const BYTES_PER_ATTRIB = 3*4 + 4*1;
+
 //build a tubular tristrip around a (one hopes) smooth spine:
+//return a ArrayBuffer with attribs inside
 function buildTube(spine, radius) {
-	if (spine.length < 3) return [];
+	if (spine.length < 3) return new ArrayBuffer(0);
 
 	//build a cross-section shape:
 	const Ring = new Array(5);
@@ -149,50 +167,57 @@ function buildTube(spine, radius) {
 		Ring[i] = {x:Math.cos(angle), y:Math.sin(angle)};
 	}
 
-	let tristrip = [];
+	let attribBytes = BYTES_PER_ATTRIB * (
+		2 * ( Ring.length + (Ring.length % 2 ? 1 : 0) ) //caps
+		+ (spine.length/3 - 1) * 2 * (Ring.length+1) //sweep segments
+	);
+
+	let tristrip = new ArrayBuffer(attribBytes);
+	let data = new DataView(tristrip);
+	let dataOffset = 0;
+
 
 	function attrib(x,y,z,rgba) {
-		tristrip.push(x,y,z,rgba);
+		data.setFloat32(dataOffset, x, FLOAT32_LITTLE_ENDIAN); dataOffset += 4;
+		data.setFloat32(dataOffset, y, FLOAT32_LITTLE_ENDIAN); dataOffset += 4;
+		data.setFloat32(dataOffset, z, FLOAT32_LITTLE_ENDIAN); dataOffset += 4;
+		data.setUint32(dataOffset, rgba, false); dataOffset += 4;
 	}
 	function prevAttrib(offset) {
 		console.assert(offset < 0, "must look before current point");
-		offset *= 4;
-		console.assert(offset + tristrip.length >= 0, "can't look before beginning");
-		tristrip.push(
-			tristrip[tristrip.length+offset+0],
-			tristrip[tristrip.length+offset+1],
-			tristrip[tristrip.length+offset+2],
-			tristrip[tristrip.length+offset+3]
+		offset *= BYTES_PER_ATTRIB;
+		console.assert(offset + dataOffset >= 0, "can't look before beginning");
+		attrib(
+			data.getFloat32(offset + dataOffset + 0, FLOAT32_LITTLE_ENDIAN),
+			data.getFloat32(offset + dataOffset + 4, FLOAT32_LITTLE_ENDIAN),
+			data.getFloat32(offset + dataOffset + 8, FLOAT32_LITTLE_ENDIAN),
+			data.getUint32(offset + dataOffset + 12, false)
 		);
 	}
 
-	const tempBuffer = new ArrayBuffer(4);
-	const tempView = new DataView(tempBuffer);
-	function rgbaToFloat(rgba) { //<--- this doesn't work thanks to denorm handling (I think)
-		tempView.setUint8(0, rgba >> 24);
-		tempView.setUint8(1, (rgba >> 16) & 0xff);
-		tempView.setUint8(2, (rgba >> 8) & 0xff);
-		tempView.setUint8(3, rgba & 0xff);
-		return tempView.getFloat32(0);
-	}
-	
 	//sweep the cross-section shape along the yarn:
 	//..will do this by maintaining a local coordinate system p1,p2 at corners:
 	let p1 = { x:NaN, y:NaN, z:NaN};
 	let p2 = { x:NaN, y:NaN, z:NaN};
 	let pt = { x:spine[0], y:spine[1], z:spine[2] };
 
-	const ColorA = rgbaToFloat(0xff8800ff);
-	const ColorB = rgbaToFloat(0xff00ffff);
-	const ColorC = rgbaToFloat(0xffff00ff);
-	const ColorD = rgbaToFloat(0x000000ff);
+	const ColorA = 0xff0000ff;
+	const ColorB = 0x00ff00ff;
+	const ColorC = 0x0000ffff;
+	const ColorD = 0xffffffff;
 
 	/*
 	//DEBUG
+	attribBytes = (3*4+4*1) * 4;
+	tristrip = new ArrayBuffer(attribBytes);
+	data = new DataView(tristrip);
 	attrib(0,0,0, ColorA);
 	attrib(1,0,0, ColorB);
+	console.log(new Float32Array(tristrip));
 	attrib(0,1,0, ColorC);
 	attrib(1,1,0, ColorD);
+	console.assert(dataOffset === attribBytes);
+	console.log(new Float32Array(tristrip));
 	return tristrip;
 	*/
 
@@ -230,7 +255,7 @@ function buildTube(spine, radius) {
 			inds.reverse();
 		}
 		//note: want to always emit even number of verts, start with index 0.
-		console.log(reverse, inds);
+		//console.log(reverse, inds);
 
 		inds.forEach(function(i){
 			attrib(
@@ -338,7 +363,6 @@ function buildTube(spine, radius) {
 
 		if (!(prevD1.x === prevD1.x)) {
 			//start sweep:
-			console.log(d1, d2, along); //DEBUG
 			cap(d1, d2, prevAt, true);
 			sweepTo(d1, d2, prevAt);
 		} else {
@@ -368,28 +392,53 @@ function buildTube(spine, radius) {
 		cap(prevD1, prevD2, prevAt);
 	}
 
+	console.assert(dataOffset === attribBytes);
+
 	return tristrip;
 	
 }
 
+//Helper: concatenate ArrayBuffers of attribs:
+function concat(a,b) {
+	console.assert(a.byteLength % BYTES_PER_ATTRIB === 0, "Expecting buffers of attribs");
+	console.assert(b.byteLength % BYTES_PER_ATTRIB === 0, "Expecting buffers of attribs");
+	console.assert(BYTES_PER_ATTRIB % 4 === 0, "Expecting attribs to be multiples of 32 bits");
+
+	if (b.byteLength === 0) return a;
+	if (a.byteLength === 0) return b;
+
+	const o = new ArrayBuffer(a.byteLength + b.byteLength + 2*BYTES_PER_ATTRIB);
+
+	const av = new Uint32Array(a);
+	const bv = new Uint32Array(b);
+	const ov = new Uint32Array(o);
+
+	ov.set(av, 0);
+	//duplicate last vertex:
+	ov.set(av.slice(av.length-BYTES_PER_ATTRIB/4, av.length), av.length);
+	//duplicate first vertex:
+	ov.set(bv.slice(0, BYTES_PER_ATTRIB/4), av.length + BYTES_PER_ATTRIB/4);
+	ov.set(bv, av.length + 2*BYTES_PER_ATTRIB/4);
+
+	return ov;
+}
+
 renderer.uploadYarns = function tubes_uploadYarns() {
-	//clear yarnStarts array:
-	yarnStarts.splice(0,yarnStarts.length);
-
 	//accmulate Position attribs for all yarns:
-	let Positions = [];
-	yarns.yarns.forEach(function(yarn){
-		yarnStarts.push(Positions.length / 4);
+	let Attribs = new ArrayBuffer(0);
 
+	yarns.yarns.forEach(function(yarn){
 		const spine = quadraticBSpline(yarn.points, 0.5 * yarn.radius, 25.0);
 		const tube = buildTube(spine, yarn.radius);
 
-		Positions = Positions.concat(tube);
+		//tube is an ArrayBuffer:
+		Attribs = concat(Attribs, tube);
 	});
-	yarnStarts.push(Positions.length / 4);
 
-	gl.bindBuffer(gl.ARRAY_BUFFER, yarnsBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Positions), gl.STATIC_DRAW);
+	gl.bindBuffer(gl.ARRAY_BUFFER, attribsBuffer);
+	gl.bufferData(gl.ARRAY_BUFFER, Attribs, gl.STATIC_DRAW);
+	attribsCount = Attribs.byteLength / (3*4+4*1);
+	console.log("Have " + Attribs.byteLength + " bytes of attribs == " + attribsCount + " attribs.");
 };
 
 renderer.redraw = function tubes_redraw() {
@@ -398,7 +447,7 @@ renderer.redraw = function tubes_redraw() {
 	gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
 	gl.useProgram(colorProgram.program);
-	gl.bindBuffer(gl.ARRAY_BUFFER, yarnsBuffer);
+	gl.bindBuffer(gl.ARRAY_BUFFER, attribsBuffer);
 
 	gl.vertexAttribPointer(colorProgram.attribLocations.Color,
 		4, //size
@@ -431,9 +480,7 @@ renderer.redraw = function tubes_redraw() {
 	gl.enable(gl.CULL_FACE);
 	gl.cullFace(gl.BACK);
 
-	for (let i = 0; i + 1 < yarnStarts.length; ++i) {
-		gl.drawArrays(gl.TRIANGLE_STRIP, yarnStarts[i], yarnStarts[i+1]-yarnStarts[i]);
-	}
+	gl.drawArrays(gl.TRIANGLE_STRIP, 0, attribsCount);
 
 	gl.disable(gl.CULL_FACE);
 	gl.disable(gl.DEPTH_TEST);

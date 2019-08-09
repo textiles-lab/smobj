@@ -193,7 +193,7 @@ function resetCamera() {
 	camera.target.y = 0.5 * (min.y + max.y);
 	camera.target.z = 0.5 * (min.z + max.z);
 
-	console.log(min,max);
+	//console.log("Range: ",min,max);
 
 	camera.radius = 0.5 * (max.y - min.y) / Math.tan(0.5 * camera.fovy * Math.PI / 180.0) + 0.5 * (max.z - min.z);
 	camera.azimuth = 0.0;
