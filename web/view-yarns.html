@@ -244,13 +244,13 @@ canvas.addEventListener('mousemove', function(evt){
 				const right = camera.computeRight();
 
 				const x = camera.radius * (mouse.x - oldMouse.x) / canvas.height;
-				const y = camera.radius * (mouse.y - oldMouse.y) / canvas.height;
+				const y = camera.radius *-(mouse.y - oldMouse.y) / canvas.height;
 
-				camera.target.x += right.x * x + up.x * y;
-				camera.target.y += right.y * x + up.y * y;
-				camera.target.z += right.z * x + up.z * y;
+				camera.target.x -= right.x * x + up.x * y;
+				camera.target.y -= right.y * x + up.y * y;
+				camera.target.z -= right.z * x + up.z * y;
 			} else {
-				camera.azimuth += (camFlipX ? -1.0 : 1.0) * (mouse.x - oldMouse.x) / canvas.height;
+				camera.azimuth += (camFlipX ? -1.0 : 1.0) * -(mouse.x - oldMouse.x) / canvas.height;
 				camera.elevation += (mouse.y - oldMouse.y) / canvas.height;
 			}
 			requestRedraw();
@@ -288,7 +288,7 @@ function lookAt(eye, target, up) {
 	var proj = dot(up, out);
 	up = normalize({ x:up.x - proj * out.x, y:up.y - proj * out.y, z:up.z - proj * out.z });
 
-	var right = cross(out, up);
+	var right = cross(up, out);
 
 	var offset = { x: -dot(eye, right), y: -dot(eye, up), z: -dot(eye, out) };
 

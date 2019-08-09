@@ -143,7 +143,7 @@ function buildTube(spine, radius) {
 	if (spine.length < 3) return [];
 
 	//build a cross-section shape:
-	const Ring = new Array(5);
+	const Ring = new Array(6);
 	for (let i = 0; i < Ring.length; ++i) {
 		const angle = (i / Ring.length) * 2.0 * Math.PI;
 		Ring[i] = {x:Math.cos(angle), y:Math.sin(angle)};
@@ -168,7 +168,7 @@ function buildTube(spine, radius) {
 
 	const tempBuffer = new ArrayBuffer(4);
 	const tempView = new DataView(tempBuffer);
-	function rgbaToFloat(rgba) {
+	function rgbaToFloat(rgba) { //<--- this doesn't work thanks to denorm handling (I think)
 		tempView.setUint8(0, rgba >> 24);
 		tempView.setUint8(1, (rgba >> 16) & 0xff);
 		tempView.setUint8(2, (rgba >> 8) & 0xff);
@@ -182,11 +182,28 @@ function buildTube(spine, radius) {
 	let p2 = { x:NaN, y:NaN, z:NaN};
 	let pt = { x:spine[0], y:spine[1], z:spine[2] };
 
-	const ColorA = rgbaToFloat(0xff0000ff);
+	const ColorA = rgbaToFloat(0xff8800ff);
 	const ColorB = rgbaToFloat(0xff00ffff);
 	const ColorC = rgbaToFloat(0xffff00ff);
+	const ColorD = rgbaToFloat(0x000000ff);
+
+	/*
+	//DEBUG
+	attrib(0,0,0, ColorA);
+	attrib(1,0,0, ColorB);
+	attrib(0,1,0, ColorC);
+	attrib(1,1,0, ColorD);
+	return tristrip;
+	*/
 
 	function cap(p1, p2, pt, reverse) {
+		//play with index orders so that final cap either
+		// (a) if !reverse:
+		//   - starts with 0, is oriented along 'along'
+		// (b) if reverse
+		//   - ends with 0, is oriented along '-along'
+		// either way, has *even* attrib count
+
 		let inds = [];
 		for (let i = 0; i < Ring.length; ++i) {
 			inds.push(i);
@@ -194,14 +211,25 @@ function buildTube(spine, radius) {
 		if (inds.length % 2) {
 			inds.push(0);
 		}
+		if (!reverse) {
+			inds.push(inds.shift());
+		}
 		let ord = [];
-		while (inds.length) {
-			ord.push(inds.shift());
-			ord.push(inds.pop());
+		for (let i = inds.length/2-1; i >= 0; --i) {
+			if (reverse) {
+				ord.push(inds[inds.length-1-i]);
+				ord.push(inds[i]);
+			} else {
+				ord.push(inds[i]);
+				ord.push(inds[inds.length-1-i]);
+			}
 		}
 		inds = ord;
+
+		if (!reverse) {
+			inds.reverse();
+		}
 		//note: want to always emit even number of verts, start with index 0.
-		if (reverse) inds.reverse();
 		console.log(reverse, inds);
 
 		inds.forEach(function(i){
@@ -209,7 +237,7 @@ function buildTube(spine, radius) {
 				radius * (Ring[i].x * p1.x + Ring[i].y * p2.x) + pt.x,
 				radius * (Ring[i].x * p1.y + Ring[i].y * p2.y) + pt.y,
 				radius * (Ring[i].x * p1.z + Ring[i].y * p2.z) + pt.z,
-				ColorC
+				(reverse ? ColorD : ColorC)
 			);
 		});
 	}
@@ -219,18 +247,18 @@ function buildTube(spine, radius) {
 		//(eventually, build a connector between frames)
 		if (p1.x === p1.x) {
 			//build connector:
-
 			for (let i = 0; i < Ring.length; ++i) {
+				let j = (Ring.length - i) % Ring.length; //travel cw but start at 0
 				attrib(
-					radius * (Ring[i].x * p1.x + Ring[i].y * p2.x) + pt.x,
-					radius * (Ring[i].x * p1.y + Ring[i].y * p2.y) + pt.y,
-					radius * (Ring[i].x * p1.z + Ring[i].y * p2.z) + pt.z,
+					radius * (Ring[j].x * p1.x + Ring[j].y * p2.x) + pt.x,
+					radius * (Ring[j].x * p1.y + Ring[j].y * p2.y) + pt.y,
+					radius * (Ring[j].x * p1.z + Ring[j].y * p2.z) + pt.z,
 					ColorA
 				);
 				attrib(
-					radius * (Ring[i].x * nextP1.x + Ring[i].y * nextP2.x) + nextPt.x,
-					radius * (Ring[i].x * nextP1.y + Ring[i].y * nextP2.y) + nextPt.y,
-					radius * (Ring[i].x * nextP1.z + Ring[i].y * nextP2.z) + nextPt.z,
+					radius * (Ring[j].x * nextP1.x + Ring[j].y * nextP2.x) + nextPt.x,
+					radius * (Ring[j].x * nextP1.y + Ring[j].y * nextP2.y) + nextPt.y,
+					radius * (Ring[j].x * nextP1.z + Ring[j].y * nextP2.z) + nextPt.z,
 					ColorB
 				);
 			}
@@ -310,6 +338,7 @@ function buildTube(spine, radius) {
 
 		if (!(prevD1.x === prevD1.x)) {
 			//start sweep:
+			console.log(d1, d2, along); //DEBUG
 			cap(d1, d2, prevAt, true);
 			sweepTo(d1, d2, prevAt);
 		} else {
