@@ -136,8 +136,8 @@ struct Yarns {
 			uint32_t unit;
 		};
 		std::vector< Checkpoint > checkpoints;
-		float radius;
-		glm::u8vec4 color;
+		float radius = 0.1f; //yarns are radius-0.1f in canonical faces, but this can get scaled if faces are shrunk
+		glm::u8vec4 color = glm::u8vec4(0xff, 0xff, 0xff, 0xff);
 	};
 	std::vector< Yarn > yarns;
 

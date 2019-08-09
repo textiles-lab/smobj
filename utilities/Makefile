@@ -18,3 +18,11 @@ smobj-to-yarns : smobj-to-yarns.cpp sm.hpp sm.o
 
 sm.o : sm.cpp sm.hpp
 	$(CPP) -c -o '$@' '$<'
+
+#generic rules for knitout -> smobj -> yarns
+
+%.smobj : %.knitout knitout-to-smobj
+	./knitout-to-smobj '$<' '$@'
+
+%.yarns : %.smobj ../faces/knitout.sf smobj-to-yarns
+	./smobj-to-yarns '$<' '../faces/knitout.sf' '$@'
