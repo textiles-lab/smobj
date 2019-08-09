@@ -140,9 +140,7 @@ function quadraticBSpline(points, minDistance, maxAngle) {
 
 //build a tubular tristrip around a (one hopes) smooth spine:
 function buildTube(spine, radius) {
-	let tristrip = [];
-
-	if (spine.length < 3) return tristrip;
+	if (spine.length < 3) return [];
 
 	//build a cross-section shape:
 	const Ring = new Array(5);
@@ -151,30 +149,98 @@ function buildTube(spine, radius) {
 		Ring[i] = {x:Math.cos(angle), y:Math.sin(angle)};
 	}
 
+	let tristrip = [];
+
+	function attrib(x,y,z,rgba) {
+		tristrip.push(x,y,z,rgba);
+	}
+	function prevAttrib(offset) {
+		console.assert(offset < 0, "must look before current point");
+		offset *= 4;
+		console.assert(offset + tristrip.length >= 0, "can't look before beginning");
+		tristrip.push(
+			tristrip[tristrip.length+offset+0],
+			tristrip[tristrip.length+offset+1],
+			tristrip[tristrip.length+offset+2],
+			tristrip[tristrip.length+offset+3]
+		);
+	}
+
+	const tempBuffer = new ArrayBuffer(4);
+	const tempView = new DataView(tempBuffer);
+	function rgbaToFloat(rgba) {
+		tempView.setUint8(0, rgba >> 24);
+		tempView.setUint8(1, (rgba >> 16) & 0xff);
+		tempView.setUint8(2, (rgba >> 8) & 0xff);
+		tempView.setUint8(3, rgba & 0xff);
+		return tempView.getFloat32(0);
+	}
+	
 	//sweep the cross-section shape along the yarn:
 	//..will do this by maintaining a local coordinate system p1,p2 at corners:
 	let p1 = { x:NaN, y:NaN, z:NaN};
 	let p2 = { x:NaN, y:NaN, z:NaN};
-	let at = { x:spine[0], y:spine[1], z:spine[2] };
+	let pt = { x:spine[0], y:spine[1], z:spine[2] };
 
-	function sweepTo(nextP1, nextP2, nextAt) {
+	const ColorA = rgbaToFloat(0xff0000ff);
+	const ColorB = rgbaToFloat(0xff00ffff);
+	const ColorC = rgbaToFloat(0xffff00ff);
+
+	function cap(p1, p2, pt, reverse) {
+		let inds = [];
+		for (let i = 0; i < Ring.length; ++i) {
+			inds.push(i);
+		}
+		if (inds.length % 2) {
+			inds.push(0);
+		}
+		let ord = [];
+		while (inds.length) {
+			ord.push(inds.shift());
+			ord.push(inds.pop());
+		}
+		inds = ord;
+		//note: want to always emit even number of verts, start with index 0.
+		if (reverse) inds.reverse();
+		console.log(reverse, inds);
+
+		inds.forEach(function(i){
+			attrib(
+				radius * (Ring[i].x * p1.x + Ring[i].y * p2.x) + pt.x,
+				radius * (Ring[i].x * p1.y + Ring[i].y * p2.y) + pt.y,
+				radius * (Ring[i].x * p1.z + Ring[i].y * p2.z) + pt.z,
+				ColorC
+			);
+		});
+	}
+
+	function sweepTo(nextP1, nextP2, nextPt) {
 		//for now, build a ring at each new frame:
 		//(eventually, build a connector between frames)
+		if (p1.x === p1.x) {
+			//build connector:
 
-		p1 = nextP1;
-		p2 = nextP2;
-		at = nextAt;
-
-		for (let i = 0; i < Ring.length; ++i) {
-			tristrip.push(
-				radius * (Ring[i].x * p1.x + Ring[i].y * p2.x) + at.x,
-				radius * (Ring[i].x * p1.y + Ring[i].y * p2.y) + at.y,
-				radius * (Ring[i].x * p1.z + Ring[i].y * p2.z) + at.z
-			);
+			for (let i = 0; i < Ring.length; ++i) {
+				attrib(
+					radius * (Ring[i].x * p1.x + Ring[i].y * p2.x) + pt.x,
+					radius * (Ring[i].x * p1.y + Ring[i].y * p2.y) + pt.y,
+					radius * (Ring[i].x * p1.z + Ring[i].y * p2.z) + pt.z,
+					ColorA
+				);
+				attrib(
+					radius * (Ring[i].x * nextP1.x + Ring[i].y * nextP2.x) + nextPt.x,
+					radius * (Ring[i].x * nextP1.y + Ring[i].y * nextP2.y) + nextPt.y,
+					radius * (Ring[i].x * nextP1.z + Ring[i].y * nextP2.z) + nextPt.z,
+					ColorB
+				);
+			}
+			prevAttrib(-2 * Ring.length);
+			prevAttrib(-2 * Ring.length);
 		}
-		tristrip.push(tristrip[tristrip.length - Ring.length * 3]);
-		tristrip.push(tristrip[tristrip.length - Ring.length * 3]);
-		tristrip.push(tristrip[tristrip.length - Ring.length * 3]);
+
+		p1 = {x:nextP1.x, y:nextP1.y, z:nextP1.z};
+		p2 = {x:nextP2.x, y:nextP2.y, z:nextP2.z};
+		pt = {x:nextPt.x, y:nextPt.y, z:nextPt.z};
 	}
 
 
@@ -182,16 +248,17 @@ function buildTube(spine, radius) {
 	let prevD1 = { x:NaN, y:NaN, z:NaN };
 	let prevD2 = { x:NaN, y:NaN, z:NaN };
 	let prevAlong = { x:NaN, y:NaN, z:NaN };
+	let prevAt = { x:spine[0], y:spine[1], z:spine[2] };
 
 	for (let i = 3; i + 2 < spine.length; i += 3) {
-		let next = { x:spine[i+0], y:spine[i+1], z:spine[i+2] };
+		let at = { x:spine[i+0], y:spine[i+1], z:spine[i+2] };
 		//skip duplicated points:
-		if (next.x === at.x && next.y === at.y && next.z === at.z) continue;
+		if (at.x === prevAt.x && at.y === prevAt.y && at.z === prevAt.z) continue;
 
 		let along = {
-			x:next.x - at.x,
-			y:next.y - at.y,
-			z:next.z - at.z
+			x:at.x - prevAt.x,
+			y:at.y - prevAt.y,
+			z:at.z - prevAt.z
 		};
 		along = normalize(along);
 
@@ -241,21 +308,36 @@ function buildTube(spine, radius) {
 		}
 		let d2 = cross(along, d1);
 
-		//TODO: compute average?
-		sweepTo(d1, d2, at);
+		if (!(prevD1.x === prevD1.x)) {
+			//start sweep:
+			cap(d1, d2, prevAt, true);
+			sweepTo(d1, d2, prevAt);
+		} else {
+			//sweep to corner:
+			const avgD1 = {
+				x:0.5 * (prevD1.x + d1.x),
+				y:0.5 * (prevD1.y + d1.y),
+				z:0.5 * (prevD1.z + d1.z)
+			};
+			const avgD2 = {
+				x:0.5 * (prevD2.x + d2.x),
+				y:0.5 * (prevD2.y + d2.y),
+				z:0.5 * (prevD2.z + d2.z)
+			};
+			sweepTo(avgD1, avgD2, prevAt);
+		}
 
 		prevD1 = d1;
 		prevD2 = d2;
 		prevAlong = along;
-		at = next;
+		prevAt = at;
 	}
 
 	//finish sweep:
 	if (prevD1.x === prevD1.x) {
-		sweepTo(prevD1, prevD2, at);
+		sweepTo(prevD1, prevD2, prevAt);
+		cap(prevD1, prevD2, prevAt);
 	}
-
-	//TODO: last frame also
 
 	return tristrip;
 	
@@ -268,14 +350,14 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 	//accmulate Position attribs for all yarns:
 	let Positions = [];
 	yarns.yarns.forEach(function(yarn){
-		yarnStarts.push(Positions.length / 3);
+		yarnStarts.push(Positions.length / 4);
 
 		const spine = quadraticBSpline(yarn.points, 0.5 * yarn.radius, 25.0);
 		const tube = buildTube(spine, yarn.radius);
 
 		Positions = Positions.concat(tube);
 	});
-	yarnStarts.push(Positions.length / 3);
+	yarnStarts.push(Positions.length / 4);
 
 	gl.bindBuffer(gl.ARRAY_BUFFER, yarnsBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Positions), gl.STATIC_DRAW);
@@ -289,14 +371,21 @@ renderer.redraw = function tubes_redraw() {
 	gl.useProgram(colorProgram.program);
 	gl.bindBuffer(gl.ARRAY_BUFFER, yarnsBuffer);
 
-	gl.vertexAttrib4f(colorProgram.attribLocations.Color, 0.0, 1.0, 1.0, 1.0);
-	gl.disableVertexAttribArray(colorProgram.attribLocations.Color);
+	gl.vertexAttribPointer(colorProgram.attribLocations.Color,
+		4, //size
+		gl.UNSIGNED_BYTE, //type
+		true, //normalize
+		16, //stride
+		12 //offset
+	);
+	gl.enableVertexAttribArray(colorProgram.attribLocations.Color);
+
 
 	gl.vertexAttribPointer(colorProgram.attribLocations.Position,
 		3, //size
 		gl.FLOAT, //type
 		false, //normalize
-		12, //stride
+		16, //stride
 		0 //offset
 	);
 	gl.enableVertexAttribArray(colorProgram.attribLocations.Position);
@@ -307,9 +396,18 @@ renderer.redraw = function tubes_redraw() {
 		computeMVP()
 	);
 
+	gl.enable(gl.DEPTH_TEST);
+	gl.depthFunc(gl.LESS);
+
+	gl.enable(gl.CULL_FACE);
+	gl.cullFace(gl.BACK);
+
 	for (let i = 0; i + 1 < yarnStarts.length; ++i) {
-		gl.drawArrays(gl.LINE_STRIP, yarnStarts[i], yarnStarts[i+1]-yarnStarts[i]);
+		gl.drawArrays(gl.TRIANGLE_STRIP, yarnStarts[i], yarnStarts[i+1]-yarnStarts[i]);
 	}
+
+	gl.disable(gl.CULL_FACE);
+	gl.disable(gl.DEPTH_TEST);
 };
 
 

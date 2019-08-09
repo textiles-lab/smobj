@@ -216,7 +216,9 @@ function relativeMouse(evt, elt) {
 
 canvas.addEventListener('wheel', function(evt){
 	evt.preventDefault();
-	const zoom = Math.pow(0.5, 0.02 * evt.deltaY);
+	let amt = evt.deltaY;
+	if (evt.deltaMode === 0x00) amt *= 16.0;
+	const zoom = Math.pow(0.5, -0.003 * evt.deltaY);
 	camera.radius *= zoom;
 	if (camera.radius < 1.0) camera.radius = 1.0;
 	if (camera.radius > 1000.0) camera.radius = 1000.0;
@@ -414,6 +416,23 @@ function setTestYarns() {
 		radius:0.1,
 		color:{ r:1.0, g:0.5, b:0.5, a:1.0 }
 	});
+
+	yarns.yarns.push({
+		points:[
+			0.0, 0.0,-0.5,
+			0.0, 0.0, -1.0,
+			0.0, -1.0, -1.0,
+			-1.0, -1.0,-1.0,
+			-1.0, -1.0, 0.0,
+			-1.0, 0.0, 0.0,
+		],
+		sources:[
+			0, 0, 0, 0, 0, 0
+		],
+		radius:0.1,
+		color:{ r:0.5, g:1.0, b:0.5, a:1.0 }
+	});
+
 
 
 	resetCamera();
