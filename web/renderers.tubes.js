@@ -143,7 +143,7 @@ function buildTube(spine, radius) {
 	if (spine.length < 3) return [];
 
 	//build a cross-section shape:
-	const Ring = new Array(6);
+	const Ring = new Array(5);
 	for (let i = 0; i < Ring.length; ++i) {
 		const angle = (i / Ring.length) * 2.0 * Math.PI;
 		Ring[i] = {x:Math.cos(angle), y:Math.sin(angle)};
