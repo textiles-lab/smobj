@@ -10,18 +10,25 @@ const colorProgram = initShaderProgram(
 	uniform mat4 mvp_mat4;
 
 	attribute vec4 Position;
+	attribute vec3 Normal;
 	attribute vec4 Color;
 
 	varying vec4 color;
+	varying vec3 normal;
 
 	void main() {
 		gl_Position = mvp_mat4 * Position;
 		color = Color;
+		normal = Normal;
 	}
 `,`
 	varying lowp vec4 color;
+	varying highp vec3 normal;
 	void main() {
-		gl_FragColor = color;
+		highp vec3 n = normalize(normal);
+		//upper dome light:
+		highp vec3 light = mix(vec3(0.1), vec3(1.0), 0.5*n.y+0.5);
+		gl_FragColor = vec4(color.rgb * light, color.a);
 	}
 `);
 
@@ -153,11 +160,11 @@ const FLOAT32_LITTLE_ENDIAN = function() {
 	}
 };
 
-const BYTES_PER_ATTRIB = 3*4 + 4*1;
+const BYTES_PER_ATTRIB = 3*4 + 3*4 + 4*1;
 
 //build a tubular tristrip around a (one hopes) smooth spine:
 //return a ArrayBuffer with attribs inside
-function buildTube(spine, radius) {
+function buildTube(spine, radius, color) {
 	if (spine.length < 3) return new ArrayBuffer(0);
 
 	//build a cross-section shape:
@@ -177,10 +184,13 @@ function buildTube(spine, radius) {
 	let dataOffset = 0;
 
 
-	function attrib(x,y,z,rgba) {
+	function attrib(x,y,z, nx,ny,nz, rgba) {
 		data.setFloat32(dataOffset, x, FLOAT32_LITTLE_ENDIAN); dataOffset += 4;
 		data.setFloat32(dataOffset, y, FLOAT32_LITTLE_ENDIAN); dataOffset += 4;
 		data.setFloat32(dataOffset, z, FLOAT32_LITTLE_ENDIAN); dataOffset += 4;
+		data.setFloat32(dataOffset, nx, FLOAT32_LITTLE_ENDIAN); dataOffset += 4;
+		data.setFloat32(dataOffset, ny, FLOAT32_LITTLE_ENDIAN); dataOffset += 4;
+		data.setFloat32(dataOffset, nz, FLOAT32_LITTLE_ENDIAN); dataOffset += 4;
 		data.setUint32(dataOffset, rgba, false); dataOffset += 4;
 	}
 	function prevAttrib(offset) {
@@ -191,7 +201,10 @@ function buildTube(spine, radius) {
 			data.getFloat32(offset + dataOffset + 0, FLOAT32_LITTLE_ENDIAN),
 			data.getFloat32(offset + dataOffset + 4, FLOAT32_LITTLE_ENDIAN),
 			data.getFloat32(offset + dataOffset + 8, FLOAT32_LITTLE_ENDIAN),
-			data.getUint32(offset + dataOffset + 12, false)
+			data.getFloat32(offset + dataOffset + 12, FLOAT32_LITTLE_ENDIAN),
+			data.getFloat32(offset + dataOffset + 16, FLOAT32_LITTLE_ENDIAN),
+			data.getFloat32(offset + dataOffset + 20, FLOAT32_LITTLE_ENDIAN),
+			data.getUint32(offset + dataOffset + 24, false)
 		);
 	}
 
@@ -201,10 +214,28 @@ function buildTube(spine, radius) {
 	let p2 = { x:NaN, y:NaN, z:NaN};
 	let pt = { x:spine[0], y:spine[1], z:spine[2] };
 
+	/* DEBUG
 	const ColorA = 0xff0000ff;
 	const ColorB = 0x00ff00ff;
 	const ColorC = 0x0000ffff;
 	const ColorD = 0xffffffff;
+	*/
+
+	const colorTempArray = new ArrayBuffer(4);
+	const colorTempView = new DataView(colorTempArray);
+	function rgbaToUint32(color) {
+		colorTempView.setUint8(0, Math.max(0x00, Math.min(0xff, Math.round(color.r) )) );
+		colorTempView.setUint8(1, Math.max(0x00, Math.min(0xff, Math.round(color.g) )) );
+		colorTempView.setUint8(2, Math.max(0x00, Math.min(0xff, Math.round(color.b) )) );
+		colorTempView.setUint8(3, Math.max(0x00, Math.min(0xff, Math.round(color.a) )) );
+		return colorTempView.getUint32(0, false);
+	}
+	console.log(color, rgbaToUint32(color).toString(16)); //DEBUG
+
+	const ColorA = rgbaToUint32(color);
+	const ColorB = rgbaToUint32(color);
+	const ColorC = rgbaToUint32(color);
+	const ColorD = rgbaToUint32(color);
 
 	/*
 	//DEBUG
@@ -257,11 +288,21 @@ function buildTube(spine, radius) {
 		//note: want to always emit even number of verts, start with index 0.
 		//console.log(reverse, inds);
 
+		const n = normalize(cross(p1, p2));
+		if (reverse) {
+			n.x = -n.x;
+			n.y = -n.y;
+			n.z = -n.z;
+		}
+
 		inds.forEach(function(i){
 			attrib(
 				radius * (Ring[i].x * p1.x + Ring[i].y * p2.x) + pt.x,
 				radius * (Ring[i].x * p1.y + Ring[i].y * p2.y) + pt.y,
 				radius * (Ring[i].x * p1.z + Ring[i].y * p2.z) + pt.z,
+				n.x,
+				n.y,
+				n.z,
 				(reverse ? ColorD : ColorC)
 			);
 		});
@@ -278,12 +319,18 @@ function buildTube(spine, radius) {
 					radius * (Ring[j].x * p1.x + Ring[j].y * p2.x) + pt.x,
 					radius * (Ring[j].x * p1.y + Ring[j].y * p2.y) + pt.y,
 					radius * (Ring[j].x * p1.z + Ring[j].y * p2.z) + pt.z,
+					Ring[j].x * p1.x + Ring[j].y * p2.x,
+					Ring[j].x * p1.y + Ring[j].y * p2.y,
+					Ring[j].x * p1.z + Ring[j].y * p2.z,
 					ColorA
 				);
 				attrib(
 					radius * (Ring[j].x * nextP1.x + Ring[j].y * nextP2.x) + nextPt.x,
 					radius * (Ring[j].x * nextP1.y + Ring[j].y * nextP2.y) + nextPt.y,
 					radius * (Ring[j].x * nextP1.z + Ring[j].y * nextP2.z) + nextPt.z,
+					Ring[j].x * nextP1.x + Ring[j].y * nextP2.x,
+					Ring[j].x * nextP1.y + Ring[j].y * nextP2.y,
+					Ring[j].x * nextP1.z + Ring[j].y * nextP2.z,
 					ColorB
 				);
 			}
@@ -429,7 +476,7 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 
 	yarns.yarns.forEach(function(yarn){
 		const spine = quadraticBSpline(yarn.points, 0.5 * yarn.radius, 25.0);
-		const tube = buildTube(spine, yarn.radius);
+		const tube = buildTube(spine, yarn.radius, yarn.color);
 
 		//tube is an ArrayBuffer:
 		Attribs = concat(Attribs, tube);
@@ -437,7 +484,7 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 
 	gl.bindBuffer(gl.ARRAY_BUFFER, attribsBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, Attribs, gl.STATIC_DRAW);
-	attribsCount = Attribs.byteLength / (3*4+4*1);
+	attribsCount = Attribs.byteLength / BYTES_PER_ATTRIB;
 	console.log("Have " + Attribs.byteLength + " bytes of attribs == " + attribsCount + " attribs.");
 };
 
@@ -453,17 +500,25 @@ renderer.redraw = function tubes_redraw() {
 		4, //size
 		gl.UNSIGNED_BYTE, //type
 		true, //normalize
-		16, //stride
-		12 //offset
+		BYTES_PER_ATTRIB, //stride
+		24 //offset
 	);
 	gl.enableVertexAttribArray(colorProgram.attribLocations.Color);
 
+	gl.vertexAttribPointer(colorProgram.attribLocations.Normal,
+		3, //size
+		gl.FLOAT, //type
+		false, //normalize
+		BYTES_PER_ATTRIB, //stride
+		12 //offset
+	);
+	gl.enableVertexAttribArray(colorProgram.attribLocations.Normal);
 
 	gl.vertexAttribPointer(colorProgram.attribLocations.Position,
 		3, //size
 		gl.FLOAT, //type
 		false, //normalize
-		16, //stride
+		BYTES_PER_ATTRIB, //stride
 		0 //offset
 	);
 	gl.enableVertexAttribArray(colorProgram.attribLocations.Position);
