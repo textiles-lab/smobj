@@ -1,5 +1,6 @@
-
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
+#include <glm/gtx/hash.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -14,6 +15,7 @@
 #include <set>
 #include <algorithm>
 #include <functional>
+#include <list>
 
 #include <cassert>
 
@@ -133,6 +135,27 @@ struct Horizon {
 	//std::map< int32_t, float > endpoints;
 };
 
+
+struct Unit {
+	Unit(std::string const &_name = "", float _length = 1.0f) : name(_name), length(_length) { }
+	std::string name;
+	float length;
+};
+
+struct Checkpoint {
+	Checkpoint(uint32_t face_ = -1U, uint32_t edge_ = -1U, uint32_t crossing_ = -1U, float _length = 0.0f, Unit const *_unit = nullptr) : face(face_), edge(edge_), crossing(crossing_), length(_length), unit(_unit) { }
+	uint32_t face;
+	uint32_t edge;
+	uint32_t crossing;
+
+	float length;
+	Unit const *unit;
+
+	bool is_valid() const {
+		return (face != -1U && edge != -1U && crossing != -1U);
+	}
+};
+
 struct Carrier {
 	std::string name; //for debugging/error reporting purposes.
 
@@ -156,6 +179,10 @@ struct Carrier {
 	BedColumns const *last_bed = nullptr;
 	int32_t last_needle = 0;
 	Direction last_dir = Right;
+
+	//used when adding lengths:
+	Checkpoint last_checkpoint;
+	//NOTE: should probably also have some notion of the *connected* stitch -- last_* is modified by miss()
 };
 
 struct Crossings {
@@ -248,13 +275,25 @@ struct Translator {
 			auto ret = carriers.insert(std::make_pair(carrier.name, carrier));
 			if (!ret.second) throw std::runtime_error("Carrier '" + carrier_names[i] + "' is named twice.");
 		}
+		units.emplace_back("1", 1.0);
 	}
 
 	//--- output ---
 	std::vector< Face > faces;
 	std::vector< Connection > connections;
+	std::list< Unit > units;
+	std::vector< Checkpoint > checkpoints;
 
 	//--- helper functions ---
+
+	Unit const *get_unit(std::string name) {
+		for (auto const &u : units) {
+			if (u.name == name) return &u;
+		}
+		units.emplace_back(name, 1.0f);
+		return &units.back();
+	}
+
 	std::vector< Carrier * > lookup_carriers(std::vector< std::string > const &cs) {
 		std::vector< Carrier * > ret;
 		ret.reserve(cs.size());
@@ -831,6 +870,30 @@ struct Translator {
 				yarn_from_stitch = yarn_in;
 			}
 
+		}
+
+		//add yarn checkpoints:
+		for (auto &c : cs) {
+			uint32_t ci = &c - &cs[0];
+			Checkpoint before_stitch(yarn_to_stitch.face, yarn_to_stitch.edge, (yarn_to_stitch.flip == FaceEdge::FlipYes ? cs.size() - 1 - ci : ci));
+			Checkpoint after_stitch(yarn_from_stitch.face, yarn_from_stitch.edge, (yarn_from_stitch.flip == FaceEdge::FlipYes ? cs.size() - 1 - ci : ci));
+			if (c->last_checkpoint.is_valid()) {
+				//previous stitch -> this stitch:
+				c->last_checkpoint.unit = get_unit("*");
+				c->last_checkpoint.length = 1.0f;
+				checkpoints.emplace_back(c->last_checkpoint);
+			}
+			//this stitch:
+			before_stitch.unit = get_unit("1");
+			before_stitch.length = 1.0f;
+			checkpoints.emplace_back(before_stitch);
+
+			//last checkpoint:
+			after_stitch.unit = get_unit("1");
+			after_stitch.length = 0.0f;
+			checkpoints.emplace_back(after_stitch);
+
+			c->last_checkpoint = after_stitch; //store this (blank) checkpoint
 		}
 
 	}
@@ -1569,6 +1632,8 @@ struct Translator {
 			c->last_dir = Right;
 			c->last_needle = 0;
 			c->last_bed = nullptr;
+
+			c->last_checkpoint = Checkpoint();
 		}
 	}
 
@@ -2373,6 +2438,42 @@ int main(int argc, char **argv) {
 	for (auto const &c : translator->connections) {
 		out << "e " << (c.a.face+1) << "/" << (c.a.edge+1)
 		    << " " << (c.b.face+1) << "/" << (c.a.flip == c.b.flip ? "-" : "") << (c.b.edge+1) << " # " << c.why << "\n";
+	}
+
+	//units:
+	for (auto const &u : translator->units) {
+		out << "U " << u.name << " " << u.length << "\n";
+	}
+
+	{ //checkpoints:
+		std::unordered_map< Unit const *, uint32_t > unit_index;
+		for (auto const &u : translator->units) {
+			unit_index[&u] = unit_index.size() + 1; //1-based
+		}
+
+		std::unordered_map< glm::uvec3, std::map< uint32_t, float > > checkpoints;
+		//aggregate checkpoints:
+		for (auto const &c : translator->checkpoints) {
+			glm::uvec3 key = glm::uvec3(c.face, c.edge, c.crossing);
+			checkpoints[key].insert( std::make_pair( unit_index[c.unit], 0.0f )).first->second += c.length;
+		}
+
+		//output aggregated checkpoints:
+		for (auto const &c : translator->checkpoints) {
+			glm::uvec3 key = glm::uvec3(c.face, c.edge, c.crossing);
+			auto f = checkpoints.find(key);
+			if (f == checkpoints.end()) continue; //I guess we already got this one
+
+			out << "c " << (c.face+1) << "/" << (c.edge+1) << "/" << (c.crossing+1);
+			for (auto const &l : f->second) {
+				if (l.first == 0 && l.second == 0.0f && f->second.size() > 0) {
+					continue; //remove 0.0*'1'
+				}
+				out << ' ' << l.second << ' ' << l.first;
+			}
+			out << '\n';
+		}
+		
 	}
 
 	return 0;
