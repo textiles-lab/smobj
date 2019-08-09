@@ -153,12 +153,12 @@ sm.Yarns.fromArrayBuffer = function(buffer) {
 			throw new Error("Checkpoint with out-of-range unit index " + unit + ".");
 		}
 		//store checkpoint in proper yarn:
-		const yarnIndex = pointToYarnIndex(point);
+		const yarnIndex = pointToYarnIndex[point];
 		if (typeof(yarnIndex) !== 'number') {
 			throw new Error("Checkpoint " + point + " doesn't lie in a yarn.");
 		}
-		yarns.yarns[yarnIndex].push({
-			point:point-yarnBeginPoint[yarnIndex],
+		yarns.yarns[yarnIndex].checkpoints.push({
+			point:point-yarnPointBegin[yarnIndex],
 			length:length,
 			unit:unit
 		});

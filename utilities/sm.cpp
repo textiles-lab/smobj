@@ -514,6 +514,9 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		assert(mesh_library.size() == mesh.library.size());
 	}
 
+
+
+
 	//generate long connected chains of yarn segments by looking at edge labels:
 	struct ChainSegment {
 		ChainSegment(Mesh::Face const *face_ = nullptr, uint32_t yarn_ = -1U, bool reverse_ = false) : face(face_), yarn(yarn_), reverse(reverse_) { }
@@ -521,6 +524,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		uint32_t yarn = -1U;
 		bool reverse = false;
 	};
+
 	std::vector< std::vector< ChainSegment > > chains;
 	{
 		//build map connecting v0,v1,along,z pairs to other v0,v1,along,z via ChainSegment:
@@ -916,6 +920,65 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		yarns.back().emplace_back(0.0f, 1.0f, 0.0f);
 	}*/
 
+	//for every (non-null) face in library, compute edge + crossing for each yarn start/end:
+	// (will be used for checkpoint lookup)
+	struct EdgeCrossing {
+		uint32_t edge = -1U;
+		uint32_t crossing = -1U;
+	};
+	std::vector< std::vector< std::pair< EdgeCrossing, EdgeCrossing > > > mesh_library_yarn_crossings(mesh_library.size());
+	{
+		for (auto const &sfp : mesh_library) {
+			if (sfp == nullptr) continue;
+
+			auto const &sf = *sfp;
+			auto &yarn_crossings = mesh_library_yarn_crossings[&sfp - &mesh_library[0]];
+			yarn_crossings.resize(sf.yarns.size());
+
+			//list edge points by edges:
+			std::vector< std::vector< std::pair< Library::Face::EdgePoint, EdgeCrossing * > > > edge_points(sf.edges.size());
+
+			for (uint32_t yi = 0; yi < sf.yarns.size(); ++yi) {
+				assert(sf.yarns[yi].begin.edge < edge_points.size());
+				edge_points[sf.yarns[yi].begin.edge].emplace_back(sf.yarns[yi].begin, &yarn_crossings[yi].first);
+
+				assert(sf.yarns[yi].end.edge < edge_points.size());
+				edge_points[sf.yarns[yi].end.edge].emplace_back(sf.yarns[yi].end, &yarn_crossings[yi].second);
+			}
+
+			//sort crossings at each edge, assign to proper crossings:
+			for (auto &ep : edge_points) {
+				std::stable_sort(ep.begin(), ep.end(), [](
+					std::pair< Library::Face::EdgePoint, EdgeCrossing * > const &a,
+					std::pair< Library::Face::EdgePoint, EdgeCrossing * > const &b) -> bool {
+					if (a.first.along != b.first.along) return a.first.along < b.first.along;
+					return a.first.z < b.first.z;
+				});
+				for (auto &p : ep) {
+					p.second->edge = &ep - &edge_points[0];
+					p.second->crossing = &p - &ep[0];
+				}
+			}
+
+			//quick paranoid check:
+			for (uint32_t yi = 0; yi < sf.yarns.size(); ++yi) {
+				assert(sf.yarns[yi].begin.edge == yarn_crossings[yi].first.edge);
+				assert(sf.yarns[yi].end.edge == yarn_crossings[yi].second.edge);
+			}
+
+		}
+	}
+
+	//lookup table for checkpoints:
+	std::unordered_multimap< glm::uvec3, Mesh::Checkpoint const * > fec_to_checkpoints;
+	for (auto const &c : mesh.checkpoints) {
+		fec_to_checkpoints.insert(std::make_pair(
+			glm::uvec3(c.face, c.edge, c.crossing),
+			&c
+		));
+	}
+	assert(fec_to_checkpoints.size() == mesh.checkpoints.size());
+
 	//---------------
 	// face yarns -> mesh
 
@@ -970,11 +1033,41 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			assert(seg.face);
 			auto const &face = *seg.face;
 
+			glm::uvec3 begin_fec = glm::uvec3(
+				seg.face - &mesh.faces[0],
+				mesh_library_yarn_crossings[face.type][seg.yarn].first.edge,
+				mesh_library_yarn_crossings[face.type][seg.yarn].first.crossing
+			);
+
+			glm::uvec3 end_fec = glm::uvec3(
+				seg.face - &mesh.faces[0],
+				mesh_library_yarn_crossings[face.type][seg.yarn].second.edge,
+				mesh_library_yarn_crossings[face.type][seg.yarn].second.crossing
+			);
+
 			auto &bf = mesh_baryfaces[face.type];
 
 			auto yarn = bf.yarns[seg.yarn];
 			if (seg.reverse) {
 				std::reverse(yarn.begin(), yarn.end());
+				std::swap(begin_fec, end_fec);
+			}
+
+			{ //add checkpoints for beginning of chain segment
+				uint32_t point = ( yarns.yarns.back().points.empty() ? 0 : yarns.yarns.back().points.size() - 1);
+				auto r = fec_to_checkpoints.equal_range(begin_fec);
+				for (auto i = r.first; i != r.second; /* later */ ) {
+					//assign checkpoint based on yarn point
+					yarns.yarns.back().checkpoints.emplace_back();
+					yarns.yarns.back().checkpoints.back().point = point;
+					yarns.yarns.back().checkpoints.back().length = i->second->length;
+					yarns.yarns.back().checkpoints.back().unit = i->second->unit;
+
+					//remove checkpoint from lookup structure:
+					auto old = i;
+					++i;
+					fec_to_checkpoints.erase(old);
+				}
 			}
 
 			for (auto const &yp : yarn) {
@@ -998,10 +1091,39 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 					yarns.yarns.back().sources.emplace_back(face.source);
 				}
 			}
+
+			{ //add checkpoints for end of chain segment
+				assert(!yarns.yarns.back().points.empty());
+				uint32_t point = yarns.yarns.back().points.size() - 1;
+				auto r = fec_to_checkpoints.equal_range(end_fec);
+				for (auto i = r.first; i != r.second; /* later */ ) {
+					//assign checkpoint based on yarn point
+					yarns.yarns.back().checkpoints.emplace_back();
+					yarns.yarns.back().checkpoints.back().point = point;
+					yarns.yarns.back().checkpoints.back().length = i->second->length;
+					yarns.yarns.back().checkpoints.back().unit = i->second->unit;
+
+					//remove checkpoint from lookup structure:
+					auto old = i;
+					++i;
+					fec_to_checkpoints.erase(old);
+				}
+			}
+
 		}
 		//TODO: for circular yarns, make sure first/last points match exactly.
 	}
 	std::cout << "Total boundary mis-match from chains (should be very small): " << mismatch << std::endl;
+
+	//transfer units:
+	//TODO: could consider eliminating any unused units
+	for (auto const &u : mesh.units) {
+		yarns.units.emplace_back();
+		yarns.units.back().name = u.name;
+		yarns.units.back().length = u.length;
+	}
+
+	std::cout << "Of " << mesh.checkpoints.size() << " checkpoints, " << fec_to_checkpoints.size() << " remain unassigned." << std::endl;
 
 	/*
 	for (auto const &face : mesh.faces) {

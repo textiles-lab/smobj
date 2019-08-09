@@ -23,7 +23,7 @@ int main(int argc, char **argv) {
 
 	sm::Yarns yarns;
 
-	mesh_and_library_to_yarns(mesh, library, &yarns);
+	sm::mesh_and_library_to_yarns(mesh, library, &yarns);
 
 	yarns.save(out_yarns);
 
