@@ -230,7 +230,7 @@ function buildTube(spine, radius, color) {
 		colorTempView.setUint8(3, Math.max(0x00, Math.min(0xff, Math.round(color.a) )) );
 		return colorTempView.getUint32(0, false);
 	}
-	console.log(color, rgbaToUint32(color).toString(16)); //DEBUG
+	//console.log(color, rgbaToUint32(color).toString(16)); //DEBUG
 
 	const ColorA = rgbaToUint32(color);
 	const ColorB = rgbaToUint32(color);
