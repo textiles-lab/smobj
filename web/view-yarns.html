@@ -3,6 +3,10 @@
 <head>
 <title>'.yarns' viewer</title>
 <style>
+body {
+	padding:0;
+	margin:0;
+}
 #dropTarget {
 	position:fixed;
 	left:0;
@@ -28,15 +32,69 @@
 	cursor:pointer;
 	text-decoration:underline;
 }
+
+#views {
+	display:grid;
+	width:99vw;
+	height:99vh;
+
+	grid-template-columns: 1fr auto ;
+	grid-template-rows: auto 1.0fr ;
+
+	/*background: #0008 ;*/
+}
+#view-controls {
+	grid-column: 1 / 3 ;
+	grid-row: 1 ;
+	font-size: 16px;
+	line-height:16px;
+	padding: 5px 10px;
+	/*background: #f008 ;*/
+}
+#view-3d {
+	grid-column: 1 ;
+	grid-row: 2 ;
+	position:relative;
+	/*background: #0f08 ;*/
+}
 #canvas {
-	width:80vw;
-	height:80vh;
+	position:absolute;
+	top:0;
+	left:0;
+	width:100%;
+	height:100%;
+}
+#view-units {
+	grid-column: 2 ;
+	grid-row: 2 ;
+	/*background: #00f8 ;*/
+}
+#view-units h1 {
+	font-size:20px;
+	line-height:20px;
+	padding:0;
+	margin:0 5px;
+}
+#units {
+	display:block;
+	list-style:none;
+	margin:0;
+	padding:0;
+}
+#units li {
+	display:block;
+	margin:0.5em 1.0em;
+	padding:0;
+}
+#units li input {
+	width:5em;
 }
 </style>
 <script src="sm.js"></script>
 </head>
 <body>
 
+<div id="views">
 
 <!-- controls bar at the top of the window -->
 <div id="view-controls">
@@ -44,8 +102,18 @@
 <label id="fileLabel" for="file"><span>Choose an .yarns file</span> or drag one into the window to visualize it.</label>
 </div>
 
+<!-- 3d view -->
 <div id="view-3d">
 <canvas id="canvas" width="120" height="120"></canvas>
+</div>
+
+<!-- units panel -->
+<div id="view-units">
+<h1>Units:</h1>
+<ul id="units">
+</ul>
+</div>
+
 </div>
 
 <!-- full-window drop target --!>
@@ -401,6 +469,10 @@ let renderer = renderers.tubes;
 function setTestYarns() {
 	yarns = new sm.Yarns();
 
+	yarns.units.push({ name:"1", length:1.0 });
+	yarns.units.push({ name:"a", length:2.0 });
+	yarns.units.push({ name:"b", length:2.0 });
+
 	yarns.yarns.push({
 		points:[
 			0.0, 0.0, 0.0,
@@ -412,6 +484,11 @@ function setTestYarns() {
 		],
 		sources:[
 			0, 0, 0, 0, 0, 0
+		],
+		checkpoints:[
+			{ point:0, length:1.0, unit:0 },
+			{ point:0, length:1.0, unit:1 },
+			{ point:5, length:0.0, unit:0 }
 		],
 		radius:0.1,
 		color:{ r:0xff, g:0x88, b:0x88, a:0xff }
@@ -429,16 +506,50 @@ function setTestYarns() {
 		sources:[
 			0, 0, 0, 0, 0, 0
 		],
+		checkpoints:[
+			{ point:0, length:1.0, unit:0 },
+			{ point:0, length:1.0, unit:2 },
+			{ point:3, length:1.0, unit:2 },
+			{ point:5, length:0.0, unit:0 }
+		],
 		radius:0.1,
 		color:{ r:0x88, g:0xff, b:0x88, a:0xff }
 	});
 
 
-
 	resetCamera();
+	resetUnitsUI();
 	uploadYarns();
 	requestRedraw();
+}
 
+//track units UI:
+const units = document.getElementById('units')
+window.unitsUI = [];
+
+function resetUnitsUI() {
+	//clear current units:
+	unitsUI.forEach(function(ui){
+		units.removeChild(ui.elt);
+	});
+	unitsUI.splice(0, unitsUI.length);
+
+	//create UI for all units in current yarns:
+	yarns.units.forEach(function(u){
+		const elt = document.createElement('li');
+		elt.innerText = u.name + ": ";
+		const input = document.createElement('input');
+		input.type = "number";
+		input.min = 0.00;
+		input.step = 0.05;
+		input.value = u.length;
+		elt.appendChild(input);
+		units.appendChild(elt);
+		unitsUI.push({
+			elt:elt,
+			unit:u
+		});
+	});
 }
 
 function uploadYarns() {
