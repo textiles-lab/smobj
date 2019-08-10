@@ -97,7 +97,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			types.emplace_back(idx-1);
 			std::string temp;
 			if (str >> temp) throw std::runtime_error("trailing junk (" + temp + "...) in T line");
-		} else if (cmd == "ln") {
+		} else if (cmd == "N") {
 			int32_t idx;
 			if (!(str >> idx)) throw std::runtime_error("expecting line number after ln");
 			if (idx < 0) throw std::runtime_error("invalid line number index '" + std::to_string(idx) + "'");

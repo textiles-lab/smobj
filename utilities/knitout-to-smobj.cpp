@@ -62,8 +62,10 @@ struct FaceEdge {
 };
 
 struct Face {
+	Face(uint32_t source_) : source(source_) { }
 	std::string type; //type edge ... edge
 	std::vector< glm::vec3 > vertices;
+	uint32_t source = 0; //1-based source line number
 };
 
 struct Connection {
@@ -261,6 +263,8 @@ struct Translator {
 	Crossings crossings;
 	float racking = 0.0f;
 
+	uint32_t source = 0; //current line number (applied to created faces)
+
 
 	Translator(std::vector< std::string > const &carrier_names) {
 		back_bed.depth = -1.0f;
@@ -402,7 +406,7 @@ struct Translator {
 				c->parked_direction = dir;
 
 				//build a parked face coming from the right:
-				faces.emplace_back();
+				faces.emplace_back(source);
 				bring_gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 				face.vertices = {
@@ -559,7 +563,7 @@ struct Translator {
 			{
 				assert(live_to_surround.is_valid());
 
-				faces.emplace_back();
+				faces.emplace_back(source);
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 				std::string Y = std::to_string(live_to_surround.count);
@@ -585,7 +589,7 @@ struct Translator {
 			{
 				assert(live_to_travel.is_valid());
 
-				faces.emplace_back();
+				faces.emplace_back(source);
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 				std::string Y = std::to_string(live_to_travel.count);
@@ -703,7 +707,7 @@ struct Translator {
 			{
 				assert(live_to_surround.is_valid());
 
-				faces.emplace_back();
+				faces.emplace_back(source);
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 				std::string Y = std::to_string(live_to_surround.count);
@@ -728,7 +732,7 @@ struct Translator {
 			{
 				assert(live_to_travel.is_valid());
 
-				faces.emplace_back();
+				faces.emplace_back(source);
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 				std::string Y = std::to_string(live_to_travel.count);
@@ -761,7 +765,7 @@ struct Translator {
 			{
 				assert(live_to_surround.is_valid());
 
-				faces.emplace_back();
+				faces.emplace_back(source);
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 				std::string Y = std::to_string(live_to_surround.count);
@@ -795,7 +799,7 @@ struct Translator {
 
 				assert(live_to_travel.is_valid());
 
-				faces.emplace_back();
+				faces.emplace_back(source);
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 				std::string Y = std::to_string(live_to_travel.count);
@@ -832,7 +836,7 @@ struct Translator {
 			{
 				assert(live_to_surround.is_valid());
 
-				faces.emplace_back();
+				faces.emplace_back(source);
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 				std::string Y = std::to_string(live_to_surround.count);
@@ -858,7 +862,7 @@ struct Translator {
 			{
 				assert(live_to_travel.is_valid());
 
-				faces.emplace_back();
+				faces.emplace_back(source);
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 				std::string Y = std::to_string(live_to_travel.count);
@@ -950,7 +954,7 @@ struct Translator {
 		if (c->parked_index < bring_index) {
 			//need to lift + move to right:
 
-			faces.emplace_back();
+			faces.emplace_back(source);
 			bring_gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 			face.type = "yarn-to-right x +y1 x -y1";
@@ -988,7 +992,7 @@ struct Translator {
 		} else if (c->parked_index > bring_index) {
 			//need to lift + move to left:
 
-			faces.emplace_back();
+			faces.emplace_back(source);
 			bring_gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 			face.type = "yarn-to-left x -y1 x +y1";
@@ -1051,7 +1055,7 @@ struct Translator {
 		FaceEdge left_yarn_in, left_yarn_out, right_yarn_in, right_yarn_out;
 
 		{ //left tab:
-			faces.emplace_back();
+			faces.emplace_back(source);
 			gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 			face.type = (bring_index < leave_index ? "yarn-to-right x +y1 x -y1" : "yarn-to-left x -y1 x +y1");
@@ -1073,7 +1077,7 @@ struct Translator {
 
 		
 		{ //right tab:
-			faces.emplace_back();
+			faces.emplace_back(source);
 			gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 			face.type = (bring_index < leave_index ? "yarn-to-right x +y1 x -y1" : "yarn-to-left x -y1 x +y1");
@@ -1206,7 +1210,7 @@ struct Translator {
 
 		FaceEdge top_edge, bottom_edge; //<-- used to track live edges
 		{ //split face
-			faces.emplace_back();
+			faces.emplace_back(source);
 			gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 			FaceEdge yarn_in;
@@ -1256,7 +1260,7 @@ struct Translator {
 
 		//routing faces:
 		if (top_edge.count) { //top travel face
-			faces.emplace_back();
+			faces.emplace_back(source);
 			gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 			std::string Y = std::to_string(top_edge.count);
@@ -1276,7 +1280,7 @@ struct Translator {
 			top_edge = yarn_out;
 		}
 		if (bottom_edge.count) { //bottom travel face
-			faces.emplace_back();
+			faces.emplace_back(source);
 			gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 			std::string Y = std::to_string(bottom_edge.count);
@@ -1313,7 +1317,7 @@ struct Translator {
 		}
 
 		{ //merge: top step
-			faces.emplace_back();
+			faces.emplace_back(source);
 			gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 
@@ -1355,7 +1359,7 @@ struct Translator {
 			top_edge = yarn_out;
 		}
 		if (bottom_edge.count) { //merge: bottom travel face
-			faces.emplace_back();
+			faces.emplace_back(source);
 			gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 			std::string Y = std::to_string(bottom_edge.count);
@@ -1376,7 +1380,7 @@ struct Translator {
 		}
 
 		{ //merge: second step
-			faces.emplace_back();
+			faces.emplace_back(source);
 			gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 			FaceEdge yarn_top_in, yarn_out;
@@ -1459,7 +1463,7 @@ struct Translator {
 			if (top_left == bottom_left && top_right == bottom_right) {
 				gizmo.connections.emplace_back(lv.a, lv.b, "merged loop");
 			} else {
-				faces.emplace_back();
+				faces.emplace_back(source);
 				Face &face = faces.back();
 				assert(lv.a.count == lv.b.count);
 				std::string L = std::to_string(lv.a.count);
@@ -1575,7 +1579,7 @@ struct Translator {
 				//std::cout << "NOTE: merged case." << std::endl;
 				gizmo.connections.emplace_back(from_entrance, to_exit, "merged");
 			} else {
-				faces.emplace_back();
+				faces.emplace_back(source);
 				Face &face = faces.back();
 				face.type = type;
 				face.vertices = {
@@ -1687,7 +1691,7 @@ struct Translator {
 		{ //build stitch face:
 			FaceEdge stitch_yarn_in, stitch_yarn_out;
 
-			faces.emplace_back();
+			faces.emplace_back(source);
 			gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 			{ //face type:
@@ -1799,7 +1803,7 @@ struct Translator {
 		{ //build stitch face:
 			FaceEdge stitch_yarn_in, stitch_yarn_out;
 
-			faces.emplace_back();
+			faces.emplace_back(source);
 			gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 			{ //face type:
@@ -1922,7 +1926,7 @@ struct Translator {
 			FaceEdge front_loop_in = front_bed[needle_index(front_needle)].top_edge;
 			FaceEdge back_loop_in = back_bed[needle_index(back_needle)].top_edge;
 			if (front_loop_in.is_valid() && front_loop_in.count > 0) {
-				faces.emplace_back();
+				faces.emplace_back(source);
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 
@@ -1946,7 +1950,7 @@ struct Translator {
 			}
 
 			if (back_loop_in.is_valid() && back_loop_in.count > 0) {
-				faces.emplace_back();
+				faces.emplace_back(source);
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 
@@ -1973,7 +1977,7 @@ struct Translator {
 
 			uint32_t front_loop_out_count = (is_front_to_back ? cs.size() : front_loop_in.count + back_loop_in.count);
 			if (front_loop_out_count > 0) {
-				faces.emplace_back();
+				faces.emplace_back(source);
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 
@@ -2000,7 +2004,7 @@ struct Translator {
 
 			uint32_t back_loop_out_count = (is_front_to_back ? front_loop_in.count + back_loop_in.count : cs.size());
 			if (back_loop_out_count > 0) {
-				faces.emplace_back();
+				faces.emplace_back(source);
 				gizmo.faces.emplace_back(faces.size()-1);
 				Face &face = faces.back();
 
@@ -2033,7 +2037,7 @@ struct Translator {
 		
 		//build stitch @ shear plane:
 		{
-			faces.emplace_back();
+			faces.emplace_back(source);
 			gizmo.faces.emplace_back(faces.size()-1);
 			Face &face = faces.back();
 
@@ -2101,7 +2105,7 @@ struct Translator {
 	//----- DEBUG helpers -----
 	void DEBUG_add_horizons() {
 		auto add_horizon = [this](float left, float right, float y, float depth) {
-			faces.emplace_back();
+			faces.emplace_back(source);
 			Face &face = faces.back();
 			face.type = "horizon x x x";
 			face.vertices = {
@@ -2187,7 +2191,15 @@ int main(int argc, char **argv) {
 	std::unique_ptr< Translator > translator;
 
 	std::string line;
+	uint32_t line_number = 0;
+	std::vector< std::string > lines;
 	while (std::getline(knitout, line, '\n')) {
+		line_number += 1;
+		lines.emplace_back(line);
+		if (translator) {
+			translator->source = line_number;
+		}
+
 		if (section == MagicValue) {
 			if (line == ";!knitout-2") {
 				section = CommentHeaders;
@@ -2407,6 +2419,10 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
+	//reset source before auto-drop:
+	line_number = 0;
+	translator->source = 0;
+
 	if (drop_all) {
 		//out any remaining carriers:
 		for (auto &nc : translator->carriers) {
@@ -2478,7 +2494,8 @@ int main(int argc, char **argv) {
 	//write smobj file:
 	std::cout << "Made " << translator->faces.size() << " faces." << std::endl;
 
-	translator->DEBUG_add_horizons();
+	//This will add some blank "horizon" faces to make it clear where the tops of stacks are.
+	//translator->DEBUG_add_horizons();
 
 	std::ofstream out(out_smobj, std::ios::binary);
 
@@ -2491,6 +2508,7 @@ int main(int argc, char **argv) {
 	}
 
 	//faces:
+	std::unordered_set< uint32_t > did_output; //did source code for a given line get dumpped yet?
 	uint32_t vertex_index = 0;
 	for (auto const &f : translator->faces) {
 		std::string f_line = "f";
@@ -2500,6 +2518,12 @@ int main(int argc, char **argv) {
 		}
 		out << f_line << "\n";
 		out << "T " << type_index[f.type] << " # " << f.type << "\n";
+		out << "N " << f.source;
+		if (f.source > 0 && did_output.insert(f.source).second) {
+			assert(f.source <= lines.size());
+			out << " # \"" << lines[f.source-1] << "\"";
+		}
+		out << "\n";
 	}
 	
 	{ //PARANOIA: build list of edge types and check against connections!
@@ -2568,8 +2592,8 @@ int main(int argc, char **argv) {
 
 			out << "c " << (c.face+1) << "/" << (c.edge+1) << "/" << (c.crossing+1);
 			for (auto const &l : f->second) {
-				if (l.first == 0 && l.second == 0.0f && f->second.size() > 0) {
-					continue; //remove 0.0*'1'
+				if (l.first == 0 && l.second == 0.0f) {
+					continue; //remove 0.0*'1' -- any other zero-length checkpoints shouldn't exist but we'll leave 'em in anyway.
 				}
 				out << ' ' << l.second << ' ' << l.first;
 			}

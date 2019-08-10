@@ -18,8 +18,8 @@ v 3.0 1.0 1.0
 f 2 4 3 1
 #and, for each face, a type from the library (1-based index into library):
 T 1
-#(optional) 1-based line number of knitout file that made this face (use 0 if line not known):
-ln 15
+#(optional) 1-based source line number of knitout file that made this face (use 0 if line not known):
+N 15
 #list of connections between faces:
 # face#/edge#, both one-based; negative edges imply *reversing* the edge
 # this allows non-orientable connections, needed for knitout
