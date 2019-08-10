@@ -2140,6 +2140,7 @@ int main(int argc, char **argv) {
 
 	std::string in_knitout = argv[1];
 	std::string out_smobj = argv[2];
+	bool drop_all = true; //TODO: add command line flag for this
 	std::cout << "Will interpret knitout in '" << in_knitout << "' and write smobj to '" << out_smobj << "'" << std::endl;
 
 	//parse knitout:
@@ -2252,6 +2253,8 @@ int main(int argc, char **argv) {
 		} else if (tokens[0] == "in" || tokens[0] == "inhook") {
 			std::vector< std::string > carriers(tokens.begin() + 1, tokens.end());
 			translator->in(translator->lookup_carriers(carriers));
+		} else if (tokens[0] == "releasehook") {
+			//TODO: could provide some debugging output if releasehook not called when using inhook.
 		} else if (tokens[0] == "out" || tokens[0] == "outhook") {
 			std::vector< std::string > carriers(tokens.begin() + 1, tokens.end());
 			translator->out(translator->lookup_carriers(carriers));
@@ -2371,6 +2374,74 @@ int main(int argc, char **argv) {
 	if (!translator) {
 		std::cerr << "ERROR: ';;Carriers: ...' header is required." << std::endl;
 		return 1;
+	}
+
+	if (drop_all) {
+		//out any remaining carriers:
+		for (auto &nc : translator->carriers) {
+			Carrier *c = &nc.second;
+			if (c->ready) {
+				std::cerr << "NOTE: taking out carrier '" << c->name << "', which was left in at the end of pattern." << std::endl;
+				translator->out(std::vector< Carrier * >(1, c));
+			}
+		}
+
+		//drop any remaining loops:
+		int32_t min_index = std::numeric_limits< int32_t >::max();
+		int32_t max_index = std::numeric_limits< int32_t >::min();
+		auto check_bed = [&min_index,&max_index](BedColumns const &bed, int32_t offset) {
+			for (auto const &pc : bed) {
+				min_index = std::min(min_index, pc.first + offset);
+				max_index = std::max(max_index, pc.first + offset);
+			}
+		};
+		int32_t back_offset;
+		{ //determine back_offset given racking:
+			uint32_t r = int32_t(std::floor(translator->racking));
+			if (std::floor(translator->racking) == translator->racking) { //aligned racking
+				back_offset = r*4;
+			} else { assert(std::floor(translator->racking) + 0.25f == translator->racking); //quarter pitch
+				back_offset = r*4+2;
+			}
+		}
+
+		check_bed(translator->back_bed, back_offset);
+		check_bed(translator->back_sliders, back_offset);
+		check_bed(translator->front_sliders, 0);
+		check_bed(translator->front_bed, 0);
+		
+		std::vector< std::string > dropped;
+
+		auto check_drop = [&translator,&dropped](BedColumns &bed, int32_t index, std::string const &bed_name) {
+			if ((index % 4) != 0) return; //not a needle
+			int32_t needle = index / 4;
+			auto f = bed.find(index);
+			if (f == bed.end()) return; //nothing here
+			if (f->second.top_edge.count == 0) return; //no loop to drop
+			//okay, need to drop:
+			translator->knit(
+				Right,
+				bed,
+				needle,
+				std::vector< Carrier * >()
+			);
+			dropped.emplace_back(bed_name + std::to_string(needle));
+		};
+
+		for (int32_t idx = min_index; idx <= max_index; ++idx) {
+			check_drop(translator->back_sliders, idx - back_offset, "bs");
+			check_drop(translator->back_bed, idx - back_offset, "b");
+			check_drop(translator->front_sliders, idx, "fs");
+			check_drop(translator->front_bed, idx, "f");
+		}
+		if (!dropped.empty()) {
+			std::cerr << "NOTE: dropped " << dropped.size() << " loops that remained on the bed at end of pattern:\n";
+			for (auto const &d : dropped) {
+				std::cerr << " " << d;
+			}
+			std::cerr << "\n";
+		}
+
 	}
 
 	//write smobj file:
