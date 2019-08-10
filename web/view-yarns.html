@@ -135,6 +135,7 @@ function readFile(file) {
 		console.log("File was " + reader.result.byteLength + " bytes long.");
 		window.yarns = sm.Yarns.fromArrayBuffer(reader.result);
 		resetCamera();
+		resetUnitsUI();
 		uploadYarns();
 		requestRedraw();
 	};

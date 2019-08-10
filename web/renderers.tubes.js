@@ -478,8 +478,64 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 		const spine = quadraticBSpline(yarn.points, 0.5 * yarn.radius, 25.0);
 		const tube = buildTube(spine, yarn.radius, yarn.color);
 
+		//show checkpoints:
+		let checkpoints = new ArrayBuffer(0);
+		for (let i = 0; i < yarn.checkpoints.length; ++i) {
+			//grab all similar checkpoints:
+			let length = 0.0;
+			while (true) {
+				length += yarn.checkpoints[i].length * yarns.units[yarn.checkpoints[i].unit].length;
+				if (!(i + 1 < yarn.checkpoints.length && yarn.checkpoints[i+1].point === yarn.checkpoints[i].point)) break;
+				++i;
+			}
+			const cp = yarn.checkpoints[i];
+			let pt = {
+				x:yarn.points[3*cp.point+0],
+				y:yarn.points[3*cp.point+1],
+				z:yarn.points[3*cp.point+2]
+			};
+			if (cp.point > 0 && (cp.point + 1) * 3 < yarn.points.length) {
+				//inner point, so compute posn on spline:
+
+				//previous midpoint:
+				const prev = {
+					x:0.5 * (yarn.points[3*cp.point-3+0] + pt.x),
+					y:0.5 * (yarn.points[3*cp.point-3+1] + pt.y),
+					z:0.5 * (yarn.points[3*cp.point-3+2] + pt.z)
+				}
+				//next midpoint:
+				const next = {
+					x:0.5 * (yarn.points[3*cp.point+3+0] + pt.x),
+					y:0.5 * (yarn.points[3*cp.point+3+1] + pt.y),
+					z:0.5 * (yarn.points[3*cp.point+3+2] + pt.z)
+				}
+				//move pt to point on spline at t = 0.5:
+				pt.x = 0.25 * prev.x + 0.5 * pt.x + 0.25 * next.x;
+				pt.y = 0.25 * prev.y + 0.5 * pt.y + 0.25 * next.y;
+				pt.z = 0.25 * prev.z + 0.5 * pt.z + 0.25 * next.z;
+			}
+			const spineX = [
+				pt.x - yarn.radius * 2.0, pt.y, pt.z,
+				pt.x + yarn.radius * 2.0, pt.y, pt.z
+			];
+			const spineY = [
+				pt.x, pt.y - yarn.radius * 2.0, pt.z,
+				pt.x, pt.y + yarn.radius * 2.0, pt.z
+			];
+			const spineZ = [
+				pt.x, pt.y, pt.z - yarn.radius * 2.0,
+				pt.x, pt.y, pt.z + yarn.radius * 2.0
+			];
+			const crossX = buildTube(spineX, 0.3 * yarn.radius, {r:255, g:255, b:255, a:255});
+			const crossY = buildTube(spineY, 0.3 * yarn.radius, {r:255, g:255, b:255, a:255});
+			const crossZ = buildTube(spineZ, 0.3 * yarn.radius, {r:255, g:255, b:255, a:255});
+			checkpoints = concat(checkpoints,
+				concat(concat(crossX, crossY), crossZ)
+			);
+		}
+
 		//tube is an ArrayBuffer:
-		Attribs = concat(Attribs, tube);
+		Attribs = concat(Attribs, concat(tube, checkpoints));
 	});
 
 	gl.bindBuffer(gl.ARRAY_BUFFER, attribsBuffer);
