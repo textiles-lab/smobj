@@ -35,10 +35,25 @@ const colorProgram = initShaderProgram(
 const attribsBuffer = gl.createBuffer();
 let attribsCount = 0;
 
-function quadraticBSpline(points, minDistance, maxAngle) {
-	//need at least 3 points (6 coordinates) to make a curve
-	if (points.length <= 6) {
-		return points;
+function quadraticBSpline(points, minDistance, maxAngle, splits) {
+	for (let i = 0; i < splits.length; ++i) {
+		if (splits[i] < 0 || 3 * splits[i] + 2 >= points.length) {
+			throw "split out of range";
+		}
+		if (i > 0 && !(splits[i-1] < splits[i])) {
+			throw "non-monotonic splits";
+		}
+	}
+	if (points.length <= 3) {
+		let lengths = [];
+		if (splits.length) {
+			lengths.push(0.0);
+		}
+		return {
+			points:points.slice(),
+			splits:splits.slice(),
+			lengths:lengths
+		};
 	}
 
 	//quadratic b-spline through the points (same as bezier through midpoints)
@@ -46,7 +61,7 @@ function quadraticBSpline(points, minDistance, maxAngle) {
 	let poly = [];
 
 	let threshold = Math.cos(maxAngle * Math.PI / 180.0);
-	function curveTo(m, e) {
+	function curveTo(m, e, mSourceIndex, eSourceIndex) {
 		let s = {
 			x:poly[poly.length-3],
 			y:poly[poly.length-2],
@@ -71,7 +86,10 @@ function quadraticBSpline(points, minDistance, maxAngle) {
 			//or segment doesn't bend too much:
 			|| (d >= 0 && d * d >= threshold * threshold * aLen2 * bLen2)) {
 			//just draw curve:
-			poly.push(e.x, e.y, e.z);
+			if (mSourceIndex >= 0) { //actually include midpoint if source index is associated
+				nextPt(m.x, m.y, m.z, mSourceIndex);
+			}
+			nextPt(e.x, e.y, e.z, eSourceIndex);
 		} else {
 			//otherwise, subdivide:
 			let sm = {
@@ -89,8 +107,8 @@ function quadraticBSpline(points, minDistance, maxAngle) {
 				y:0.5 * (sm.y + me.y),
 				z:0.5 * (sm.z + me.z)
 			};
-			curveTo(sm, sme);
-			curveTo(me, e);
+			curveTo(sm, sme, -1, mSourceIndex);
+			curveTo(me, e, -1, eSourceIndex);
 		}
 		/*
 		let inter = 14;
@@ -116,9 +134,37 @@ function quadraticBSpline(points, minDistance, maxAngle) {
 		*/
 	}
 
+	let polySplits = [];
+	let polyLengths = [];
+	let nextSplit = 0;
+
+	function nextPt(x,y,z, sourceIndex) {
+		//accumulate length to this point:
+		if (poly.length && polyLengths.length) {
+			polyLengths[polyLengths.length-1] += Math.sqrt(
+				(x-poly[poly.length-3])*(x-poly[poly.length-3])
+				+ (y-poly[poly.length-2])*(y-poly[poly.length-2])
+				+ (z-poly[poly.length-1])*(z-poly[poly.length-1])
+			);
+		}
+		//add a new split index if index matches next split index:
+		if (nextSplit < splits.length) {
+			if (sourceIndex === splits[nextSplit]) {
+				polySplits.push(poly.length/3);
+				polyLengths.push(0.0);
+				++nextSplit;
+			} else {
+				console.assert(sourceIndex < splits[nextSplit], "must not pass");
+			}
+		}
+		//add this point to the polyline:
+		poly.push(x,y,z);
+	}
+
 	//straight segment to first midpoint:
-	poly.push(points[0], points[1], points[2]);
-	poly.push(0.5 * (points[0] + points[3]), 0.5 * (points[1] + points[4]), 0.5 * (points[2] + points[5]));
+	nextPt(points[0], points[1], points[2], 0);
+
+	nextPt(0.5 * (points[0] + points[3]), 0.5 * (points[1] + points[4]), 0.5 * (points[2] + points[5]), -1);
 	//curved segments for the rest of the yarn:
 	for (let i = 3; i + 5 < points.length; i += 3) {
 		//bezier control point: vertex on curve
@@ -131,18 +177,23 @@ function quadraticBSpline(points, minDistance, maxAngle) {
 		let e = {
 			x:0.5*(points[i+0]+points[i+3]),
 			y:0.5*(points[i+1]+points[i+4]),
-			z:0.5*(points[i+2]+points[i+5]),
+			z:0.5*(points[i+2]+points[i+5])
 		};
-		curveTo(m, e);
+		curveTo(m, e, (i/3), -1);
 	}
 	//straight segment from last midpoint to end:
-	poly.push(
+	nextPt(
 		points[points.length-3],
 		points[points.length-2],
-		points[points.length-1]
+		points[points.length-1],
+		(points.length-3)/3
 	);
 
-	return poly;
+	return {
+		points:poly,
+		splits:polySplits,
+		lengths:polyLengths
+	};
 }
 
 //when using a data view to store Float32 values, do they need to be marked as little endian?
@@ -475,11 +526,10 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 	let Attribs = new ArrayBuffer(0);
 
 	yarns.yarns.forEach(function(yarn){
-		const spine = quadraticBSpline(yarn.points, 0.5 * yarn.radius, 25.0);
-		const tube = buildTube(spine, yarn.radius, yarn.color);
-
-		//show checkpoints:
+		//build checkpoints attribs + record split locations:
 		let checkpoints = new ArrayBuffer(0);
+		const splits = [];
+		const lengths = [];
 		for (let i = 0; i < yarn.checkpoints.length; ++i) {
 			//grab all similar checkpoints:
 			let length = 0.0;
@@ -489,31 +539,33 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 				++i;
 			}
 			const cp = yarn.checkpoints[i];
-			let pt = {
-				x:yarn.points[3*cp.point+0],
-				y:yarn.points[3*cp.point+1],
-				z:yarn.points[3*cp.point+2]
-			};
-			if (cp.point > 0 && (cp.point + 1) * 3 < yarn.points.length) {
-				//inner point, so compute posn on spline:
+			splits.push(cp.point);
+			lengths.push(length);
+		}
 
-				//previous midpoint:
-				const prev = {
-					x:0.5 * (yarn.points[3*cp.point-3+0] + pt.x),
-					y:0.5 * (yarn.points[3*cp.point-3+1] + pt.y),
-					z:0.5 * (yarn.points[3*cp.point-3+2] + pt.z)
-				}
-				//next midpoint:
-				const next = {
-					x:0.5 * (yarn.points[3*cp.point+3+0] + pt.x),
-					y:0.5 * (yarn.points[3*cp.point+3+1] + pt.y),
-					z:0.5 * (yarn.points[3*cp.point+3+2] + pt.z)
-				}
-				//move pt to point on spline at t = 0.5:
-				pt.x = 0.25 * prev.x + 0.5 * pt.x + 0.25 * next.x;
-				pt.y = 0.25 * prev.y + 0.5 * pt.y + 0.25 * next.y;
-				pt.z = 0.25 * prev.z + 0.5 * pt.z + 0.25 * next.z;
-			}
+
+		//make sure there is a split point at the start and at the end:
+		if (splits.length === 0 || splits[0] !== 0) {
+			splits.unshift(0);
+			lengths.unshift(NaN); //used as a "don't care" marker
+		}
+		if (splits[splits.length-1] !== yarn.points.length/3-1) {
+			splits.push(yarn.points.length/3-1);
+			lengths.push(NaN); //used as a "don't care" marker
+		}
+
+		//build spine (making sure to split at 'splits' and record lengths):
+		const {points:spine, splits:spineSplits, lengths:spineLengths} = quadraticBSpline(yarn.points, 0.5 * yarn.radius, 25.0, splits);
+
+		//console.log(splits, spineSplits, lengths, spineLengths);
+		console.assert(spineSplits.length === splits.length, "all splits remapped");
+
+		spineSplits.forEach(function(si, i) {
+			const pt = {
+				x:spine[3*si+0],
+				y:spine[3*si+1],
+				z:spine[3*si+2]
+			};
 			const spineX = [
 				pt.x - yarn.radius * 2.0, pt.y, pt.z,
 				pt.x + yarn.radius * 2.0, pt.y, pt.z
@@ -526,14 +578,22 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 				pt.x, pt.y, pt.z - yarn.radius * 2.0,
 				pt.x, pt.y, pt.z + yarn.radius * 2.0
 			];
-			const crossX = buildTube(spineX, 0.3 * yarn.radius, {r:255, g:255, b:255, a:255});
-			const crossY = buildTube(spineY, 0.3 * yarn.radius, {r:255, g:255, b:255, a:255});
-			const crossZ = buildTube(spineZ, 0.3 * yarn.radius, {r:255, g:255, b:255, a:255});
+			let color = {r:255, g:255, b:255, a:255};
+			if (!(lengths[i] === lengths[i])) {
+				//this is a "don't care" point added for vis
+				//DEBUG: color = {r:255, g:0, b:0, a:255};
+				return;
+			}
+			const crossX = buildTube(spineX, 0.3 * yarn.radius, color);
+			const crossY = buildTube(spineY, 0.3 * yarn.radius, color);
+			const crossZ = buildTube(spineZ, 0.3 * yarn.radius, color);
 			checkpoints = concat(checkpoints,
 				concat(concat(crossX, crossY), crossZ)
 			);
-		}
+		});
 
+		const tube = buildTube(spine, yarn.radius, yarn.color);
+	
 		//tube is an ArrayBuffer:
 		Attribs = concat(Attribs, concat(tube, checkpoints));
 	});
