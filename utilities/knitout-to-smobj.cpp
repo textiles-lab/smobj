@@ -412,15 +412,25 @@ struct Translator {
 					glm::vec3(travel_x(c->parked_index, Left), FaceHeight, c->depth),
 				};
 
+				c->last_checkpoint.face = faces.size()-1;
+				c->last_checkpoint.crossing = 0;
+
 				if (dir == Left) {
 					face.type = "yarn-to-left x -y1 x +y1";
 				
 					c->parked_edge = FaceEdge(faces.size()-1, 3, 1, FaceEdge::FlipYes);
+					c->last_checkpoint.edge = 1;
+
 				} else {
 					face.type = "yarn-to-right x +y1 x -y1";
 
 					c->parked_edge = FaceEdge(faces.size()-1, 1, 1, FaceEdge::FlipNo);
+					c->last_checkpoint.edge = 3;
 				}
+
+				c->last_checkpoint.unit = get_unit("in");
+				c->last_checkpoint.length = 1.0f;
+				checkpoints.emplace_back(c->last_checkpoint);
 
 				bring_gizmo.lift = std::max(bring_gizmo.lift, c->horizon.get_value(bring_index, bring_index+1));
 				bring_gizmo.set_lift.emplace_back([c,bring_index](float lift){
@@ -1624,6 +1634,27 @@ struct Translator {
 			if (!c->ready) {
 				throw std::runtime_error("Calling out/outhook on carrier " + c->name + " which is not in.");
 			}
+
+			//---
+			//build checkpoints for end of yarn:
+			if (c->parked_edge.is_valid()) {
+				assert(c->parked_edge.count == 1);
+
+				c->last_checkpoint.unit = get_unit("out");
+				c->last_checkpoint.length = 1.0f;
+				checkpoints.emplace_back(c->last_checkpoint);
+
+				Checkpoint end;
+				end.face = c->parked_edge.face;
+				end.edge = c->parked_edge.edge;
+				end.crossing = 0;
+				end.unit = get_unit("1");
+				end.length = 0.0f;
+				checkpoints.emplace_back(end);
+			}
+			//---
+			//reset carrier data:
+
 			c->ready = false;
 			c->parked_edge = FaceEdge();
 			c->parked_index = 0;

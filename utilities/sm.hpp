@@ -129,7 +129,7 @@ struct Yarns {
 	//yarns:
 	struct Yarn {
 		std::vector< glm::vec3 > points;
-		std::vector< uint32_t > sources; //source line numbers
+		std::vector< uint32_t > sources; //1-based source line number; 0 means 'unknown'
 		struct Checkpoint {
 			uint32_t point;
 			float length;

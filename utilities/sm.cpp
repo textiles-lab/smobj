@@ -523,6 +523,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		Mesh::Face const *face = nullptr;
 		uint32_t yarn = -1U;
 		bool reverse = false;
+		int8_t direction_vote = 0; //negative => yarn should go against this segment; 0 => no preference; positive => yarn should go along this segment
 	};
 
 	std::vector< std::vector< ChainSegment > > chains;
@@ -538,6 +539,29 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			auto const &sf = *mesh_library[face.type];
 			for (uint32_t yi = 0; yi < sf.yarns.size(); ++yi) {
 				segs.emplace_back(&face, yi, false);
+
+				//construct direction vote from edge labels:
+				auto is_yarn_type = [](std::string const &type) {
+					return (!type.empty() && type[0] == 'y');
+				};
+
+				if (is_yarn_type(sf.edges[sf.yarns[yi].begin.edge].type)) {
+					if (sf.edges[sf.yarns[yi].begin.edge].direction == Library::Face::Edge::In) {
+						segs.back().direction_vote += 1;
+					} else if (sf.edges[sf.yarns[yi].begin.edge].direction == Library::Face::Edge::Out) {
+						segs.back().direction_vote -= 1;
+					}
+				}
+
+				if (is_yarn_type(sf.edges[sf.yarns[yi].end.edge].type)) {
+					if (sf.edges[sf.yarns[yi].end.edge].direction == Library::Face::Edge::In) {
+						segs.back().direction_vote -= 1;
+					} else if (sf.edges[sf.yarns[yi].end.edge].direction == Library::Face::Edge::Out) {
+						segs.back().direction_vote += 1;
+					}
+				}
+
+
 				glm::ivec4 from;
 				from.x = face[sf.yarns[yi].begin.edge];
 				from.y = face[(sf.yarns[yi].begin.edge+1)%face.size()];
@@ -701,6 +725,42 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 						chain.emplace_front(segs[via]);
 						chain.front().reverse = !via_reverse;
 					}
+				}
+			}
+
+			//look at orientation votes for chain:
+			int32_t direction_vote = 0;
+			for (auto const &seg : chain) {
+				direction_vote += (seg.reverse ? -seg.direction_vote : seg.direction_vote);
+			}
+			uint32_t concurring = 0;
+			uint32_t dissenting = 0;
+			for (auto const &seg : chain) {
+				int8_t vote = (seg.reverse ? -seg.direction_vote : seg.direction_vote);
+				if (vote < 0) {
+					if (direction_vote < 0) {
+						++concurring;
+					} else {
+						++dissenting;
+					}
+				}
+				if (vote > 0) {
+					if (direction_vote > 0) {
+						++concurring;
+					} else {
+						++dissenting;
+					}
+				}
+			}
+			if (dissenting > 0) {
+				std::cerr << "WARNING: had chain with direction vote " << direction_vote << " with " << concurring << " concurring and " << dissenting << " dissenting (would generally expect *no* dissenting votes)." << std::endl;
+			}
+
+			if (direction_vote < 0) {
+				std::cerr << "NOTE: flipping chain owing to direction vote." << std::endl;
+				std::reverse(chain.begin(), chain.end());
+				for (auto &seg : chain) {
+					seg.reverse = !seg.reverse;
 				}
 			}
 
@@ -1029,6 +1089,8 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		yarns.yarns.back().radius *= radius_scale;
 		yarns.yarns.back().color = yarn_color();
 
+		std::vector< std::pair< uint32_t, Mesh::Checkpoint const * > > checkpoints;
+
 		for (auto const &seg : chain) {
 			assert(seg.face);
 			auto const &face = *seg.face;
@@ -1057,12 +1119,9 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 				uint32_t point = ( yarns.yarns.back().points.empty() ? 0 : yarns.yarns.back().points.size() - 1);
 				auto r = fec_to_checkpoints.equal_range(begin_fec);
 				for (auto i = r.first; i != r.second; /* later */ ) {
-					//assign checkpoint based on yarn point
-					yarns.yarns.back().checkpoints.emplace_back();
-					yarns.yarns.back().checkpoints.back().point = point;
-					yarns.yarns.back().checkpoints.back().length = i->second->length;
-					yarns.yarns.back().checkpoints.back().unit = i->second->unit;
-
+					//assign checkpoint based on yarn point:
+					checkpoints.emplace_back(std::make_pair(point, i->second));
+				
 					//remove checkpoint from lookup structure:
 					auto old = i;
 					++i;
@@ -1097,11 +1156,8 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 				uint32_t point = yarns.yarns.back().points.size() - 1;
 				auto r = fec_to_checkpoints.equal_range(end_fec);
 				for (auto i = r.first; i != r.second; /* later */ ) {
-					//assign checkpoint based on yarn point
-					yarns.yarns.back().checkpoints.emplace_back();
-					yarns.yarns.back().checkpoints.back().point = point;
-					yarns.yarns.back().checkpoints.back().length = i->second->length;
-					yarns.yarns.back().checkpoints.back().unit = i->second->unit;
+					//assign checkpoint based on yarn point:
+					checkpoints.emplace_back(std::make_pair(point, i->second));
 
 					//remove checkpoint from lookup structure:
 					auto old = i;
@@ -1109,9 +1165,62 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 					fec_to_checkpoints.erase(old);
 				}
 			}
-
 		}
-		//TODO: for circular yarns, make sure first/last points match exactly.
+		//(old) TODO: for circular yarns, make sure first/last points match exactly.
+
+		//Make sure yarn is properly oriented for checkpoints:
+		if (!checkpoints.empty()) {
+			assert(checkpoints.size() >= 2 && "yarns with any checkpoints *must* be covered with checkpoints -- thus, should have at least two checkpoints");
+			assert(checkpoints[0].first == 0 && "yarns with any checkpoints *must* be covered with checkpoints -- thus, should always start at 0");
+			assert(checkpoints.back().first == yarns.yarns.back().points.size()-1 && "yarns with any checkpoints *must* be covered with checkpoints -- thus, should always end at last point");
+			//check if checkpoints are increasing or decreasing:
+			bool is_increasing = false;
+			bool is_decreasing = false;
+
+			for (uint32_t i = 1; i < checkpoints.size(); ++i) {
+				if (checkpoints[i-1].first != checkpoints[i].first) { //ignore order at the same point
+					if (checkpoints[i-1].second < checkpoints[i].second) {
+						is_increasing = true;
+						assert(!is_decreasing && "checkpoints should be ordered along yarns");
+					} else {
+						is_decreasing = true;
+						assert(!is_increasing && "checkpoints should be ordered along yarns");
+					}
+				}
+			}
+			assert(is_decreasing || is_increasing);
+
+			if (is_decreasing) {
+				std::cerr << "WARNING: checkpoint-enforced yarn order does not match with edge-label-suggested yarn order. Flipping to match checkpoints." << std::endl;
+
+				//need to flip yarn orientation so that checkpoints line up properly:
+				std::reverse(yarns.yarns.back().points.begin(), yarns.yarns.back().points.end());
+				std::reverse(yarns.yarns.back().sources.begin(), yarns.yarns.back().sources.end());
+				//move source labels to the start of their segments:
+				yarns.yarns.back().sources.erase(yarns.yarns.back().sources.begin());
+				yarns.yarns.back().sources.emplace_back(0);
+
+				std::reverse(checkpoints.begin(), checkpoints.end());
+				for (auto &pc : checkpoints) {
+					pc.first = yarns.yarns.back().points.size() - 1 - pc.first;
+				}
+
+				//PARANOIA: check that flipping worked
+				for (uint32_t i = 1; i < checkpoints.size(); ++i) {
+					if (checkpoints[i-1].first != checkpoints[i].first) { //ignore order at the same point
+						assert(checkpoints[i-1].second < checkpoints[i].second);
+					}
+				}
+			}
+
+			for (auto const &pc : checkpoints) {
+				yarns.yarns.back().checkpoints.emplace_back();
+				yarns.yarns.back().checkpoints.back().point = pc.first;
+				yarns.yarns.back().checkpoints.back().length = pc.second->length;
+				yarns.yarns.back().checkpoints.back().unit = pc.second->unit;
+			}
+		}
+
 	}
 	std::cout << "Total boundary mis-match from chains (should be very small): " << mismatch << std::endl;
 

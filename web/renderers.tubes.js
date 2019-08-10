@@ -629,12 +629,15 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 		}
 		let minVal = -1.0;
 		let maxVal = 1.0;
+		/*
+		//don't scale, leave at 0.5-2.0 range.
 		spineColors.forEach(function(v){
 			if (v === v) {
 				minVal = Math.min(minVal,v);
 				maxVal = Math.max(maxVal,v);
 			}
 		});
+		*/
 
 		//make sure that 0 always ends up centered:
 		maxVal = Math.max(maxVal, -minVal);
