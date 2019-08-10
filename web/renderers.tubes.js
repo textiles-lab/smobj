@@ -215,7 +215,21 @@ const BYTES_PER_ATTRIB = 3*4 + 3*4 + 4*1;
 
 //build a tubular tristrip around a (one hopes) smooth spine:
 //return a ArrayBuffer with attribs inside
-function buildTube(spine, radius, color) {
+function buildTube(spine, radius, colorOrSplits_, colors_) {
+	let colors;
+	let splits;
+
+	if (typeof(colors_) !== 'undefined') {
+		colors = colors_;
+		splits = colorOrSplits_;
+		if (colors.length !== splits.length) throw "expecting array of colors + array of splits";
+		if (splits[0] !== 0) throw "splits should start at the start";
+	} else {
+		colors = [colorOrSplits_];
+		splits = [0];
+	}
+
+
 	if (spine.length < 3) return new ArrayBuffer(0);
 
 	//build a cross-section shape:
@@ -283,10 +297,8 @@ function buildTube(spine, radius, color) {
 	}
 	//console.log(color, rgbaToUint32(color).toString(16)); //DEBUG
 
-	const ColorA = rgbaToUint32(color);
-	const ColorB = rgbaToUint32(color);
-	const ColorC = rgbaToUint32(color);
-	const ColorD = rgbaToUint32(color);
+	let Color = rgbaToUint32(colors[0]);
+	let nextSplit = 1;
 
 	/*
 	//DEBUG
@@ -354,7 +366,7 @@ function buildTube(spine, radius, color) {
 				n.x,
 				n.y,
 				n.z,
-				(reverse ? ColorD : ColorC)
+				Color //DEBUG version: (reverse ? ColorD : ColorC)
 			);
 		});
 	}
@@ -373,7 +385,7 @@ function buildTube(spine, radius, color) {
 					Ring[j].x * p1.x + Ring[j].y * p2.x,
 					Ring[j].x * p1.y + Ring[j].y * p2.y,
 					Ring[j].x * p1.z + Ring[j].y * p2.z,
-					ColorA
+					Color
 				);
 				attrib(
 					radius * (Ring[j].x * nextP1.x + Ring[j].y * nextP2.x) + nextPt.x,
@@ -382,7 +394,7 @@ function buildTube(spine, radius, color) {
 					Ring[j].x * nextP1.x + Ring[j].y * nextP2.x,
 					Ring[j].x * nextP1.y + Ring[j].y * nextP2.y,
 					Ring[j].x * nextP1.z + Ring[j].y * nextP2.z,
-					ColorB
+					Color
 				);
 			}
 			prevAttrib(-2 * Ring.length);
@@ -403,6 +415,7 @@ function buildTube(spine, radius, color) {
 
 	for (let i = 3; i + 2 < spine.length; i += 3) {
 		let at = { x:spine[i+0], y:spine[i+1], z:spine[i+2] };
+
 		//skip duplicated points:
 		if (at.x === prevAt.x && at.y === prevAt.y && at.z === prevAt.z) continue;
 
@@ -476,6 +489,14 @@ function buildTube(spine, radius, color) {
 				z:0.5 * (prevD2.z + d2.z)
 			};
 			sweepTo(avgD1, avgD2, prevAt);
+		}
+
+		if (nextSplit < splits.length) { //update color:
+			const idx = i / 3 - 1;
+			while (nextSplit < splits.length && idx >= splits[nextSplit]) { //doing this because may have zero-length segments that got skipped
+				Color = rgbaToUint32(colors[nextSplit]);
+				++nextSplit;
+			}
 		}
 
 		prevD1 = d1;
@@ -560,6 +581,7 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 		//console.log(splits, spineSplits, lengths, spineLengths);
 		console.assert(spineSplits.length === splits.length, "all splits remapped");
 
+		//draw little "+"'s at each checkpoint:
 		spineSplits.forEach(function(si, i) {
 			const pt = {
 				x:spine[3*si+0],
@@ -592,7 +614,76 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 			);
 		});
 
-		const tube = buildTube(spine, yarn.radius, yarn.color);
+		//compute array of segment colors based on stretch:
+		const spineColors = [];
+		for (let i = 0; i < spineSplits.length; ++i) {
+			let length = lengths[i];
+			let spineLength = spineLengths[i];
+			if (!(length === length)) {
+				spineColors.push(NaN); //marked as "Don't Care"
+			} else if (spineLength <= 0.0 || length <= 0.0) {
+				spineColors.push(NaN); //invalid -- treat as "Don't Care"
+			} else {
+				spineColors.push(Math.log2(length / spineLength));
+			}
+		}
+		let minVal = -1.0;
+		let maxVal = 1.0;
+		spineColors.forEach(function(v){
+			if (v === v) {
+				minVal = Math.min(minVal,v);
+				maxVal = Math.max(maxVal,v);
+			}
+		});
+
+		//make sure that 0 always ends up centered:
+		maxVal = Math.max(maxVal, -minVal);
+		minVal = Math.min(minVal, -maxVal);
+		console.assert(Math.abs(maxVal) === Math.abs(minVal), "zero is centered");
+
+		//This is BrBG from matplotlib:
+		// https://github.com/matplotlib/matplotlib/blob/a78675348aeeb7756014c6d628cd603923f72560/lib/matplotlib/_cm.py
+		const scale = [
+			[0.32941176470588235,  0.18823529411764706,  0.0196078431372549],
+			[0.5490196078431373 ,  0.31764705882352939,  0.0392156862745098],
+			[0.74901960784313726,  0.50588235294117645,  0.17647058823529413],
+			[0.87450980392156863,  0.76078431372549016,  0.49019607843137253],
+			[0.96470588235294119,  0.90980392156862744,  0.76470588235294112],
+			[0.96078431372549022,  0.96078431372549022,  0.96078431372549022],
+			[0.7803921568627451 ,  0.91764705882352937,  0.89803921568627454],
+			[0.50196078431372548,  0.80392156862745101,  0.75686274509803919],
+			[0.20784313725490197,  0.59215686274509804,  0.5607843137254902 ],
+			[0.00392156862745098,  0.4                ,  0.36862745098039218],
+			[0.0                ,  0.23529411764705882,  0.18823529411764706]
+		];
+		function colorMap(amt) {
+			let f = amt * (scale.length-1);
+			f = Math.max(0.0, f);
+			f = Math.min(scale.length-1 - 1e-6, f);
+			let i = Math.floor(f);
+			f -= i;
+			function cvt(v) {
+				return Math.max(0, Math.min(255, Math.round(v * 255)));
+			}
+			return {
+				r:cvt(f * (scale[i+1][0] - scale[i][0]) + scale[i][0]),
+				g:cvt(f * (scale[i+1][1] - scale[i][1]) + scale[i][1]),
+				b:cvt(f * (scale[i+1][2] - scale[i][2]) + scale[i][2]),
+				a: 255
+			};
+		}
+
+		for (let i = 0; i < spineColors.length; ++i) {
+			let v = spineColors[i];
+			if (!(v === v)) {
+				//"don't care" value
+				spineColors[i] = yarn.color;
+			} else {
+				spineColors[i] = colorMap((v - minVal) / (maxVal - minVal));
+			}
+		}
+
+		const tube = buildTube(spine, yarn.radius, spineSplits, spineColors);
 	
 		//tube is an ArrayBuffer:
 		Attribs = concat(Attribs, concat(tube, checkpoints));
