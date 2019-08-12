@@ -41,7 +41,7 @@ c 1/3/1 #last checkpoint on a yarn will always have zero following length
 # `.yarns`: a format for yarn curves
 
 The yarn format stores one or more yarns as polylines.
-Typically, these polylines are interpreted for viewing by conecting subsequent midpoints with quadratic bezier curves in order to create a smooth path.
+Typically, these polylines are interpreted for viewing by connecting subsequent midpoints with quadratic bezier curves in order to create a smooth path.
 
 A `.yarns` file consists of several chunks, where each chunk contains a 4-byte header, a 4-byte size (length of chunk data in bytes), and a flat array of uniform data elements.
 
