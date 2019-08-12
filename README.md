@@ -121,8 +121,9 @@ The `knitout-to-smobj` utility converts knitout instructions to an smobj descrip
 Given the nature of the conversion, the output file often contains elongated yarns, though the yarn length checkpoints it produces should provide a more reasonable notion of how much they need to be shrunk.
 
 ### TODO
- - Does not yet include yarn checkpoints
- - Does not yet output line numbers
+ - Yarn checkpoints need better units set (using needle distance and stitch settings).
+ - Testing required, especially of checkpoints during plating.
+ - Yarn bring-in faces should probably be hoisted.
 
 ## .smobj to .yarns (Work in Progress)
 
@@ -134,9 +135,20 @@ The `smobj-to-yarns` utility loads a face library and smobj file and exports a `
 It uses the notion of generalized barycentric coordinates to warp the face from the library.
 
 ### TODO
- - Code needs to be moved from development repository.
- - Utility and file format needs to be updated to support yarn checkpoints
- - Utility and file format needs to be updated to support line numbers
+ - Testing required, especially of new features.
+
+# Viewers
+
+## web/view-yarns.html (Work in Progress)
+
+Viewer for yarns files built with javascript and WebGL.
+To use, open the file in a browser and drag in (or click to open) a ```.yarns''' file.
+
+### TODO
+ - Units panel should update unit lengths.
+ - Toggle viewing mode between yarn color and stretch color.
+ - Some way to read back line numbers (mouse-over?)
+
 
 # Standard Face and Edge Types (Knitout)
 
