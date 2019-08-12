@@ -142,7 +142,7 @@ It uses the notion of generalized barycentric coordinates to warp the face from 
 ## web/view-yarns.html (Work in Progress)
 
 Viewer for yarns files built with javascript and WebGL.
-To use, open the file in a browser and drag in (or click to open) a ```.yarns''' file.
+To use, open the file in a browser and drag in (or click to open) a ```.yarns``` file.
 
 ### TODO
  - Units panel should update unit lengths.
