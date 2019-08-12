@@ -1,3 +1,5 @@
+The formats and utilities documented here were developed at the [Carnegie Mellon Textiles Lab](https://textiles-lab.github.io/) as part of the [Visual Knit Programming](http://visual.knit.zone) project and further enhanced for use in [KnitDB](http://db.knit.zone) and ongoing research.
+
 # `.smobj`: a format for augmented-stitch-mesh-like things
 
 Augmented Stitch Meshes represent knit structures and their dependencies by embedding yarns in the faces of a (tri/quad/pentagon/etc) mesh, and associating types and directions with each edge.
