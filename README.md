@@ -1,4 +1,6 @@
 The formats and utilities documented here were developed at the [Carnegie Mellon Textiles Lab](https://textiles-lab.github.io/) as part of the [Visual Knit Programming](http://visual.knit.zone) project and further enhanced for use in [KnitDB](http://db.knit.zone) and ongoing research.
+For bugs, file a github issue.
+For other inquires, please contact [Jim McCann](http://www.cs.cmu.edu/~jmccann/).
 
 # `.smobj`: a format for augmented-stitch-mesh-like things
 
