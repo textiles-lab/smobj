@@ -88,7 +88,7 @@ The specific chunks and their order:
     struct {
       uint32_t name_begin; //index of first character of unit name
       uint32_t name_end; //index of last character of unit name
-      float length; //default/reccomendd length of given unit <-- might remove this
+      float length; //default/reccomended length of given unit <-- might remove this
     }
   NOTE: the first unit will always be named '1' and will always represent absolute lengths.
 (6) Checkpoints:
