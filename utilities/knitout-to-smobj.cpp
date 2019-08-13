@@ -184,7 +184,13 @@ struct Carrier {
 
 	//used when adding lengths:
 	Checkpoint last_checkpoint;
-	//NOTE: should probably also have some notion of the *connected* stitch -- last_* is modified by miss()
+
+	//the 'anchor' is the connected stitch:
+	//(this gets a bit fuzzy when splits happen, but estimating inter-stitch distances is generally going to be a but fuzzy)
+	BedColumns const *anchor_bed = nullptr;
+	int32_t anchor_needle = 0;
+	Direction anchor_side = Right;
+	std::map< Unit const *, float > anchor_depth;
 };
 
 struct Crossings {
@@ -262,6 +268,7 @@ struct Translator {
 	std::unordered_map< std::string, Carrier > carriers;
 	Crossings crossings;
 	float racking = 0.0f;
+	uint32_t stitch_index = 5; //current stitch table setting (machine units)
 
 	uint32_t source = 0; //current line number (applied to created faces)
 
@@ -290,12 +297,37 @@ struct Translator {
 
 	//--- helper functions ---
 
-	Unit const *get_unit(std::string name) {
+	Unit const *get_unit(std::string name, float default_length = 1.0f) {
 		for (auto const &u : units) {
 			if (u.name == name) return &u;
 		}
-		units.emplace_back(name, 1.0f);
+		units.emplace_back(name, default_length);
 		return &units.back();
+	}
+	//some specific units:
+
+	//loop length of current stitch:
+	Unit const *get_loop_length_unit() {
+		return get_unit("l" + std::to_string(stitch_index), 1.0f);
+	}
+	//height of stitch for anchor_depth:
+	Unit const *get_stitch_height_unit() {
+		return get_unit("h" + std::to_string(stitch_index), 0.7f);
+	}
+	//needle units:
+	// at quarter-pitch, let's say it looks like this:
+	//  back:       |---0---|   |---1---|
+	// front: |---0---|   |---1---|
+	// units:     |a|b|a|a|b|a|
+	Unit const *get_needle_width_a_unit() {
+		return get_unit("na", 0.1f);
+	}
+	Unit const *get_needle_width_b_unit() {
+		return get_unit("nb", 0.3f);
+	}
+	//
+	Unit const *get_bed_gap_unit() {
+		return get_unit("g", 0.6f);
 	}
 
 	std::vector< Carrier * > lookup_carriers(std::vector< std::string > const &cs) {
@@ -893,12 +925,73 @@ struct Translator {
 			Checkpoint after_stitch(yarn_from_stitch.face, yarn_from_stitch.edge, (yarn_from_stitch.flip == FaceEdge::FlipYes ? cs.size() - 1 - ci : ci));
 			if (c->last_checkpoint.is_valid()) {
 				//previous stitch -> this stitch:
-				c->last_checkpoint.unit = get_unit("*");
-				c->last_checkpoint.length = 1.0f;
-				checkpoints.emplace_back(c->last_checkpoint);
+
+				//compute distance to previous attachment point:
+
+				//start with depth accumulated into anchor:
+				std::map< Unit const *, float > length = c->anchor_depth;
+				auto add = [&length](float amt, Unit const *unit) {
+					length.insert(std::make_pair(unit, 0.0f)).first->second += amt;
+				};
+
+				//add in the bed gap, if needed:
+				if ((&bed == &back_bed || &bed == &back_sliders)
+				 != (c->anchor_bed == &back_bed || c->anchor_bed == &back_sliders)) {
+					add(1.0f, get_bed_gap_unit());
+				}
+
+				//estimate steps along bed using a modified index system:
+				//
+				//  n*6  -- needle n
+				//     (a)
+				//       +1  -- left side (back bed at quarter pitch)
+				//     (b)
+				//   +2  -- right side (n)
+				//     (a)
+				//       n*6+3 -- middle == quarter-pitch aligned racking
+				//     (a)
+				//   +4  -- left side n+1
+				//     (b)
+				//       +5  -- right side (back bed at quarter pitch)
+				//     (a)
+				// (n+1)*6 -- needle n+1
+				//
+
+				auto make_index = [this](BedColumns const &bed, int32_t needle, Direction side) {
+					int32_t index = 6 * needle;
+					if (&bed == &back_bed || &bed == &back_sliders) {
+						int32_t r = std::floor(racking);
+						if (r == racking) {
+							index += 6*r;
+						} else { assert(racking - r == 0.25f);
+							index += 6*r+3;
+						}
+					}
+					index += (side == Left ? -2 : 2);
+					return index;
+				};
+
+				int32_t min_index = make_index(*c->anchor_bed, c->anchor_needle, c->anchor_side);
+				int32_t max_index = make_index(bed, needle, (dir == Right ? Left : Right));
+				if (min_index > max_index) std::swap(min_index, max_index);
+				for (int32_t i = min_index; i < max_index; ++i) {
+					int32_t step = i % 6;
+					if (step < 0) step += 6;
+					if (step == 1 || step == 4) {
+						add(1.0f, get_needle_width_b_unit());
+					} else {
+						add(1.0f, get_needle_width_a_unit());
+					}
+				}
+
+				for (auto const &ul : length) {
+					c->last_checkpoint.unit = ul.first;
+					c->last_checkpoint.length = ul.second;
+					checkpoints.emplace_back(c->last_checkpoint);
+				}
 			}
 			//this stitch:
-			before_stitch.unit = get_unit("1");
+			before_stitch.unit = get_loop_length_unit();
 			before_stitch.length = 1.0f;
 			checkpoints.emplace_back(before_stitch);
 
@@ -908,6 +1001,12 @@ struct Translator {
 			checkpoints.emplace_back(after_stitch);
 
 			c->last_checkpoint = after_stitch; //store this (blank) checkpoint
+
+			//re-anchor yarn:
+			c->anchor_bed = &bed;
+			c->anchor_needle = needle;
+			c->anchor_depth.clear();
+			c->anchor_side = dir;
 		}
 
 	}
@@ -1648,6 +1747,8 @@ struct Translator {
 				c->last_checkpoint.length = 1.0f;
 				checkpoints.emplace_back(c->last_checkpoint);
 
+				//TODO: could use anchor depth here, potentially
+
 				Checkpoint end;
 				end.face = c->parked_edge.face;
 				end.edge = c->parked_edge.edge;
@@ -1669,6 +1770,11 @@ struct Translator {
 			c->last_bed = nullptr;
 
 			c->last_checkpoint = Checkpoint();
+
+			c->anchor_bed = nullptr;
+			c->anchor_needle = 0;
+			c->anchor_side = Right;
+			c->anchor_depth.clear();
 		}
 	}
 
@@ -1787,6 +1893,15 @@ struct Translator {
 
 		Gizmo gizmo;
 
+		//update anchor depths (all carriers):
+		for (auto &cn : carriers) {
+			Carrier *c = &cn.second;
+			if (!c->last_bed) continue;
+			if (c->anchor_bed == &bed && c->anchor_needle == needle) {
+				c->anchor_depth.insert(std::make_pair(get_stitch_height_unit(), 0.0f)).first->second += 1.0f;
+			}
+		}
+
 		//set up yarn to/from stitch:
 		FaceEdge yarn_to_stitch, yarn_from_stitch;
 		setup_carriers(dir, bed, needle, cs, &gizmo, &yarn_to_stitch, &yarn_from_stitch);
@@ -1887,6 +2002,18 @@ struct Translator {
 		}
 
 		Gizmo gizmo;
+
+		//if this is a split,
+		//update anchor depths (all carriers):
+		if (!cs.empty()) {
+			for (auto &cn : carriers) {
+				Carrier *c = &cn.second;
+				if (!c->last_bed) continue;
+				if (c->anchor_bed == &from_bed && c->anchor_needle == from_needle) {
+					c->anchor_depth.insert(std::make_pair(get_stitch_height_unit(), 0.0f)).first->second += 1.0f;
+				}
+			}
+		}
 
 		//set up yarn to/from stitch @ shear plane:
 		FaceEdge yarn_to_stitch, yarn_from_stitch;
@@ -2098,8 +2225,21 @@ struct Translator {
 
 		//apply lift and create merge faces:
 		commit(gizmo);
-	}
 
+		//if this is an xfer, anchor positions follow the moved loops:
+		//update anchor positions (all carriers):
+		if (cs.empty()) {
+			for (auto &cn : carriers) {
+				Carrier *c = &cn.second;
+				if (!c->last_bed) continue;
+				if (c->anchor_bed == &from_bed && c->anchor_needle == from_needle) {
+					c->anchor_bed = &to_bed;
+					c->anchor_needle = to_needle;
+				}
+			}
+		}
+
+	}
 
 
 	//----- DEBUG helpers -----
@@ -2409,6 +2549,15 @@ int main(int argc, char **argv) {
 			if (str >> temp) throw std::runtime_error("rack value had trailing junk: '" + temp + "...'.");
 			if (!(std::floor(rack) == rack || std::floor(rack) + 0.25f == rack)) throw std::runtime_error("expecting either aligned or quarter-pitch racking.");
 			translator->racking = rack;
+		} else if (tokens[0] == "x-stitch-number") {
+			if (tokens.size() != 2) throw std::runtime_error("x-stitch-number should have exactly one parameter.");
+			std::istringstream str(tokens[1]);
+			int32_t stitch_number;
+			if (!(str >> stitch_number)) throw std::runtime_error("x-stitch-number should be an integer");
+			std::string temp;
+			if (str >> temp) throw std::runtime_error("x-stitch-number value had trailing junk: '" + temp + "...'.");
+			if (!(0 <= stitch_number && stitch_number <= 120)) throw std::runtime_error("expecting stitch number in the interval [0,120]");
+			translator->stitch_index = stitch_number;
 		} else {
 			std::cout << "WARNING: unsupported operation '" << line << "'" << std::endl;
 		}

@@ -125,9 +125,9 @@ The `knitout-to-smobj` utility converts knitout instructions to an smobj descrip
 Given the nature of the conversion, the output file often contains elongated yarns, though the yarn length checkpoints it produces should provide a more reasonable notion of how much they need to be shrunk.
 
 ### TODO
- - Yarn checkpoints need better units set (using needle distance and stitch settings).
- - Testing required, especially of checkpoints during plating.
+ - Testing required, especially of distance checkpoints during plating.
  - Yarn bring-in faces should probably be hoisted.
+ - Handling of distance checkpoints around splits is not ideal.
 
 ## .smobj to .yarns (Work in Progress)
 
