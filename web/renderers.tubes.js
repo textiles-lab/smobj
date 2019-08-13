@@ -517,38 +517,14 @@ function buildTube(spine, radius, colorOrSplits_, colors_) {
 	
 }
 
-//Helper: concatenate ArrayBuffers of attribs:
-function concat(a,b) {
-	console.assert(a.byteLength % BYTES_PER_ATTRIB === 0, "Expecting buffers of attribs");
-	console.assert(b.byteLength % BYTES_PER_ATTRIB === 0, "Expecting buffers of attribs");
-	console.assert(BYTES_PER_ATTRIB % 4 === 0, "Expecting attribs to be multiples of 32 bits");
-
-	if (b.byteLength === 0) return a;
-	if (a.byteLength === 0) return b;
-
-	const o = new ArrayBuffer(a.byteLength + b.byteLength + 2*BYTES_PER_ATTRIB);
-
-	const av = new Uint32Array(a);
-	const bv = new Uint32Array(b);
-	const ov = new Uint32Array(o);
-
-	ov.set(av, 0);
-	//duplicate last vertex:
-	ov.set(av.slice(av.length-BYTES_PER_ATTRIB/4, av.length), av.length);
-	//duplicate first vertex:
-	ov.set(bv.slice(0, BYTES_PER_ATTRIB/4), av.length + BYTES_PER_ATTRIB/4);
-	ov.set(bv, av.length + 2*BYTES_PER_ATTRIB/4);
-
-	return ov;
-}
-
 renderer.uploadYarns = function tubes_uploadYarns() {
 	//accmulate Position attribs for all yarns:
-	let Attribs = new ArrayBuffer(0);
+	let checkpointAttribsList = [];
+	let yarnAttribsList = [];
 
+	console.log("Building yarns...");
 	yarns.yarns.forEach(function(yarn){
 		//build checkpoints attribs + record split locations:
-		let checkpoints = new ArrayBuffer(0);
 		const splits = [];
 		const lengths = [];
 		for (let i = 0; i < yarn.checkpoints.length; ++i) {
@@ -581,6 +557,8 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 		//console.log(splits, spineSplits, lengths, spineLengths);
 		console.assert(spineSplits.length === splits.length, "all splits remapped");
 
+		console.log((splits.length - 1) + " checkpoint segments.");
+
 		//draw little "+"'s at each checkpoint:
 		spineSplits.forEach(function(si, i) {
 			const pt = {
@@ -606,12 +584,9 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 				//DEBUG: color = {r:255, g:0, b:0, a:255};
 				return;
 			}
-			const crossX = buildTube(spineX, 0.3 * yarn.radius, color);
-			const crossY = buildTube(spineY, 0.3 * yarn.radius, color);
-			const crossZ = buildTube(spineZ, 0.3 * yarn.radius, color);
-			checkpoints = concat(checkpoints,
-				concat(concat(crossX, crossY), crossZ)
-			);
+			checkpointAttribsList.push( buildTube(spineX, 0.3 * yarn.radius, color) );
+			checkpointAttribsList.push( buildTube(spineY, 0.3 * yarn.radius, color) );
+			checkpointAttribsList.push( buildTube(spineZ, 0.3 * yarn.radius, color) );
 		});
 
 		//compute array of segment colors based on stretch:
@@ -686,11 +661,39 @@ renderer.uploadYarns = function tubes_uploadYarns() {
 			}
 		}
 
-		const tube = buildTube(spine, yarn.radius, spineSplits, spineColors);
-	
-		//tube is an ArrayBuffer:
-		Attribs = concat(Attribs, concat(tube, checkpoints));
+		yarnAttribsList.push( buildTube(spine, yarn.radius, spineSplits, spineColors) );
 	});
+
+	//accumulate all the attribs list into one big list:
+	let totalAttribs = 0;
+	function countBuffer(buffer){
+		if (buffer.byteLength == 0) return;
+		if (totalAttribs != 0) totalAttribs += 2;
+		totalAttribs += buffer.byteLength / BYTES_PER_ATTRIB;
+	}
+	yarnAttribsList.forEach(countBuffer);
+	checkpointAttribsList.forEach(countBuffer);
+
+	let Attribs = new ArrayBuffer(totalAttribs * BYTES_PER_ATTRIB);
+	let AttribsArray = new Uint32Array(Attribs);
+
+	let offset = 0;
+	function copyBuffer(buffer){
+		if (buffer.byteLength == 0) return;
+		let array = new Uint32Array(buffer);
+		if (offset != 0) {
+			AttribsArray.set(AttribsArray.slice(offset - BYTES_PER_ATTRIB/4, offset), offset);
+			offset += BYTES_PER_ATTRIB/4;
+			AttribsArray.set(array.slice(0, BYTES_PER_ATTRIB/4), offset);
+			offset += BYTES_PER_ATTRIB/4;
+		}
+		AttribsArray.set(array, offset);
+		offset += array.length;
+	}
+	yarnAttribsList.forEach(copyBuffer);
+	checkpointAttribsList.forEach(copyBuffer);
+	console.assert(offset == Attribs.byteLength/4, "set full array");
+
 
 	gl.bindBuffer(gl.ARRAY_BUFFER, attribsBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, Attribs, gl.STATIC_DRAW);
