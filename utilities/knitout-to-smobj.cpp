@@ -272,6 +272,10 @@ struct Translator {
 
 	uint32_t source = 0; //current line number (applied to created faces)
 
+	struct {
+		uint32_t empty_drops = 0; //stitches that did nothing!
+	} stats;
+
 
 	Translator(std::vector< std::string > const &carrier_names) {
 		back_bed.depth = -1.0f;
@@ -1910,7 +1914,7 @@ struct Translator {
 
 		if (loop_in.count == 0 && cs.size() == 0) {
 			//skip a no-op stitch.
-			std::cout << "NOTE: skipping a 'knit' that does nothing." << std::endl;
+			stats.empty_drops += 1;
 			return;
 		}
 
@@ -2566,6 +2570,10 @@ int main(int argc, char **argv) {
 	if (!translator) {
 		std::cerr << "ERROR: ';;Carriers: ...' header is required." << std::endl;
 		return 1;
+	}
+
+	if (translator->stats.empty_drops) {
+		std::cout << "NOTE: pattern contained " << translator->stats.empty_drops << " instances where an empty needle was knit with an empty carrier set." << std::endl;
 	}
 
 	//reset source before auto-drop:
