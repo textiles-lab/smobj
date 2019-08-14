@@ -2802,9 +2802,11 @@ int main(int argc, char **argv) {
 				if (l.first == 0 && l.second == 0.0f) {
 					continue; //remove 0.0*'1' -- any other zero-length checkpoints shouldn't exist but we'll leave 'em in anyway.
 				}
+				assert(l.first != 0 && "this process should *never* use an absolute unit.");
 				out << ' ' << l.second << ' ' << l.first;
 			}
 			out << '\n';
+			checkpoints.erase(f);
 		}
 		
 	}
