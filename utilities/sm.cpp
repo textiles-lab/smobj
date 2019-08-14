@@ -662,6 +662,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		*/
 
 
+		uint32_t flipped_chains = 0;
 		//now read + delete from the map:
 		while (!forward.empty()) {
 			assert(forward.size() == reverse.size());
@@ -757,7 +758,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			}
 
 			if (direction_vote < 0) {
-				std::cerr << "NOTE: flipping chain owing to direction vote." << std::endl;
+				flipped_chains += 1;
 				std::reverse(chain.begin(), chain.end());
 				for (auto &seg : chain) {
 					seg.reverse = !seg.reverse;
@@ -765,6 +766,9 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			}
 
 			chains.emplace_back(chain.begin(), chain.end());
+		}
+		if (flipped_chains) {
+			std::cerr << "NOTE: flipped " << flipped_chains << " chains owing to direction vote." << std::endl;
 		}
 
 		{ //show chain sizes breakdown:
@@ -778,7 +782,10 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			}
 			std::cout.flush();
 		}
+
 	}
+
+
 
 	//Idea: express xy coords of yarn points in each face in terms of generalized barycentric coordinates.
 	//particularly, use the formulation of [Wachpress 1975], as given in equation (6) of:
@@ -1084,6 +1091,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 	};
 
 	float mismatch = 0.0f;
+	float max_mismatch = 0.0f;
 	for (auto const &chain : chains) {
 		yarns.yarns.emplace_back();
 		yarns.yarns.back().radius *= radius_scale;
@@ -1141,7 +1149,9 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 				glm::vec3 pt = acc + normal_acc * (yp.z * radius_scale);
 				if (&yp == &yarn[0] && !yarns.yarns.back().points.empty()) {
 					//don't duplicate boundary points.
-					mismatch += glm::length(pt - yarns.yarns.back().points.back());
+					float m = glm::length(pt - yarns.yarns.back().points.back());
+					mismatch += m;
+					max_mismatch = std::max(max_mismatch, m);
 					//average just in case
 					yarns.yarns.back().points.back() = 0.5f * (yarns.yarns.back().points.back() + pt);
 					yarns.yarns.back().sources.back() = face.source;
@@ -1222,7 +1232,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		}
 
 	}
-	std::cout << "Total boundary mis-match from chains (should be very small): " << mismatch << std::endl;
+	std::cout << "Total/max boundary mis-match from chains (should be very small): " << mismatch << "/" << max_mismatch << std::endl;
 
 	//transfer units:
 	//TODO: could consider eliminating any unused units

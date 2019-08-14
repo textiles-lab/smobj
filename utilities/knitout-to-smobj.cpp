@@ -2019,21 +2019,25 @@ struct Translator {
 			}
 		}
 
+		uint32_t from_front_count = front_bed[needle_index(front_needle)].top_edge.count;
+		uint32_t from_back_count = back_bed[needle_index(back_needle)].top_edge.count;
+
 		//set up yarn to/from stitch @ shear plane:
 		FaceEdge yarn_to_stitch, yarn_from_stitch;
 		setup_carriers(dir, back_bed, back_needle, cs, &gizmo, &yarn_to_stitch, &yarn_from_stitch, SpecialStopAtShearFront);
 
 		{ //determine lift based on a clear lane to front and back:
 			//(this is a bit heavy-handed, as it could clear based on front/back loop existence)
-			float R = 0.125f; //lift a bit more to avoid yarns overlapping the top of other travelling loops
-			gizmo.lift = std::max(gizmo.lift, this->front_bed[front_index].top_y + R);
-			gizmo.lift = std::max(gizmo.lift, this->front_sliders[front_index].top_y + R);
-			gizmo.lift = std::max(gizmo.lift, this->back_sliders[back_index].top_y + R);
-			gizmo.lift = std::max(gizmo.lift, this->back_bed[back_index].top_y + R);
+			float R_from_back = 0.125f * from_back_count;
+			float R_from_front = 0.125f * from_front_count; //lift a bit more to avoid yarns overlapping the top of other travelling loops
+			gizmo.lift = std::max(gizmo.lift, this->front_bed[front_index].top_y + R_from_front);
+			gizmo.lift = std::max(gizmo.lift, this->front_sliders[front_index].top_y + R_from_front);
+			gizmo.lift = std::max(gizmo.lift, this->back_sliders[back_index].top_y + R_from_back);
+			gizmo.lift = std::max(gizmo.lift, this->back_bed[back_index].top_y + R_from_back);
 			for (auto const &nc : carriers) {
-				gizmo.lift = std::max(gizmo.lift, nc.second.horizon.get_value(front_index, front_index+1) + R);
+				gizmo.lift = std::max(gizmo.lift, nc.second.horizon.get_value(front_index, front_index+1) + R_from_front);
 			}
-			gizmo.lift = std::max(gizmo.lift, crossings.check_crossing(front_index, back_index) + R);
+			gizmo.lift = std::max(gizmo.lift, crossings.check_crossing(front_index, back_index) + R_from_back);
 
 			gizmo.set_lift.emplace_back([this,front_index,back_index](float lift){
 				float top = lift + FaceHeight;
@@ -2312,19 +2316,59 @@ struct Translator {
 
 int main(int argc, char **argv) {
 
-	if (argc != 3) {
-		std::cerr << "Usage:\n\t./knitout-to-smobj <in.knitout> <out.smobj>" << std::endl;
-		return 1;
+	struct {
+		std::string in_knitout = "";
+		std::string out_smobj = "";
+		bool drop_all = true;
+		bool compact = false;
+	} args;
+
+	{ //parse arguments:
+		bool end_of_options = false;
+		std::vector< std::string > files;
+
+		bool usage = false;
+		for (int argi = 1; argi < argc; ++argi) {
+			std::string arg = argv[argi];
+			if (!end_of_options && arg.substr(0,2) == "--") {
+				std::string option = arg.substr(2);
+				if (option == "") {
+					end_of_options = true;
+				} else if (option == "compact") {
+					args.compact = true;
+				} else if (option == "no-drop") {
+					args.drop_all = false;
+				} else {
+					std::cerr << "Unrecognized option '" << arg << "'" << std::endl;
+					usage = true;
+				}
+			} else {
+				files.push_back(arg);
+			}
+		}
+
+		if (files.size() == 2) {
+			args.in_knitout = files[0];
+			args.out_smobj = files[1];
+		} else {
+			usage = true;
+		}
+
+		if (usage) {
+			std::cerr << "Usage:\n\t./knitout-to-smobj [--compact] [--no-drop] [--] <in.knitout> <out.smobj>" << std::endl;
+			return 1;
+		}
 	}
 
-	std::string in_knitout = argv[1];
-	std::string out_smobj = argv[2];
-	bool drop_all = true; //TODO: add command line flag for this
-	std::cout << "Will interpret knitout in '" << in_knitout << "' and write smobj to '" << out_smobj << "'" << std::endl;
+	std::cout << "Will interpret knitout in '" << args.in_knitout << "' and write smobj to '" << args.out_smobj << "'.\n";
+	if (args.compact) std::cout << " The output file will be compacted (no helpful comments) (--compact).\n";
+	if (args.drop_all) std::cout << " Any loops remaining at the end of the file will be dropped.\n";
+	else std::cout << " Any loops remaining at the end of the file will be gaps in the yarn (--no-drop).\n";
+	std::cout.flush();
 
 	//parse knitout:
 
-	std::ifstream knitout(in_knitout, std::ios::binary);
+	std::ifstream knitout(args.in_knitout, std::ios::binary);
 
 	enum {
 		MagicValue,
@@ -2580,16 +2624,16 @@ int main(int argc, char **argv) {
 	line_number = 0;
 	translator->source = 0;
 
-	if (drop_all) {
-		//out any remaining carriers:
-		for (auto &nc : translator->carriers) {
-			Carrier *c = &nc.second;
-			if (c->ready) {
-				std::cerr << "NOTE: taking out carrier '" << c->name << "', which was left in at the end of pattern." << std::endl;
-				translator->out(std::vector< Carrier * >(1, c));
-			}
+	//out any remaining carriers:
+	for (auto &nc : translator->carriers) {
+		Carrier *c = &nc.second;
+		if (c->ready) {
+			std::cerr << "NOTE: taking out carrier '" << c->name << "', which was left in at the end of pattern." << std::endl;
+			translator->out(std::vector< Carrier * >(1, c));
 		}
+	}
 
+	if (args.drop_all) {
 		//drop any remaining loops:
 		int32_t min_index = std::numeric_limits< int32_t >::max();
 		int32_t max_index = std::numeric_limits< int32_t >::min();
@@ -2654,7 +2698,7 @@ int main(int argc, char **argv) {
 	//This will add some blank "horizon" faces to make it clear where the tops of stacks are.
 	//translator->DEBUG_add_horizons();
 
-	std::ofstream out(out_smobj, std::ios::binary);
+	std::ofstream out(args.out_smobj, std::ios::binary);
 
 	//face type library:
 	std::map< std::string, uint32_t > type_index;
@@ -2674,11 +2718,15 @@ int main(int argc, char **argv) {
 			f_line += " " + std::to_string(++vertex_index);
 		}
 		out << f_line << "\n";
-		out << "T " << type_index[f.type] << " # " << f.type << "\n";
+		out << "T " << type_index[f.type];
+		if (!args.compact) out << " # " << f.type;
+		out << "\n";
 		out << "N " << f.source;
-		if (f.source > 0 && did_output.insert(f.source).second) {
-			assert(f.source <= lines.size());
-			out << " # \"" << lines[f.source-1] << "\"";
+		if (!args.compact) {
+			if (f.source > 0 && did_output.insert(f.source).second) {
+				assert(f.source <= lines.size());
+				out << " # \"" << lines[f.source-1] << "\"";
+			}
 		}
 		out << "\n";
 	}
@@ -2720,7 +2768,9 @@ int main(int argc, char **argv) {
 	//edges:
 	for (auto const &c : translator->connections) {
 		out << "e " << (c.a.face+1) << "/" << (c.a.edge+1)
-		    << " " << (c.b.face+1) << "/" << (c.a.flip == c.b.flip ? "-" : "") << (c.b.edge+1) << " # " << c.why << "\n";
+		    << " " << (c.b.face+1) << "/" << (c.a.flip == c.b.flip ? "-" : "") << (c.b.edge+1);
+		if (!args.compact) out << " # " << c.why;
+		out << "\n";
 	}
 
 	//units:
