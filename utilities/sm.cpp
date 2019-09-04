@@ -1,5 +1,3 @@
-#define GLM_ENABLE_EXPERIMENTAL
-
 #include "sm.hpp"
 
 #include <glm/gtx/hash.hpp>
@@ -384,6 +382,147 @@ void StitchFaces::save(std::string const &filename) {
 
 //------------------------------------------------
 
+
+namespace {
+	//internal structures used for yarns file format:
+	struct YarnInfo {
+		uint32_t point_begin;
+		uint32_t point_end;
+		float radius;
+		glm::u8vec4 color;
+	};
+	static_assert(sizeof(YarnInfo) == 16, "YarnInfo is packed");
+	struct UnitInfo {
+		uint32_t name_begin;
+		uint32_t name_end;
+		float length;
+	};
+	static_assert(sizeof(UnitInfo) == 12, "UnitInfo is packed");
+	struct CheckpointInfo {
+		uint32_t point;
+		float length;
+		uint32_t unit;
+	};
+	static_assert(sizeof(CheckpointInfo) == 12, "CheckpointInfo is packed");
+}
+
+
+//helper for reading vectors of data:
+template< typename T >
+static void read(std::istream &in, std::string magic, std::vector< T > *data_) {
+	assert(magic.size() == 4);
+	assert(data_);
+	auto &data = *data_;
+
+	struct {
+		char magic[4];
+		uint32_t size;
+	} header;
+	static_assert(sizeof(header) == 8, "header is packed");
+
+	if (!in.read(reinterpret_cast< char * >(&header), sizeof(header))) {
+		throw std::runtime_error("Failed to read header for '" + magic + "' chunk.");
+	}
+	if (std::string(header.magic, 4) != magic) {
+		throw std::runtime_error("Expected '" + magic + "' chunk, got '" + std::string(header.magic, 4) + "'.");
+	}
+	if (header.size % sizeof(T) != 0) {
+		throw std::runtime_error("Size of '" + magic + "' chunk not divisible by " + std::to_string(sizeof(T)) +".");
+	}
+
+	data.resize(header.size / sizeof(T));
+	if (!in.read(reinterpret_cast< char * >(data.data()), data.size()*sizeof(T))) {
+		throw std::runtime_error("Failed to read " + std::to_string(data.size()) + " elements (" + std::to_string(header.size) + " bytes) from '" + magic + "' chunk.");
+	}
+}
+
+sm::Yarns sm::Yarns::load(std::string const &filename) {
+
+	//arrays-of-structures that will be read:
+	static_assert(sizeof(glm::vec3) == 12, "vec3 is packed");
+	std::vector< glm::vec3 > in_points;
+	std::vector< uint32_t > in_sources;
+	std::vector< YarnInfo > in_yarns;
+	std::vector< char > in_strings;
+	std::vector< UnitInfo > in_units;
+	std::vector< CheckpointInfo > in_checkpoints;
+
+	{ //read from file:
+		std::ifstream in(filename, std::ios::binary);
+		read(in, "f3..", &in_points);
+		read(in, "src.", &in_sources);
+		read(in, "yarn", &in_yarns);
+		read(in, "strs", &in_strings);
+		read(in, "unit", &in_units);
+		read(in, "chk.", &in_checkpoints);
+	}
+
+	if (in_sources.size() != in_points.size()) {
+		throw std::runtime_error("Points and sources size mismatch in '" + filename + "'.");
+	}
+
+	sm::Yarns ret;
+
+	ret.units.reserve(in_units.size());
+	for (auto const &unit : in_units) {
+		if (!(unit.name_begin <= unit.name_end && unit.name_end <= in_strings.size())) {
+			throw std::runtime_error("Incorrect unit name indices in '" + filename + "'.");
+		}
+		ret.units.emplace_back();
+		ret.units.back().name = std::string(in_strings.begin() + unit.name_begin, in_strings.begin() + unit.name_end);
+		ret.units.back().length = unit.length;
+	}
+	/*
+	struct YarnInfo {
+		uint32_t point_begin;
+		uint32_t point_end;
+		float radius;
+		glm::u8vec4 color;
+	};
+	*/
+
+	auto cpi = in_checkpoints.begin();
+	ret.yarns.reserve(in_yarns.size());
+	for (auto const &yarn : in_yarns) {
+		if (!(yarn.point_begin <= yarn.point_end && yarn.point_end <= in_points.size())) {
+			throw std::runtime_error("Incorrect yarn indices in '" + filename + "'.");
+		}
+		ret.yarns.emplace_back();
+		ret.yarns.back().points.assign(in_points.begin() + yarn.point_begin, in_points.begin() + yarn.point_end);
+		ret.yarns.back().sources.assign(in_sources.begin() + yarn.point_begin, in_sources.begin() + yarn.point_end);
+		ret.yarns.back().radius = yarn.radius;
+		ret.yarns.back().color = yarn.color;
+
+		//figure out the range of checkpoints for the yarn:
+		auto checkpoint_begin = cpi;
+		while (cpi != in_checkpoints.end() && cpi->point < yarn.point_end) {
+			if (cpi->point < yarn.point_begin) {
+				throw std::runtime_error("Out-of-order checkpoint in '" + filename + "'.");
+			}
+			if (!(cpi->unit < ret.units.size())) {
+				throw std::runtime_error("Invalid unit in checkpoint in '" + filename + "'.");
+			}
+			++cpi;
+		}
+		auto checkpoint_end = cpi;
+
+		//copy checkpoints into the yarn:
+		ret.yarns.back().checkpoints.reserve(checkpoint_end - checkpoint_begin);
+		for (auto cp = checkpoint_begin; cp != checkpoint_end; ++cp) {
+			ret.yarns.back().checkpoints.emplace_back();
+			ret.yarns.back().checkpoints.back().point = cp->point;
+			ret.yarns.back().checkpoints.back().unit = cp->unit;
+			ret.yarns.back().checkpoints.back().length = cp->length;
+		}
+	}
+
+	if (cpi != in_checkpoints.end()) {
+		throw std::runtime_error("Unused checkpoints in '" + filename + "'.");
+	}
+
+	return ret;
+}
+
 //helper for writing vectors of data:
 template< typename T >
 static void write(std::ostream &out, std::string magic, std::vector< T > const &data) {
@@ -400,35 +539,11 @@ void sm::Yarns::save(std::string const &filename) const {
 	//arrays-of-structures that will be written:
 	static_assert(sizeof(glm::vec3) == 12, "vec3 is packed");
 	std::vector< glm::vec3 > out_points;
-
-	struct YarnInfo {
-		uint32_t point_begin;
-		uint32_t point_end;
-		float radius;
-		glm::u8vec4 color;
-	};
-	static_assert(sizeof(YarnInfo) == 16, "YarnInfo is packed");
-	std::vector< YarnInfo > out_yarns;
-
-	std::vector< char > out_strings;
-
-	struct UnitInfo {
-		uint32_t name_begin;
-		uint32_t name_end;
-		float length;
-	};
-	static_assert(sizeof(UnitInfo) == 12, "UnitInfo is packed");
-	std::vector< UnitInfo > out_units;
-
-	struct CheckpointInfo {
-		uint32_t point;
-		float length;
-		uint32_t unit;
-	};
-	static_assert(sizeof(CheckpointInfo) == 12, "CheckpointInfo is packed");
-	std::vector< CheckpointInfo > out_checkpoints;
-
 	std::vector< uint32_t > out_sources;
+	std::vector< YarnInfo > out_yarns;
+	std::vector< char > out_strings;
+	std::vector< UnitInfo > out_units;
+	std::vector< CheckpointInfo > out_checkpoints;
 
 	//fill the arrays:
 
