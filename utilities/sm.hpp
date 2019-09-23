@@ -50,7 +50,8 @@ struct Mesh {
 	};
 	std::vector< Unit > units;
 
-	//Checkpoints ('c' lines);
+	//Checkpoints ('c' lines):
+	//NOTE: ideally, *last* checkpoint on yarn will always have zero following length, but will exist. This code does not properly load a zero-length checkpoints. So it will, effectively, vanish.
 	struct Checkpoint {
 		uint32_t face = -1U;
 		uint32_t edge = -1U;
@@ -64,7 +65,7 @@ struct Mesh {
 	static Mesh load(std::string const &filename);
 
 	//write an ".smobj" (precondition: mesh is valid)
-	//TODO: void save(std::string const &filename) const;
+	void save(std::string const &filename) const;
 };
 
 

@@ -235,6 +235,45 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 	return mesh;
 }
 
+void sm::Mesh::save(std::string const &filename) const {
+	std::ofstream out(filename, std::ios::binary);
+
+	for (auto const &l : library) {
+		out << "L " << l << "\n";
+	}
+
+	for (auto const &v : vertices) {
+		out << "v " << v.x << " " << v.y << " " << v.z << "\n";
+	}
+
+	for (auto const &f : faces) {
+		out << "f";
+		for (auto const i : f) {
+			out << " " << (i+1);
+		}
+		out << "\n";
+		out << "T " << (f.type+1) << "\n";
+		out << "N " << (f.source) << "\n";
+	}
+
+	for (auto const &c : connections) {
+		out << "e " << (c.a.face+1) << "/" << (c.a.edge+1) << " " << (c.b.face+1) << "/" << (c.flip ? "-" : "") << (c.b.edge+1) << "\n";
+	}
+
+	for (auto const &u : units) {
+		out << "U " << u.name << " " << u.length << "\n";
+	}
+	std::unordered_map< std::string, std::string > following_length;
+	for (auto const &c : checkpoints) {
+		auto &l = following_length[std::to_string(c.face+1) + "/" + std::to_string(c.edge+1) + "/" + std::to_string(c.crossing+1)];
+		if (l != "") l += " ";
+		l += std::to_string(c.length) + " " + std::to_string(c.unit+1);
+	}
+	for (auto const &fl : following_length) {
+		out << "c " << fl.first << " " << fl.second << "\n";
+	}
+}
+
 sm::Library sm::Library::load(std::string const &filename) {
 	sm::Library library;
 	sm::Library::Face *current = nullptr;

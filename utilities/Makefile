@@ -13,6 +13,9 @@ all : knitout-to-smobj smobj-to-yarns
 knitout-to-smobj : knitout-to-smobj.cpp
 	$(CPP) -o '$@' '$<'
 
+text-to-smobj : text-to-smobj.cpp sm.hpp sm.o
+	$(CPP) -o '$@' '$<' sm.o
+
 smobj-to-yarns : smobj-to-yarns.cpp sm.hpp sm.o
 	$(CPP) -o '$@' '$<' sm.o
 
