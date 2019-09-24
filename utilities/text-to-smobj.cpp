@@ -235,11 +235,14 @@ int main(int argc, char **argv) {
 		} //end of setup
 
 		//brain-dead iterative solve:
-		for (uint32_t iter = 0; iter < 100; ++iter) {
+		for (uint32_t iter = 0; iter < 1000; ++iter) {
 
 			//update point positions:
 			std::vector< glm::vec3 > votes(pts.size(), glm::vec3(0.0f));
-			for (auto const &f : faces) {
+			for (auto &f : faces) {
+				//regularization:
+				f.angle *= 0.999f;
+
 				glm::vec2 right = glm::vec2(std::cos(f.angle), std::sin(f.angle));
 				glm::vec2 up = glm::vec2(-right.y, right.x);
 				std::vector< glm::vec2 > const &t = templates[f.type];
@@ -258,14 +261,54 @@ int main(int argc, char **argv) {
 				p -= pts_center;
 			}
 
-			//update face centers:
-			//TODO: update face angles
 			for (auto &f : faces) {
+				//update face centers:
 				glm::vec2 avg = glm::vec2(0.0f);
 				for (auto i : f) {
 					avg += pts[i];
 				}
 				f.center = avg /= f.size();
+
+				//determine angles:
+				//Port of (javascript) code I used in a lunch talk once:
+				float coefCos = 0.0;
+				float coefSin = 0.0;
+				float coefSinCos = 0.0;
+				float coefCos2 = 0.0;
+				float coefSin2 = 0.0;
+				auto addDeriv = [&](float c, float s, float o) {
+					//add derivative of (c * cos(t) + s * sin(t) + o * 1)^2
+					//==  2 * (c * cos(t) + s * sin(t) + o * 1) * (c *-sin(t) + s * cos(t))
+					coefCos += o * s;
+					coefSin += o * -c;
+					coefCos2 += c * s;
+					coefSin2 += s * -c;
+					coefSinCos += (c * -c + s * s);
+				};
+				std::vector< glm::vec2 > const &t = templates[f.type];
+				for (uint32_t i = 0; i < f.size(); ++i) {
+					// (offsets[i].x * cos(t) + offsets[i].y *-sin(t) - [real offset].x)^2
+					//+(offsets[i].x * sin(t) + offsets[i].y * cos(t) - [real offset].y)^2
+					addDeriv(t[i].x, -t[i].y, -pts[f[i]].x + f.center.x);
+					addDeriv(t[i].y,  t[i].x, -pts[f[i]].y + f.center.y);
+				}
+				//end up with *just* coefCos, coefSin.
+				if (std::abs(coefSinCos) > 1e-6 || std::abs(coefCos2) > 1e-6 || std::abs(coefSin2) > 1e-6) {
+					std::cout << "Unexpected coefs: " << coefCos << " " << coefSin << " " << coefSinCos << " " << coefCos2 << " " << coefSin2 << std::endl;
+				}
+				if (coefCos == 0.0 && coefSin == 0.0) {
+					f.angle = 0.0f;
+				} else {
+					//Want:
+					//coefCos * cos + coefSin * sin = 0.0 [deriv == 0]
+					//also:
+					//coefSin * cos + -coefCos * sin > 0 [second deriv > 0]
+	
+					//let len = Math.sqrt(coefCos * coefCos + coefSin * coefSin);
+					//f.right.x = coefSin / len;
+					//f.right.y =-coefCos / len;
+					f.angle = std::atan2(-coefCos, coefSin);
+				}
 			}
 		}
 
