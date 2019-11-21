@@ -157,7 +157,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 
 			//validate face/edge (crossing hard to validate without library)
 			if (face < 1 || face > int32_t(mesh.faces.size())) throw std::runtime_error("c line with invalid face '" + std::to_string(face) + "'");
-			if (edge < 1 || edge > int32_t(mesh.faces[face].size())) throw std::runtime_error("c line with invalid edge '" + std::to_string(edge) + "'");
+			if (edge < 1 || edge > int32_t(mesh.faces[face-1].size())) throw std::runtime_error("c line with invalid edge '" + std::to_string(edge) + "' (face '" + std::to_string(face) + "' has " + std::to_string(mesh.faces[face-1].size()) + " edges)");
 			if (crossing < 1) throw std::runtime_error("c line with invalid crossing '" + std::to_string(crossing) + "'");
 
 
