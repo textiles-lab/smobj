@@ -20,3 +20,6 @@ Per instruction --
 TODO:
  - Check: does leading carrier end up on the front or the back when pulling a loop to the back during plating? (Currently, face library assumes it ends up to the back.)
  - Consider making yarn travel faces shorter somehow.
+
+ - When not dropping loops, should somehow add checkpoints at yarn ends, otherwise to-yarns translator is unhappy (and even if it fixes this with a zero-length checkpoint, it still fails to split yarn length in loop properly)
+  => intrinsically, this is a problem with the opaque way in which yarn connections inside faces are handled in knitout-to-smobj; using more explicit faces might simplify things, since dangling yarn ends could be searched back to their origins.
