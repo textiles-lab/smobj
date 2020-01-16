@@ -250,6 +250,7 @@ float travel_x(int32_t index, Direction side) {
 		return stitch_x((needle+1)*4, Left) + (side == Left ?-TravelWidth : 0.0f);
 	} else {
 		assert(0 && "Travels are always at 4n +/- 1");
+		return std::numeric_limits< float >::quiet_NaN(); //MSVC complains otherwise
 	}
 }
 
@@ -292,7 +293,7 @@ struct Translator {
 			auto ret = carriers.insert(std::make_pair(carrier.name, carrier));
 			if (!ret.second) throw std::runtime_error("Carrier '" + carrier_names[i] + "' is named twice.");
 		}
-		units.emplace_back("1", 1.0);
+		units.emplace_back("1", 1.0f);
 	}
 
 	//--- output ---
@@ -359,6 +360,7 @@ struct Translator {
 		if (bed == FrontSliders) return front_sliders;
 		if (bed == Front) return front_bed;
 		assert(0);
+		return front_bed; //MSVC complains otherwise
 	}
 
 	enum SetupSpecial {
@@ -926,7 +928,7 @@ struct Translator {
 
 		//add yarn checkpoints:
 		for (auto &c : cs) {
-			uint32_t ci = &c - &cs[0];
+			uint32_t ci = uint32_t(&c - &cs[0]);
 			Checkpoint before_stitch(yarn_to_stitch.face, yarn_to_stitch.edge, (yarn_to_stitch.flip == FaceEdge::FlipYes ? cs.size() - 1 - ci : ci));
 			Checkpoint after_stitch(yarn_from_stitch.face, yarn_from_stitch.edge, (yarn_from_stitch.flip == FaceEdge::FlipYes ? cs.size() - 1 - ci : ci));
 			if (c->last_checkpoint.is_valid()) {
@@ -966,7 +968,7 @@ struct Translator {
 				auto make_index = [this](BedColumns const &bed, int32_t needle, Direction side) {
 					int32_t index = 6 * needle;
 					if (&bed == &back_bed || &bed == &back_sliders) {
-						int32_t r = std::floor(racking);
+						int32_t r = int32_t(std::floor(racking));
 						if (r == racking) {
 							index += 6*r;
 						} else { assert(racking - r == 0.25f);
@@ -2746,7 +2748,7 @@ int main(int argc, char **argv) {
 				}
 			}
 			assert(edge_types.size() == f.vertices.size());
-			uint32_t fi = &f - &(translator->faces[0]);
+			uint32_t fi = uint32_t(&f - &(translator->faces[0]));
 			for (uint32_t ei = 0; ei < edge_types.size(); ++ei) {
 				auto ret = face_edge_type.insert(std::make_pair(std::make_pair(fi, ei), edge_types[ei]));
 				assert(ret.second);

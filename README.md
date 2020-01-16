@@ -115,6 +115,13 @@ This ambiguity is required because the allocation of length to yarn segments is 
 
 This repository contains a few utilities that make it easy to work with .smobj files.
 
+Build on OSX or Linux using `make` in the `utilities` directory.
+You will need glm installed in a system-wide path (or to modify the Makefile as is proper).
+
+Build on Windows using `nmake -f Makefile.windows` from the Visual Studio Command Prompt in the `utilities` directory.
+You will need a checkout of glm in the `utilities\glm` directory.
+Windows builds are tested less frequently than OSX or Linux builds so you may need to fix a few warnings.
+
 ## .knitout to .smobj (Work in Progress)
 
 The `knitout-to-smobj` utility converts knitout instructions to an smobj description.

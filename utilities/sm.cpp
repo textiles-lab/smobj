@@ -349,7 +349,7 @@ sm::Library sm::Library::load(std::string const &filename) {
 			}
 			//middle:
 			while (true) {
-				while (str.peek() != str.eof() && isspace(str.peek())) str.get();
+				while (str.peek() != EOF && isspace(str.peek())) str.get();
 				if (str.peek() == '[') break;
 				expect_char('(');
 				glm::vec3 pt;
@@ -636,16 +636,16 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 	auto &yarns = *yarns_;
 	yarns = Yarns();
 
-	auto conv_along = [](float along) {
-		return std::round(along * 1000);
+	auto conv_along = [](float along) -> int32_t {
+		return int32_t(std::round(along * 1000));
 	};
 
 	auto inv_along = [](uint32_t along) {
 		return 1000 - along;
 	};
 
-	auto conv_z = [](float z) {
-		return std::round(z * 1000);
+	auto conv_z = [](float z) -> int32_t {
+		return int32_t(std::round(z * 1000));
 	};
 
 	//look up all mesh face types in library:
@@ -1176,8 +1176,8 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 					return a.first.z < b.first.z;
 				});
 				for (auto &p : ep) {
-					p.second->edge = &ep - &edge_points[0];
-					p.second->crossing = &p - &ep[0];
+					p.second->edge = uint32_t(&ep - &edge_points[0]);
+					p.second->crossing = uint32_t(&p - &ep[0]);
 				}
 			}
 
