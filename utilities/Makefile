@@ -3,12 +3,15 @@
 #From: https://stackoverflow.com/questions/714100/os-detecting-makefile
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
-	CPP=g++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL
+	CPP=g++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2
 else
-	CPP=clang++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL
+	CPP=clang++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2
 endif
 
-all : knitout-to-smobj smobj-to-yarns
+all : knitout-to-smobj smobj-to-yarns text-to-smobj
+
+clean :
+	rm -f knitout-to-smobj text-to-smobj smobj-to-yarns sm.o
 
 knitout-to-smobj : knitout-to-smobj.cpp
 	$(CPP) -o '$@' '$<'

@@ -103,6 +103,17 @@ struct Library {
 		//yarns passing through the face:
 		std::vector< Yarn > yarns;
 
+		//as a convenience, faces may be defined as "derived" from other faces:
+		struct Derive {
+			uint8_t by = 0; //an 'or' of ByBits
+			std::string from = ""; //key() for the source face, or "" if not derived from any other face
+			enum ByBit : uint8_t {
+				MirrorXBit = (1 << 0),
+				MirrorZBit = (1 << 1),
+				ReverseYarnBit = (1 << 2),
+			};
+		} derive;
+
 		//key() produces the corresponding .smobj library ('L' line) signature for the face:
 		std::string key() const {
 			std::string ret = name;
@@ -174,5 +185,9 @@ enum Quality {
 };
 void yarns_to_tristrip(Yarns const &yarns, std::vector< YarnAttribs > *attribs, Quality quality = QualityLow);
 
+
+//face construction helper: derive one face from another by mirroring/reversing:
+// note: contents of 'target' (except for name) will be over-written
+void derive_face(sm::Library::Face const &source, uint8_t by_bits, sm::Library::Face *target);
 
 } //namespace sm
