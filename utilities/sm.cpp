@@ -310,6 +310,48 @@ sm::Library sm::Library::load(std::string const &filename) {
 			library.faces.emplace_back();
 			library.faces.back().name = name;
 			current = &library.faces.back();
+		} else if (tok == "derive") {
+			current = nullptr; //clear current face
+
+			std::string name;
+			if (!(str >> name)) throw std::runtime_error(line_info() + "Failed to read name field from face line");
+			sm::Library::Face::Derive derive;
+
+			std::string by_or_from;
+			if (!(str >> by_or_from) || !(by_or_from == "by" || by_or_from == "from")) throw std::runtime_error(line_info() + "derive line should have face name followed by 'by' or 'from'");
+			if (by_or_from == "by") {
+				std::string tok;
+				while (str >> tok) {
+					if (tok == "from") {
+						break;
+					} else if (tok == "mirror-x") {
+						if (derive.by & sm::Library::Face::Derive::MirrorXBit) throw std::runtime_error(line_info() + "derive shouldn't mention mirror-x twice.");
+						derive.by |= sm::Library::Face::Derive::MirrorXBit;
+					} else if (tok == "mirror-z") {
+						if (derive.by & sm::Library::Face::Derive::MirrorZBit) throw std::runtime_error(line_info() + "derive shouldn't mention mirror-z twice.");
+						derive.by |= sm::Library::Face::Derive::MirrorZBit;
+					} else if (tok == "reverse-yarn") {
+						if (derive.by & sm::Library::Face::Derive::ReverseYarnBit) throw std::runtime_error(line_info() + "derive shouldn't mention reverse-yarn twice.");
+						derive.by |= sm::Library::Face::Derive::ReverseYarnBit;
+					} else {
+						throw std::runtime_error(line_info() + "unknown derivation operation '" + tok + "'");
+					}
+				}
+				if (tok != "from") throw std::runtime_error(line_info() + "derive line should have 'from' after operations");
+			} else {
+				assert(by_or_from == "from");
+			}
+			{ //read source:
+				std::string tok;
+				while (str >> tok) {
+					if (derive.from != "") derive.from += ' ';
+					derive.from += tok;
+				}
+			}
+			library.faces.emplace_back();
+			library.faces.back().name = name;
+			library.faces.back().derive = derive;
+
 		} else if (tok == "edge") {
 			if (!current) throw std::runtime_error(line_info() + "edge line without face line");
 			Library::Face::Edge edge;
@@ -378,31 +420,76 @@ sm::Library sm::Library::load(std::string const &filename) {
 		}
 	}
 
-	std::set< std::string > keys;
+	std::map< std::string, Library::Face const * > keys;
 
-	for (auto const &face : library.faces) {
-		
-		auto ret = keys.insert(face.key());
-		if (!ret.second) throw std::runtime_error("Duplicate face signature: '" + *ret.first + "'");
+	std::vector< Library::Face * > pending;
+	pending.reserve(library.faces.size());
+
+	for (auto &face : library.faces) {
+
+		//defer running derivation logic:
+		if (face.derive.from != "") {
+			pending.emplace_back(&face);
+			continue;
+		}
+
+		auto ret = keys.emplace(face.key(), &face);
+		if (!ret.second) throw std::runtime_error("Duplicate face signature: '" + ret.first->first + "'");
+	}
+
+	while (!pending.empty()) {
+		std::vector< Library::Face * > next_pending;
+		for (auto fp : pending) {
+
+			auto source = keys.find(fp->derive.from);
+			if (source == keys.end()) {
+				next_pending.emplace_back(fp);
+				continue;
+			}
+
+			derive_face(*source->second, fp->derive.by, fp);
+
+			auto ret = keys.emplace(fp->key(), fp);
+			if (!ret.second) throw std::runtime_error("Duplicate face signature: '" + ret.first->first + "'");
+		}
+
+		if (next_pending.size() == pending.size()) {
+			//failed to make progress:
+			std::string message = "";
+			for (auto fp : pending) {
+				if (message != "") message += "; ";
+				message += "derived face '" + fp->name + "' missing source '" + fp->derive.from + "'";
+			}
+			throw std::runtime_error(message);
+		}
+
+		pending = std::move(next_pending);
 	}
 
 	return library;
 }
 
-#if 0
-
-void StitchFaces::save(std::string const &filename) {
+void sm::Library::save(std::string const &filename) {
 	std::ofstream out(filename, std::ios::binary);
-	for (auto const &name_face : faces) {
-		std::string const &name = name_face.first;
-		StitchFace const &face = name_face.second;
-		out << "face " << name << '\n';
+	for (auto const &face : faces) {
+		if (face.derive.from != "") {
+			out << "derive " << face.name;
+			if (face.derive.by) {
+				out << " by";
+				if (face.derive.by & sm::Library::Face::Derive::MirrorXBit) out << " mirror-x";
+				if (face.derive.by & sm::Library::Face::Derive::MirrorZBit) out << " mirror-z";
+				if (face.derive.by & sm::Library::Face::Derive::ReverseYarnBit) out << " reverse-yarn";
+			}
+			out << " from " << face.derive.from << '\n';
+			continue;
+		}
+		out << "face " << face.name << '\n';
 		for (auto const &edge : face.edges) {
 			out << "\tedge ";
 			out << '(' << edge.vertex.x << ',' << edge.vertex.y << ')';
 			out << ' ';
-			if      (edge.direction == StitchFace::Edge::In) out << "-";
-			else if (edge.direction == StitchFace::Edge::Out) out << "+";
+			if      (edge.direction == sm::Library::Face::Edge::In) out << "-";
+			else if (edge.direction == sm::Library::Face::Edge::Out) out << "+";
 			out << edge.type;
 			out << '\n';
 		}
@@ -417,7 +504,6 @@ void StitchFaces::save(std::string const &filename) {
 		}
 	}
 }
-#endif
 
 //------------------------------------------------
 
@@ -627,7 +713,7 @@ void sm::Yarns::save(std::string const &filename) const {
 
 //------------------------------------------------
 
-float twice_area(glm::vec2 const &a, glm::vec2 const &b, glm::vec2 const &c) {
+static float twice_area(glm::vec2 const &a, glm::vec2 const &b, glm::vec2 const &c) {
 	return glm::dot( c - a, glm::vec2( -(b.y - a.y), b.x - a.x ) );
 }
 
@@ -1460,11 +1546,9 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 
 }
 
-#if 0
-
 //------------------------------------------------
 
-void StitchFaces::yarns_to_tristrip(std::vector< Yarn > const &yarns, std::vector< YarnAttribs > *attribs_, Quality quality) {
+void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs > *attribs_, sm::Quality quality) {
 	assert(attribs_);
 	auto &attribs = *attribs_;
 
@@ -1477,7 +1561,10 @@ void StitchFaces::yarns_to_tristrip(std::vector< Yarn > const &yarns, std::vecto
 		Circle[a].y = std::sin(ang);
 	}
 
-	for (auto const &yarn : yarns) {
+	for (auto const &yarn_struct : yarns.yarns) {
+		std::vector< glm::vec3 > const &yarn = yarn_struct.points;
+		float yarn_radius = yarn_struct.radius;
+		glm::u8vec4 yarn_color = yarn_struct.color;
 		if (yarn.size() < 2) continue;
 
 		/*//DEBUG: no smoothing:
@@ -1505,7 +1592,7 @@ void StitchFaces::yarns_to_tristrip(std::vector< Yarn > const &yarns, std::vecto
 				glm::vec3 a = (m - poly.back());
 				glm::vec3 b = (e - m);
 				if (glm::dot(a,b) > std::sqrt(glm::dot(a,a) * glm::dot(b,b)) * thresh
-				|| glm::dot(b-a,b-a) < 0.5 * 0.5 * yarn.radius * yarn.radius) {
+				|| glm::dot(b-a,b-a) < 0.5 * 0.5 * yarn_radius * yarn_radius) {
 					poly.emplace_back(m);
 					poly.emplace_back(e);
 					return;
@@ -1563,9 +1650,9 @@ void StitchFaces::yarns_to_tristrip(std::vector< Yarn > const &yarns, std::vecto
 					             + Circle[r-1].x * ( p1 * Circle[i].x + p2 * Circle[i].y );
 					glm::vec3 n1 = -Circle[r].y * along
 					             + Circle[r].x * ( p1 * Circle[i].x + p2 * Circle[i].y );	
-					attribs.emplace_back(a + yarn.radius * n0, n0, yarn.color);
+					attribs.emplace_back(a + yarn_radius * n0, n0, yarn_color);
 					if (i == 0 && attribs.size() > 1) attribs.emplace_back(attribs.back());
-					attribs.emplace_back(a + yarn.radius * n1, n1, yarn.color);
+					attribs.emplace_back(a + yarn_radius * n1, n1, yarn_color);
 				}
 				attribs.emplace_back(attribs[attribs.size() - 2*Angles]);
 				attribs.emplace_back(attribs[attribs.size() - 2*Angles]);
@@ -1579,9 +1666,9 @@ void StitchFaces::yarns_to_tristrip(std::vector< Yarn > const &yarns, std::vecto
 				for (uint32_t i = 0; i < Angles; ++i) {
 					glm::vec3 n = d1 * Circle[i].x + d2 * Circle[i].y;
 					glm::vec3 next_n = next_d1 * Circle[i].x + next_d2 * Circle[i].y;
-					attribs.emplace_back(next_at + yarn.radius * next_n, next_n, yarn.color);
+					attribs.emplace_back(next_at + yarn_radius * next_n, next_n, yarn_color);
 					if (i == 0) attribs.emplace_back(attribs.back());
-					attribs.emplace_back(at + yarn.radius * n, n, yarn.color);
+					attribs.emplace_back(at + yarn_radius * n, n, yarn_color);
 				}
 				attribs.emplace_back(attribs[attribs.size() - 2*Angles]);
 				attribs.emplace_back(attribs[attribs.size() - 2*Angles]);
@@ -1641,9 +1728,9 @@ void StitchFaces::yarns_to_tristrip(std::vector< Yarn > const &yarns, std::vecto
 					glm::vec3 n1 = Circle[r].y * along
 					             + Circle[r].x * ( p1 * Circle[i].x + p2 * Circle[i].y );
 	
-					attribs.emplace_back(a + yarn.radius * n1, n1, yarn.color);
+					attribs.emplace_back(a + yarn_radius * n1, n1, yarn_color);
 					if (i == 0) attribs.emplace_back(attribs.back());
-					attribs.emplace_back(a + yarn.radius * n0, n0, yarn.color);
+					attribs.emplace_back(a + yarn_radius * n0, n0, yarn_color);
 				}
 				attribs.emplace_back(attribs[attribs.size() - 2*Angles]);
 				attribs.emplace_back(attribs[attribs.size() - 2*Angles]);
@@ -1654,4 +1741,79 @@ void StitchFaces::yarns_to_tristrip(std::vector< Yarn > const &yarns, std::vecto
 
 	}
 }
-#endif
+
+void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library::Face *face2_) {
+	
+	assert(face2_);
+	auto &face2 = *face2_;
+
+	face2.derive.from = face.key();
+	face2.derive.by = by_bits;
+
+	face2.edges.resize(face.edges.size());
+
+	uint32_t r = 0;
+	if (by_bits & sm::Library::Face::Derive::MirrorXBit) {
+		//new first vertex should be after the run of loop-in edges on the side:
+		while (r < face.edges.size() && face.edges[r].direction == face.edges[0].direction && face.edges[r].type[0] == face.edges[0].type[0]) ++r;
+
+		//should not call on edges with all in edges:
+		if (r >= face.edges.size()) {
+			throw std::runtime_error("Cannot derive face '" + face2.name + "' from face '" + face.key() + "' via mirror-x because source has no out edges.");
+		}
+
+		for (uint32_t i = 0; i < face2.edges.size(); ++i) {
+			//vertices should appear in reversed order, and should start with 'r':
+			uint32_t v = (r + face.edges.size() - i) % face.edges.size();
+			face2.edges[i].vertex = glm::vec2(-face.edges[v].vertex.x, face.edges[v].vertex.y);
+			//edge info gets copied from previous edge:
+			uint32_t e = (v + face.edges.size() - 1) % face.edges.size();
+			face2.edges[i].direction = face.edges[e].direction;
+			face2.edges[i].type = face.edges[e].type;
+		}
+	} else {
+		face2.edges = face.edges;
+	}
+
+	if (by_bits & sm::Library::Face::Derive::ReverseYarnBit) {
+		for (auto &e : face2.edges) {
+			if (e.type.size() >= 1 && e.type[0] == 'y') {
+				if (e.direction == sm::Library::Face::Edge::In) {
+					e.direction = sm::Library::Face::Edge::Out;
+				} else if (e.direction == sm::Library::Face::Edge::Out) {
+					e.direction = sm::Library::Face::Edge::In;
+				}
+			}
+		}
+	}
+
+	face2.yarns.clear();
+	for (auto const &yarn : face.yarns) {
+		face2.yarns.emplace_back();
+		auto copy_end = [&](sm::Library::Face::EdgePoint const &from, sm::Library::Face::EdgePoint &to) {
+			if (by_bits & sm::Library::Face::Derive::MirrorXBit) {
+				// e = (r - i - 1) -> r - e - 1 = i
+				to.edge = (r + face.edges.size() - from.edge - 1) % face.edges.size();
+				to.along = 1.0f - from.along;
+			} else {
+				to.edge = from.edge;
+				to.along = from.along;
+			}
+			if (by_bits & sm::Library::Face::Derive::MirrorZBit) {
+				to.z = -from.z;
+			} else {
+				to.z = from.z;
+			}
+		};
+		copy_end(yarn.begin, face2.yarns.back().begin);
+		copy_end(yarn.end, face2.yarns.back().end);
+		for (auto const &m : yarn.middle) {
+			face2.yarns.back().middle.emplace_back(
+				(by_bits & sm::Library::Face::Derive::MirrorXBit ? -m.x : m.x),
+				m.y,
+				(by_bits & sm::Library::Face::Derive::MirrorZBit ? -m.z : m.z)
+			);
+		}
+	}
+
+}
