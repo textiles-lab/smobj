@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
 			"Usage:\n\t./text-to-smobj <in.txt> <library.sf> <out.smobj>\n"
 			" Where in.txt looks something like this:\n"
 			"    face-name e1 e2 e3 e4\n"
-			"    face-name e2 e3 x x\n"
+			"    face-name e2 e3 . .\n"
 			"    ...\n"
 			" That is, each line has a face name followed by variables indicating\n"
 			" where that face's edge connect. '.' is a special variable meaning\n"
