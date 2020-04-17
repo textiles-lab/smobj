@@ -1558,9 +1558,11 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 
 //------------------------------------------------
 
-void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs > *attribs_, sm::Quality quality) {
+void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs > *attribs_, sm::Quality quality, std::vector< size_t > *end_attrib_) {
 	assert(attribs_);
 	auto &attribs = *attribs_;
+
+	if (end_attrib_) end_attrib_->clear();
 
 	uint32_t Angles = (quality != QualityLow ? 16 : 8);
 	std::vector< glm::vec2 > Circle;
@@ -1575,7 +1577,10 @@ void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs 
 		std::vector< glm::vec3 > const &yarn = yarn_struct.points;
 		float yarn_radius = yarn_struct.radius;
 		glm::u8vec4 yarn_color = yarn_struct.color;
-		if (yarn.size() < 2) continue;
+		if (yarn.size() < 2) {
+			if (end_attrib_) end_attrib_->emplace_back(attribs.size());
+			continue;
+		}
 
 		/*//DEBUG: no smoothing:
 		for (uint32_t i = 1; i < yarn.size(); ++i) {
@@ -1748,8 +1753,9 @@ void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs 
 
 		}
 
-
+		if (end_attrib_) end_attrib_->emplace_back(attribs.size());
 	}
+	if (end_attrib_) assert(end_attrib_->size() == yarns.yarns.size());
 }
 
 void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library::Face *face2_) {

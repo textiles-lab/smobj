@@ -183,7 +183,8 @@ enum Quality {
 	QualityMedium, //capped, low-poly-count
 	QualityHigh //capped, high-poly-count
 };
-void yarns_to_tristrip(Yarns const &yarns, std::vector< YarnAttribs > *attribs, Quality quality = QualityLow);
+//last_attrib, if supplied, is filled with the index of the last attribute assigned to each yarn; useful if you want to specifically draw a single yarn.
+void yarns_to_tristrip(Yarns const &yarns, std::vector< YarnAttribs > *attribs, Quality quality = QualityLow, std::vector< size_t > *last_attrib = nullptr);
 
 
 //face construction helper: derive one face from another by mirroring/reversing:
