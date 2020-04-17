@@ -1299,8 +1299,8 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 	//---------------
 	// face yarns -> mesh
 
-	auto yarn_color = []() -> glm::u8vec4 {
-		static std::mt19937 mt(0x15469519);
+	std::mt19937 mt(0x15469519);
+	auto yarn_color = [&mt]() -> glm::u8vec4 {
 		glm::vec3 col;
 		float h = mt() / float(mt.max());
 
