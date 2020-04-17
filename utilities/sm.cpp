@@ -772,11 +772,17 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		std::vector< ChainSegment > segs;
 		std::unordered_map< glm::ivec4, std::pair< glm::ivec4, uint32_t > > forward, reverse;
 
+		uint32_t invalid_assignment = 0;
+
 		for (auto const &face : mesh.faces) {
 			//no yarns in face without type:
 			assert(face.type < mesh_library.size());
 			if (!mesh_library[face.type]) continue;
 			auto const &sf = *mesh_library[face.type];
+			if (sf.edges.size() != face.size()) {
+				++invalid_assignment;
+				continue;
+			}
 			for (uint32_t yi = 0; yi < sf.yarns.size(); ++yi) {
 				segs.emplace_back(&face, yi, false);
 
@@ -827,6 +833,10 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 				ret = reverse.insert(std::make_pair(to, std::make_pair(from, segs.size()-1)));
 				assert(ret.second);
 			}
+		}
+
+		if (invalid_assignment) {
+			std::cerr << "WARNING: have " << invalid_assignment << " faces whose types have a different number of edges than the face." << std::endl;
 		}
 
 	
@@ -1289,8 +1299,8 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 	//---------------
 	// face yarns -> mesh
 
-	auto yarn_color = []() -> glm::u8vec4 {
-		static std::mt19937 mt(0x15469519);
+	std::mt19937 mt(0x15469519);
+	auto yarn_color = [&mt]() -> glm::u8vec4 {
 		glm::vec3 col;
 		float h = mt() / float(mt.max());
 
@@ -1548,9 +1558,11 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 
 //------------------------------------------------
 
-void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs > *attribs_, sm::Quality quality) {
+void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs > *attribs_, sm::Quality quality, std::vector< size_t > *end_attrib_) {
 	assert(attribs_);
 	auto &attribs = *attribs_;
+
+	if (end_attrib_) end_attrib_->clear();
 
 	uint32_t Angles = (quality != QualityLow ? 16 : 8);
 	std::vector< glm::vec2 > Circle;
@@ -1565,7 +1577,10 @@ void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs 
 		std::vector< glm::vec3 > const &yarn = yarn_struct.points;
 		float yarn_radius = yarn_struct.radius;
 		glm::u8vec4 yarn_color = yarn_struct.color;
-		if (yarn.size() < 2) continue;
+		if (yarn.size() < 2) {
+			if (end_attrib_) end_attrib_->emplace_back(attribs.size());
+			continue;
+		}
 
 		/*//DEBUG: no smoothing:
 		for (uint32_t i = 1; i < yarn.size(); ++i) {
@@ -1738,8 +1753,9 @@ void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs 
 
 		}
 
-
+		if (end_attrib_) end_attrib_->emplace_back(attribs.size());
 	}
+	if (end_attrib_) assert(end_attrib_->size() == yarns.yarns.size());
 }
 
 void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library::Face *face2_) {

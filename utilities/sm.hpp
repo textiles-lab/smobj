@@ -39,7 +39,7 @@ struct Mesh {
 		FaceEdge a,b;
 		bool flip = false;
 		//!flip:  a[0] glued to b[0], a[1] glued to b[1]
-		// flip: a[0] glued to b[1], a[0] glued to b[0]
+		// flip: a[0] glued to b[1], a[1] glued to b[0]
 	};
 	std::vector< Connection > connections;
 
@@ -183,7 +183,8 @@ enum Quality {
 	QualityMedium, //capped, low-poly-count
 	QualityHigh //capped, high-poly-count
 };
-void yarns_to_tristrip(Yarns const &yarns, std::vector< YarnAttribs > *attribs, Quality quality = QualityLow);
+//end_attrib, if supplied, is filled with the size of the attribute vector after finishing each yarn. So the attribs in range [ (*end_attrib)[i-1], (*end_attrib)[i] ) correspond to yarn i. (yarn 0 starts at 0, of course)
+void yarns_to_tristrip(Yarns const &yarns, std::vector< YarnAttribs > *attribs, Quality quality = QualityLow, std::vector< size_t > *end_attrib = nullptr);
 
 
 //face construction helper: derive one face from another by mirroring/reversing:
