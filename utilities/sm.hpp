@@ -39,7 +39,7 @@ struct Mesh {
 		FaceEdge a,b;
 		bool flip = false;
 		//!flip:  a[0] glued to b[0], a[1] glued to b[1]
-		// flip: a[0] glued to b[1], a[0] glued to b[0]
+		// flip: a[0] glued to b[1], a[1] glued to b[0]
 	};
 	std::vector< Connection > connections;
 
