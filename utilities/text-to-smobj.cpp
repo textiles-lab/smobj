@@ -326,11 +326,6 @@ int main(int argc, char **argv) {
 
 	}
 
-	//HACK: apparently "flipped" and "unflipped" edges actually have reversed meanings:
-	for (auto &c : mesh.connections) {
-		c.flip = !c.flip;
-	}
-
 	std::cout << "Writing '" << out_smobj << "'." << std::endl;
 	mesh.save(out_smobj);
 
