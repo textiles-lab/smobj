@@ -772,11 +772,17 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		std::vector< ChainSegment > segs;
 		std::unordered_map< glm::ivec4, std::pair< glm::ivec4, uint32_t > > forward, reverse;
 
+		uint32_t invalid_assignment = 0;
+
 		for (auto const &face : mesh.faces) {
 			//no yarns in face without type:
 			assert(face.type < mesh_library.size());
 			if (!mesh_library[face.type]) continue;
 			auto const &sf = *mesh_library[face.type];
+			if (sf.edges.size() != face.size()) {
+				++invalid_assignment;
+				continue;
+			}
 			for (uint32_t yi = 0; yi < sf.yarns.size(); ++yi) {
 				segs.emplace_back(&face, yi, false);
 
@@ -827,6 +833,10 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 				ret = reverse.insert(std::make_pair(to, std::make_pair(from, segs.size()-1)));
 				assert(ret.second);
 			}
+		}
+
+		if (invalid_assignment) {
+			std::cerr << "WARNING: have " << invalid_assignment << " faces whose types have a different number of edges than the face." << std::endl;
 		}
 
 	
