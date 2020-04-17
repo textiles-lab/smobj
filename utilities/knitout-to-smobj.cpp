@@ -2772,7 +2772,7 @@ int main(int argc, char **argv) {
 	//edges:
 	for (auto const &c : translator->connections) {
 		out << "e " << (c.a.face+1) << "/" << (c.a.edge+1)
-		    << " " << (c.b.face+1) << "/" << (c.a.flip == c.b.flip ? "-" : "") << (c.b.edge+1);
+		    << " " << (c.b.face+1) << "/" << (c.a.flip == c.b.flip ? "" : "-") << (c.b.edge+1);
 		if (!args.compact) out << " # " << c.why;
 		out << "\n";
 	}
