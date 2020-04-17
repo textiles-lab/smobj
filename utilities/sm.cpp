@@ -840,7 +840,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		}
 
 	
-		std::unordered_map< glm::uvec2, glm::uvec3 > connections;
+		std::unordered_map< glm::uvec2, glm::uvec2 > connections;
 		for (auto const &c : mesh.connections) {
 			glm::uvec2 from = glm::uvec2(
 				mesh.faces[c.a.face][c.a.edge],
@@ -858,7 +858,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 				std::swap(to.x, to.y);
 			}
 			{
-				auto ret = connections.insert(std::make_pair(from, glm::ivec3(to, c.flip ? 1 : 0)));
+				auto ret = connections.insert(std::make_pair(from,to));
 				if (!ret.second) {
 					std::cerr << "WARNING: multi-connected edge." << std::endl;
 				}
@@ -870,7 +870,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 				std::swap(to.x, to.y);
 			}
 			{
-				auto ret = connections.insert(std::make_pair(from, glm::ivec3(to, c.flip ? 1 : 0)));
+				auto ret = connections.insert(std::make_pair(from,to));
 				if (!ret.second) {
 					std::cerr << "WARNING: multi-connected edge." << std::endl;
 				}
@@ -885,7 +885,6 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			} else {
 				at.x = f->second.x;
 				at.y = f->second.y;
-				at.z = inv_along(at.z);
 
 				if (at.x > at.y) {
 					std::swap(at.x, at.y);
