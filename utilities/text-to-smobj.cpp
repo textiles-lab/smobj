@@ -241,6 +241,9 @@ int main(int argc, char **argv) {
 			std::vector< glm::vec3 > votes(pts.size(), glm::vec3(0.0f));
 			for (auto &f : faces) {
 				//regularization:
+				if (iter < 10) {
+					f.angle = 0.0f; //<-- HACK: ignore rotation during first iterations
+				}
 				f.angle *= 0.999f;
 
 				glm::vec2 right = glm::vec2(std::cos(f.angle), std::sin(f.angle));
