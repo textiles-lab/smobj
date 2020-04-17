@@ -34,6 +34,7 @@ struct Mesh {
 	struct FaceEdge {
 		uint32_t face = -1U;
 		uint32_t edge = -1U;
+		bool operator==(FaceEdge const &o) const { return (face == o.face && edge == o.edge); }
 	};
 	struct Connection {
 		FaceEdge a,b;
