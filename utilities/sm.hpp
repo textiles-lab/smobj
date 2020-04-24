@@ -67,6 +67,10 @@ struct Mesh {
 
 	//write an ".smobj" (precondition: mesh is valid)
 	void save(std::string const &filename) const;
+
+	//rip mesh : associate every face with its own vertex
+	void rip();
+
 };
 
 

@@ -309,6 +309,40 @@ void sm::Mesh::save(std::string const &filename) const {
 	}
 }
 
+void sm::Mesh::rip(){
+	std::vector<glm::vec3> updated_vertices;
+	float avg_len = 0;
+	uint32_t count  = 0;
+	std::vector<glm::vec3> normals;
+	for(auto &f : this->faces){
+		glm::vec3 n = glm::vec3(0,0,0);
+		for(uint32_t i = 0; i < f.size(); ++i){
+			avg_len += glm::length(this->vertices[f[i]] - this->vertices[f[(i+1)%f.size()]]);
+			n += glm::cross(this->vertices[f[i]] - this->vertices[f[(i+1)%f.size()]], -this->vertices[f[(f.size()+i-1)%f.size()]] + this->vertices[f[i]]);
+		}
+		normals.emplace_back(glm::normalize(n));
+		count+= f.size();
+	}
+	avg_len /= count;
+
+	for(auto &f : this->faces){
+		glm::vec3 n = normals[&f - &this->faces[0]];
+		auto ff = f;
+		for(auto &v: f){
+			glm::vec3 e = -this->vertices[v] + this->vertices[ ff[(&v-&f[0]+1)%f.size()]];
+			glm::vec3 offset_a = glm::normalize(glm::cross(n,e))*0.03f*avg_len;
+			e = -this->vertices[v] + this->vertices[ ff[(f.size()+&v-&f[0]-1)%f.size()]];
+			glm::vec3 offset_b = glm::normalize(glm::cross(n,e))*0.03f*avg_len;
+			assert(offset_a == offset_a);
+			assert(offset_b == offset_b);
+			updated_vertices.emplace_back(this->vertices[v]+offset_a - offset_b);
+			v = updated_vertices.size()-1;
+		}
+	}
+	this->connections.clear(); // clear old connections?
+	this->vertices = updated_vertices;
+}
+
 sm::Library sm::Library::load(std::string const &filename) {
 	sm::Library library;
 	sm::Library::Face *current = nullptr;
