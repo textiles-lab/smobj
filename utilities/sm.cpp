@@ -215,7 +215,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 
 	if (types.empty()) {
 		types.resize(mesh.faces.size(),0); //empty
-
+		std::unordered_map<std::string, uint32_t> key_type;
 		// add an empty string to the library
 		assert(library.empty() && "Library must be fully specified or empty" );
 		for(auto &f : mesh.faces){
@@ -224,11 +224,15 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			for(uint32_t i = 0; i < f.size(); ++i){
 				empty_signature.edges.emplace_back("-");
 			}
-			library.emplace_back(empty_signature);
-			mesh.library.emplace_back(empty_signature.key());
-			types[&f-&mesh.faces[0]] = &f-&mesh.faces[0];
+			if(!key_type.count(empty_signature.key())){
+			
+				library.emplace_back(empty_signature);
+				mesh.library.emplace_back(empty_signature.key());
+				key_type[empty_signature.key()] = key_type.size();
+				std::cout << "Added empty string to library (" << library.size() << ")" << std::endl;
+			}
+			types[&f-&mesh.faces[0]] = key_type[empty_signature.key()];
 		}
-		std::cout << "Added empty string to library (" << library.size() << ")" << std::endl;
 	}
 	if (types.size() != mesh.faces.size()) throw std::runtime_error("should be a 'T' for every face.");
 	if (sources.empty()) sources.resize(mesh.faces.size(), 0);
