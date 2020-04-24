@@ -177,7 +177,20 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 
 			std::string temp;
 			if (str >> temp) throw std::runtime_error("trailing junk (" + temp + "...) in c line");
-		} else {
+		} 
+		else if(cmd == "vn"){
+			//ignore
+		}
+		else if(cmd == "vt"){
+			//ignore
+		}
+		else if(cmd == "usemtl"){
+			//ignore
+		}
+		else if(cmd == "mtllib"){
+			//ignore
+		}
+		else {
 			throw std::runtime_error("Unrecognized command '" + cmd + "'");
 		}
 	}
@@ -199,19 +212,38 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 		}
 	}
 
+
+	if (types.empty()) {
+		types.resize(mesh.faces.size(),0); //empty
+
+		// add an empty string to the library
+		assert(library.empty() && "Library must be fully specified or empty" );
+		for(auto &f : mesh.faces){
+			Signature empty_signature;
+			empty_signature.name = "empty"+std::to_string(f.size());
+			for(uint32_t i = 0; i < f.size(); ++i){
+				empty_signature.edges.emplace_back("-");
+			}
+			library.emplace_back(empty_signature);
+			mesh.library.emplace_back(empty_signature.key());
+			types[&f-&mesh.faces[0]] = &f-&mesh.faces[0];
+		}
+		std::cout << "Added empty string to library (" << library.size() << ")" << std::endl;
+	}
 	if (types.size() != mesh.faces.size()) throw std::runtime_error("should be a 'T' for every face.");
 	if (sources.empty()) sources.resize(mesh.faces.size(), 0);
 	if (sources.size() != mesh.faces.size()) throw std::runtime_error("should be a 'ln' for every face or for no faces.");
 
-	for (uint32_t i = 0; i < types.size(); ++i) {
-		if (mesh.faces[i].size() != library[types[i]].edges.size()) {
-			throw std::runtime_error("face/library edge count mismatch.");
+	{
+		// do all the smobj checks
+		for (uint32_t i = 0; i < types.size(); ++i) {
+			if (mesh.faces[i].size() != library[types[i]].edges.size()) {
+				throw std::runtime_error("face/library edge count mismatch.");
+			}
+			mesh.faces[i].type = types[i];
+			mesh.faces[i].source = sources[i];
 		}
-		mesh.faces[i].type = types[i];
-		mesh.faces[i].source = sources[i];
 	}
-
-
 	std::vector< glm::vec3 > normals(mesh.vertices.size(), glm::vec3(0.0f));
 
 	for (auto const &face : mesh.faces) {
@@ -230,7 +262,6 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			throw std::runtime_error("Vertex " + std::to_string(&n-&normals[0]+1) + " has sum-zero surrounding face area.");
 		}
 	}
-
 
 	return mesh;
 }
