@@ -309,7 +309,13 @@ void sm::Mesh::save(std::string const &filename) const {
 	}
 }
 
-void sm::Mesh::rip(){
+void sm::Mesh::rip(uint32_t fixed_id){
+
+	if(this->faces.empty()) return;
+	bool do_rotating = true;
+	if(fixed_id > this->faces.size()){
+		do_rotating = false;
+	}
 	std::vector<glm::vec3> updated_vertices;
 	float avg_len = 0;
 	uint32_t count  = 0;
@@ -323,24 +329,148 @@ void sm::Mesh::rip(){
 		normals.emplace_back(glm::normalize(n));
 		count+= f.size();
 	}
+	
 	avg_len /= count;
 
+	std::map<std::pair<uint32_t, uint32_t>, uint32_t> edge_to_face;
+	std::unordered_set<uint32_t>  fixed_set;
+	
+	for(auto &f : this->faces){
+		for(uint32_t i = 0; i < f.size(); ++i){
+			edge_to_face[std::make_pair(f[i], f[(i+1)%f.size()])] = &f - &this->faces[0];
+		}
+	}
+	// figure out what the appropriate face for rotation should be given a face with known rotation
+	// face 0 for default otherwise pass from interface
+	// need some rules for basic face types, this is for quads..
+	if(do_rotating){
+		auto index_in_face  = [](sm::Mesh::Face f, uint32_t v)->uint32_t{
+			for(uint32_t i = 0; i < f.size(); ++i){
+				if(f[i] == v) return i;
+			}
+			return -1U;
+		};
+
+		auto set_first = [](sm::Mesh::Face &f, uint32_t v){
+			uint32_t c = 0;
+			while(f[0] != v){
+				std::rotate(f.begin(), f.begin()+1, f.end());
+				c++;
+				if( c > f.size()+1) break; // infinite loop
+			}
+			if(c > f.size()) assert(false);
+
+		};
+
+		(void)index_in_face;
+		fixed_set.insert(fixed_id);
+
+		while(fixed_set.size() != this->faces.size()){
+			auto old_size = fixed_set.size();
+			for(auto id : fixed_set){
+				auto ff = this->faces[id];
+				if(ff.size() == 4){ // some basic rules for other shapes?
+					auto left = edge_to_face[ std::make_pair(ff[0], ff[3])];	
+					auto down = edge_to_face[ std::make_pair(ff[1], ff[0])];	
+					auto right = edge_to_face[ std::make_pair(ff[2], ff[1])];	
+					auto up = edge_to_face[ std::make_pair(ff[3], ff[2])];
+					auto lf = this->faces[left];
+					auto df = this->faces[down];
+					auto rf = this->faces[right];
+					auto uf = this->faces[up];
+
+					auto l = index_in_face(this->faces[left],ff[0]);
+					if(l != -1U){
+						set_first(this->faces[left], lf[(lf.size()+l-1)%lf.size()]);
+
+						if(!fixed_set.count(left))
+							fixed_set.insert(left);
+					}
+					auto d = index_in_face(this->faces[down],ff[0]);
+					if(d != -1U){
+						set_first(this->faces[down], df[(df.size()+d+1)%df.size()]);
+						if(!fixed_set.count(right))
+							fixed_set.insert(right);
+					}
+
+					auto r = index_in_face(this->faces[right],ff[1]);
+					if(r != -1U){
+						set_first(this->faces[right], rf[(rf.size()+r)%rf.size()]);
+						if(!fixed_set.count(down))
+							fixed_set.insert(down);
+					}
+
+					auto u = index_in_face(this->faces[up],ff[3]);
+					if(u != -1U){
+						set_first(this->faces[up], uf[(uf.size()+u)%uf.size()]);
+						if(!fixed_set.count(up))
+							fixed_set.insert(up);
+					}
+					
+				}
+			}
+			if(old_size == fixed_set.size()) break;
+		}
+
+
+	}
+	std::map<std::pair<uint32_t, uint32_t>, uint32_t> old_to_new_facevertex;
 	for(auto &f : this->faces){
 		glm::vec3 n = normals[&f - &this->faces[0]];
 		auto ff = f;
 		for(auto &v: f){
+			float offset_eps = 0.1f;
 			glm::vec3 e = -this->vertices[v] + this->vertices[ ff[(&v-&f[0]+1)%f.size()]];
-			glm::vec3 offset_a = glm::normalize(glm::cross(n,e))*0.03f*avg_len;
+			glm::vec3 offset_a = glm::normalize(glm::cross(n,e))*offset_eps*avg_len;
 			e = -this->vertices[v] + this->vertices[ ff[(f.size()+&v-&f[0]-1)%f.size()]];
-			glm::vec3 offset_b = glm::normalize(glm::cross(n,e))*0.03f*avg_len;
+			glm::vec3 offset_b = glm::normalize(glm::cross(n,e))*offset_eps*avg_len;
 			assert(offset_a == offset_a);
 			assert(offset_b == offset_b);
 			updated_vertices.emplace_back(this->vertices[v]+offset_a - offset_b);
+			old_to_new_facevertex[std::make_pair(&f- &this->faces[0],v)] = (updated_vertices.size()-1);
 			v = updated_vertices.size()-1;
+		
+			
 		}
 	}
 	this->connections.clear(); // clear old connections?
 	this->vertices = updated_vertices;
+
+	// could have just used find but..
+	auto edge_index = [](sm::Mesh::Face f, uint32_t v)->uint32_t{
+		for(uint32_t i = 0; i < f.size(); ++i){
+			if(f[i] == v) return i;
+		}
+		assert(false);
+		return -1U;
+	};
+	std::set<std::pair<uint32_t, uint32_t>> done;
+	// make new connections
+	for(auto pr : edge_to_face){
+		if(done.count(pr.first)) continue;
+		auto opp = std::make_pair(pr.first.second, pr.first.first);
+		if(done.count(opp)) continue;
+		if(edge_to_face.count(opp)){
+			
+			Connection c;
+			c.a.face = pr.second;
+			if(!old_to_new_facevertex.count(std::make_pair(c.a.face, pr.first.first))) continue;
+			uint32_t v1 = old_to_new_facevertex[std::make_pair(c.a.face, pr.first.first)];
+			c.a.edge = edge_index(this->faces[c.a.face], v1);
+			c.b.face = edge_to_face[opp];
+			if(!old_to_new_facevertex.count(std::make_pair(c.b.face, pr.first.second))) continue;
+			uint32_t v2 = old_to_new_facevertex[std::make_pair(c.b.face, pr.first.second)];
+			c.b.edge = edge_index(this->faces[c.b.face], v2);
+			c.flip = true;
+
+			done.insert(pr.first);
+			done.insert(opp);
+		
+			this->connections.emplace_back(c);
+		}
+		
+	}
+
 }
 
 sm::Library sm::Library::load(std::string const &filename) {

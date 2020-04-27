@@ -69,7 +69,7 @@ struct Mesh {
 	void save(std::string const &filename) const;
 
 	//rip mesh : associate every face with its own vertex
-	void rip();
+	void rip(uint32_t from = 0);
 
 };
 
