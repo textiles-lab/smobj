@@ -419,7 +419,7 @@ void sm::Mesh::rip(uint32_t fixed_id){
 		glm::vec3 n = normals[&f - &this->faces[0]];
 		auto ff = f;
 		for(auto &v: f){
-			float offset_eps = 0.1f;
+			float offset_eps = 0.01f;
 			glm::vec3 e = -this->vertices[v] + this->vertices[ ff[(&v-&f[0]+1)%f.size()]];
 			glm::vec3 offset_a = glm::normalize(glm::cross(n,e))*offset_eps*avg_len;
 			e = -this->vertices[v] + this->vertices[ ff[(f.size()+&v-&f[0]-1)%f.size()]];
