@@ -648,6 +648,8 @@ sm::Library sm::Library::load(std::string const &filename) {
 
 			derive_face(*source->second, fp->derive.by, fp);
 
+			//std::cout << "Derived '" << fp->key() << "' from '" << fp->derive.from << "'" << std::endl; //DEBUG
+
 			auto ret = keys.emplace(fp->key(), fp);
 			if (!ret.second) throw std::runtime_error("Duplicate face signature: '" + ret.first->first + "'");
 		}
@@ -1969,7 +1971,13 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 	uint32_t r = 0;
 	if (by_bits & sm::Library::Face::Derive::MirrorXBit) {
 		//new first vertex should be after the run of loop-in edges on the side:
-		while (r < face.edges.size() && face.edges[r].direction == face.edges[0].direction && face.edges[r].type[0] == face.edges[0].type[0]) ++r;
+		auto remove_number_suffix = [&](std::string str) {
+			while (!str.empty() && str[str.size()-1] >= '0' && str[str.size()-1] <= '9') {
+				str.erase(str.size()-1);
+			}
+			return str;
+		};
+		while (r < face.edges.size() && face.edges[r].direction == face.edges[0].direction && remove_number_suffix(face.edges[r].type) == remove_number_suffix(face.edges[0].type)) ++r;
 
 		//should not call on edges with all in edges:
 		if (r >= face.edges.size()) {
