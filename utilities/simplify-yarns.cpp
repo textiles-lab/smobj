@@ -65,7 +65,7 @@ std::vector< glm::vec3 > simplify(std::vector< glm::vec3 > const &pts, float tol
 	std::unordered_map< glm::uvec2, uint32_t > distance; //distance == # of points to get to pair
 	std::multimap< std::pair< uint32_t, uint32_t >, glm::uvec2 > to_expand; //to expand sorted by heuristic & distance
 
-	auto queue = [&distance, &to_expand, &pts](glm::uvec2 at, uint32_t dis) {
+	auto queue = [&distance, &to_expand](glm::uvec2 at, uint32_t dis) {
 		auto ret = distance.emplace(at, dis);
 		if (ret.second || ret.first->second > dis) {
 			ret.first->second = dis;
