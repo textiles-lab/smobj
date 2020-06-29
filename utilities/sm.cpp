@@ -248,7 +248,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			mesh.faces[i].source = sources[i];
 		}
 	}
-	std::vector< glm::vec3 > normals(mesh.vertices.size(), glm::vec3(0.0f));
+	std::vector< glm::vec3 > normals(mesh.vertices.size(), glm::vec3(std::numeric_limits< float >::quiet_NaN()));
 
 	for (auto const &face : mesh.faces) {
 		for (uint32_t vi = 0; vi < face.size(); ++vi) {
@@ -257,14 +257,28 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 				glm::vec3 const &a = mesh.vertices[face[(vi+i)%face.size()]];
 				glm::vec3 const &b = mesh.vertices[face[(vi+i+1)%face.size()]];
 				//lazy area-weighted normals:
+				//note: doing this "init-to-zero" thing here so that stray vertices can be recognized and assigned arbitrary normals:
+				if (!(normals[face[vi]].x == normals[face[vi]].x)) {
+					normals[face[vi]] = glm::vec3(0.0f);
+				}
 				normals[face[vi]] += glm::cross(b-a, v-a);
 			}
 		}
 	}
+
+	uint32_t stray_vertices = 0;
 	for (auto &n : normals) {
-		if (n == glm::vec3(0.0f)) {
+		if (!(n.x == n.x)) {
+			++stray_vertices;
+			n = glm::vec3(0.0f, 0.0f, 1.0f); //arbitrary
+		} else if (n == glm::vec3(0.0f)) {
 			throw std::runtime_error("Vertex " + std::to_string(&n-&normals[0]+1) + " has sum-zero surrounding face area.");
 		}
+		n = normalize(n);
+	}
+
+	if (stray_vertices > 0) {
+		std::cout << "NOTE: there are " << stray_vertices << " stray (unreferenced) vertices; they have been assigned +z normals." << std::endl;
 	}
 
 	return mesh;
