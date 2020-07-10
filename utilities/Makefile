@@ -8,7 +8,7 @@ else
 	CPP=clang++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2
 endif
 
-all : knitout-to-smobj smobj-to-yarns text-to-smobj
+all : knitout-to-smobj smobj-to-yarns text-to-smobj simplify-yarns
 
 clean :
 	rm -f knitout-to-smobj text-to-smobj smobj-to-yarns sm.o
@@ -16,10 +16,14 @@ clean :
 knitout-to-smobj : knitout-to-smobj.cpp
 	$(CPP) -o '$@' '$<'
 
+
 text-to-smobj : text-to-smobj.cpp sm.hpp sm.o
 	$(CPP) -o '$@' '$<' sm.o
 
 smobj-to-yarns : smobj-to-yarns.cpp sm.hpp sm.o
+	$(CPP) -o '$@' '$<' sm.o
+
+simplify-yarns : simplify-yarns.cpp sm.hpp sm.o
 	$(CPP) -o '$@' '$<' sm.o
 
 sm.o : sm.cpp sm.hpp

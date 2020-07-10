@@ -248,7 +248,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			mesh.faces[i].source = sources[i];
 		}
 	}
-	std::vector< glm::vec3 > normals(mesh.vertices.size(), glm::vec3(0.0f));
+	std::vector< glm::vec3 > normals(mesh.vertices.size(), glm::vec3(std::numeric_limits< float >::quiet_NaN()));
 
 	for (auto const &face : mesh.faces) {
 		for (uint32_t vi = 0; vi < face.size(); ++vi) {
@@ -257,14 +257,28 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 				glm::vec3 const &a = mesh.vertices[face[(vi+i)%face.size()]];
 				glm::vec3 const &b = mesh.vertices[face[(vi+i+1)%face.size()]];
 				//lazy area-weighted normals:
+				//note: doing this "init-to-zero" thing here so that stray vertices can be recognized and assigned arbitrary normals:
+				if (!(normals[face[vi]].x == normals[face[vi]].x)) {
+					normals[face[vi]] = glm::vec3(0.0f);
+				}
 				normals[face[vi]] += glm::cross(b-a, v-a);
 			}
 		}
 	}
+
+	uint32_t stray_vertices = 0;
 	for (auto &n : normals) {
-		if (n == glm::vec3(0.0f)) {
+		if (!(n.x == n.x)) {
+			++stray_vertices;
+			n = glm::vec3(0.0f, 0.0f, 1.0f); //arbitrary
+		} else if (n == glm::vec3(0.0f)) {
 			throw std::runtime_error("Vertex " + std::to_string(&n-&normals[0]+1) + " has sum-zero surrounding face area.");
 		}
+		n = normalize(n);
+	}
+
+	if (stray_vertices > 0) {
+		std::cout << "NOTE: there are " << stray_vertices << " stray (unreferenced) vertices; they have been assigned +z normals." << std::endl;
 	}
 
 	return mesh;
@@ -647,6 +661,8 @@ sm::Library sm::Library::load(std::string const &filename) {
 			}
 
 			derive_face(*source->second, fp->derive.by, fp);
+
+			//std::cout << "Derived '" << fp->key() << "' from '" << fp->derive.from << "'" << std::endl; //DEBUG
 
 			auto ret = keys.emplace(fp->key(), fp);
 			if (!ret.second) throw std::runtime_error("Duplicate face signature: '" + ret.first->first + "'");
@@ -1969,7 +1985,13 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 	uint32_t r = 0;
 	if (by_bits & sm::Library::Face::Derive::MirrorXBit) {
 		//new first vertex should be after the run of loop-in edges on the side:
-		while (r < face.edges.size() && face.edges[r].direction == face.edges[0].direction && face.edges[r].type[0] == face.edges[0].type[0]) ++r;
+		auto remove_number_suffix = [&](std::string str) {
+			while (!str.empty() && str[str.size()-1] >= '0' && str[str.size()-1] <= '9') {
+				str.erase(str.size()-1);
+			}
+			return str;
+		};
+		while (r < face.edges.size() && face.edges[r].direction == face.edges[0].direction && remove_number_suffix(face.edges[r].type) == remove_number_suffix(face.edges[0].type)) ++r;
 
 		//should not call on edges with all in edges:
 		if (r >= face.edges.size()) {
