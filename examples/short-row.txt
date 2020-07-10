@@ -5,12 +5,12 @@ tuck-twist+ . d 4- c
 tuck-twist+ . e 5- d
 tuck-twist+ . E5 6- e
 
-knit+ 1- a 1 E1
-knit+ 2- b 2 a
-knit+ 3- c 3 b
-knit+ 4- d 4 c
-knit+ 5- e 5 d
-knit+ 6- E6 6 e
+knit- 1- a 1 E1
+knit- 2- b 2 a
+knit- 3- c 3 b
+knit- 4- d 4 c
+knit- 5- e 5 d
+knit- 6- E6 6 e
 
 edge( . E1 E2 xx .
 edge( xx E3 E4 . .
@@ -20,9 +20,9 @@ knit+ 2 b 2b a
 knit+ 3 c 3b b
 turn)(( 4 4b x1 c
 
-knit+ 1b a 1 E3
-knit+ 2b b 2 a
-knit+ 3b x1 3 b
+knit- 1b a 1 E3
+knit- 2b b 2 a
+knit- 3b x1 3 b
 
 knit+ 1 a 1c E4
 knit+ 2 b 2c a
