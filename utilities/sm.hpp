@@ -5,6 +5,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <optional>
 
 /*
  * Data structures for dealing with common smobj-related tasks:
@@ -43,6 +44,13 @@ struct Mesh {
 		// flip: a[0] glued to b[1], a[1] glued to b[0]
 	};
 	std::vector< Connection > connections;
+
+	struct Hint {
+		FaceEdge fe;			// target edge
+		std::optional<char> bed;	// front('f'), back('b'), anything else maps identically to either 'f' or 'b'
+		std::optional<int> needle;	// would floating point values be nice for hints?
+	};
+	std::vector< Hint > location_hints; // can be an unordered_map, but hints could be multiple?
 
 	//Units ('U' lines):
 	struct Unit {
