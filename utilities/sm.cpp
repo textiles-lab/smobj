@@ -134,6 +134,32 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 
 			std::string temp;
 			if (str >> temp) throw std::runtime_error("trailing junk (" + temp + "...) in e line");
+		} else if (cmd == "h"){
+			char slash;
+			int32_t face, edge, needle;
+			char bed;
+			if( !(str >> face >> slash >> edge) || slash != '/') throw std::runtime_error("h line doesn't begin like 1/2.");
+			Hint h;
+			if( face < 1 || face > int32_t(mesh.faces.size())) throw std::runtime_error("face out of range in h line.");
+			if( edge < 1  || edge > int32_t(mesh.faces[face-1].size())) throw std::runtime_error("edge out of range in h line.");
+
+			h.fe.face = face - 1;
+			h.fe.edge =  edge -1;
+
+			std::string next;
+			if(str >> next and next == "bed"){
+				if(!(str >> bed)) throw std::runtime_error("h line does not have valid bed information.");
+				h.bed = bed;
+			}
+			if(next == "needle" || (str >> next and next == "needle")){
+				if(!(str >> needle)) throw std::runtime_error("h line does not have valid needle information.");
+				h.needle = needle;
+			}
+
+			if(h.bed || h.needle){
+				mesh.location_hints.emplace_back(h);
+			}
+
 		} else if (cmd == "U") { //unit definition
 			std::string name;
 			float length;
@@ -308,7 +334,13 @@ void sm::Mesh::save(std::string const &filename) const {
 	for (auto const &c : connections) {
 		out << "e " << (c.a.face+1) << "/" << (c.a.edge+1) << " " << (c.b.face+1) << "/" << (c.flip ? "-" : "") << (c.b.edge+1) << "\n";
 	}
-
+	for (auto const &h : location_hints) {
+		if( !h.bed && !h.needle) continue;
+		out << "h " << (h.fe.face + 1) << "/" << (h.fe.edge+1) << " ";
+		if(h.bed) out << "bed " << *h.bed << " ";
+		if(h.needle) out <<"needle " << *h.needle;
+		out <<"\n";
+	}
 	for (auto const &u : units) {
 		out << "U " << u.name << " " << u.length << "\n";
 	}
