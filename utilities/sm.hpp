@@ -46,9 +46,9 @@ struct Mesh {
 	std::vector< Connection > connections;
 
 	struct Hint {
-		FaceEdge fe;			// target edge
-		std::optional<char> bed;	// front('f'), back('b'), anything else maps identically to either 'f' or 'b'
-		std::optional<int> needle;	// would floating point values be nice for hints?
+		FaceEdge fe;               // target edge
+		std::optional<char> bed;   // front('f'), back('b'), anything else maps identically to either 'f' or 'b'
+		std::optional<int> needle; // would floating point values be nice for hints?
 	};
 	std::vector< Hint > location_hints; // can be an unordered_map, but hints could be multiple?
 
@@ -120,6 +120,7 @@ struct Library {
 		struct Derive {
 			uint8_t by = 0; //an 'or' of ByBits
 			std::string from = ""; //key() for the source face, or "" if not derived from any other face
+			std::string expect_key = ""; //key() for the finished face or "" if not specified
 			enum ByBit : uint8_t {
 				MirrorXBit = (1 << 0),
 				MirrorZBit = (1 << 1),

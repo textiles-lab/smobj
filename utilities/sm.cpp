@@ -563,7 +563,25 @@ sm::Library sm::Library::load(std::string const &filename) {
 			sm::Library::Face::Derive derive;
 
 			std::string by_or_from;
-			if (!(str >> by_or_from) || !(by_or_from == "by" || by_or_from == "from")) throw std::runtime_error(line_info() + "derive line should have face name followed by 'by' or 'from'");
+			{
+				std::string type;
+				while (str >> type) {
+					if (type == "by" || type == "from") {
+						by_or_from = type;
+						break;
+					}
+					derive.expect_key += ' ';
+					derive.expect_key += type;
+				}
+			}
+
+			if (derive.expect_key != "") {
+				derive.expect_key = name + derive.expect_key;
+			} else {
+				std::cerr << line_info() + " WARNING: derive line using just face name may be brittle; consider adding edge types." << std::endl;
+			}
+
+			if (!(by_or_from == "by" || by_or_from == "from")) throw std::runtime_error(line_info() + "derive line should have face name and edge labels followed by 'by' or 'from'");
 			if (by_or_from == "by") {
 				std::string tok;
 				while (str >> tok) {
@@ -694,6 +712,10 @@ sm::Library sm::Library::load(std::string const &filename) {
 
 			derive_face(*source->second, fp->derive.by, fp);
 
+			if (fp->derive.expect_key != "" && fp->derive.expect_key != fp->key()) {
+				throw std::runtime_error("Deriving face with expected key '" + fp->derive.expect_key + "', but got key '" + fp->key() + "'.");
+			}
+
 			//std::cout << "Derived '" << fp->key() << "' from '" << fp->derive.from << "'" << std::endl; //DEBUG
 
 			auto ret = keys.emplace(fp->key(), fp);
@@ -720,7 +742,9 @@ void sm::Library::save(std::string const &filename) {
 	std::ofstream out(filename, std::ios::binary);
 	for (auto const &face : faces) {
 		if (face.derive.from != "") {
-			out << "derive " << face.name;
+			out << "derive ";
+			if (face.derive.expect_key != "") out << face.derive.expect_key;
+			else out << face.name;
 			if (face.derive.by) {
 				out << " by";
 				if (face.derive.by & sm::Library::Face::Derive::MirrorXBit) out << " mirror-x";
