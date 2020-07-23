@@ -134,25 +134,25 @@ code edge) x x x +y1 -y1
   call
       pass ; nothing to do other than get ready for going the other way
 
-code end< -lX -yX +lX #NOTE: needs another type for "out"
+code end< -lX -yX +lX #NOTE: needs another type for "in" which is also the more complex type (inhook or tuck from  gripper/release)
   loop-in f0
-  yarn-in
+  yarn-in +0.5 A
   loop-out f0
-  yarn-out -0.5 A
+  yarn-out
   temporary
   call
-    in A ;should perhaps be do-inhook-dance-at(f0) with lots of temporary ?
     knit - f0 A
+    out A
 
 code end> -lX +lX -yX
   loop-in f0
-  yarn-in
+  yarn-in -0.5 A
   loop-out f0
-  yarn-out +0.5 A
+  yarn-out
   temporary
   call
-    in A ;should perhaps be do-inhook-dance-at(f0) with lots of temporary ?
     knit + f0 A
+    out A
 
 code knit+ -lX +yX +lX -yX
   loop-in f0
