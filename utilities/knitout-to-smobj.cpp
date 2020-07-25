@@ -2670,7 +2670,7 @@ int main(int argc, char **argv) {
 
 		float min_lift = 0.0f;
 
-		auto check_drop = [&translator,&dropped, &to_drop, &min_lift](BedColumns &bed, int32_t index, std::string const &bed_name) {
+		auto check_drop = [&dropped, &to_drop, &min_lift](BedColumns &bed, int32_t index, std::string const &bed_name) {
 			if ((index % 4) != 0) return; //not a needle
 			int32_t needle = index / 4;
 			auto f = bed.find(index);
