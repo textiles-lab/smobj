@@ -1,252 +1,278 @@
-code make-left-tuck+ -lX +yX +lX +lX -yX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0 f-1
-  yarn-out 0.5 A
-  #empty-in f-1 ?? is something like this needed
-  call
+# convention
+# face face-name[yarn-dir]
+# 	edge [consume/produce+type]edge-label needle-resource yarn-resoure (for each edge in face)
+# 	code
+# 		knitout code
+# 		op resourceFrom resourceTo
+# 			(resourceFrom must be bound to consume edges -yX -lX)
+# 			(resourceTo must be bound to produce edges +yX +lX OR temporaries)
+# 			(every produce edge must be produced!)
+# 			(any temporary must be freed)
+# todo:
+# 1. add missing faces (also in .sf)
+#    - begin>, begin< (bigger chunk including tuck dance)
+#    - few complex faces (cable2x2f+, seed2x2)
+#    - missing directional variants? bed variants (auto?)
+#
+face make-left-tuck+
+  edge  -lX f0
+  edge  +yX f0.5 A
+  edge  +lX f0
+  edge  +lX f-1
+  edge  -yX f-0.5 A
+  code
     tuck + f-1 A
     knit + f0 A
 
-code make-right-tuck+ -lX +yX +lX +lX -yX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0 f1
-  yarn-out 0.5 A
-  call
+face make-right-tuck+
+	edge  -lX f0
+	edge  +yX f0.5 A
+	edge  +lX f1
+	edge  +lX f0
+	edge  -yX f-0.5 A
+  code
     knit + f0 A
     tuck + f1 A
 
-code make-left-tuck-twist+ -lX +yX +lX +lX -yX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0 f-1
-  yarn-out 0.5 A
-  call
+face make-left-tuck-twist+
+	edge -lX f0
+	edge +yX f0.5 A
+	edge +lX f0
+	edge +lX f-1
+	edge -yX f-0.5 A
+  code
     tuck - f-1 A
     knit + f0 A
 
-code make-left-tuck-twist- -lX -yX +lX +lX +yX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0 f-1
-  yarn-out 0.5 A
-  call
+face make-left-tuck-twist-
+	edge  -lX f0
+	edge  -yX f0.5 A
+	edge  +lX f0
+	edge  +lX f-1
+	edge  +yX f-0.5 A
+  code
     knit - f0 A
     tuck + f-1 A
 
-code make-right-tuck-twist+ -lX +yX +lX +lX -yX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0 f1
-  yarn-out 0.5 A
-  call
+face make-right-tuck-twist+
+  edge -lX f0
+  edge +yX f0.5A
+  edge +lX f0
+  edge +lX f1
+  edge -yX f-0.5A
+  code
     knit + f0 A
     tuck - f1 A
 
-code make-right-tuck-twist- -lX -yX +lX +lX +yX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0 f1
-  yarn-out 0.5 A
-  call
+face make-right-tuck-twist-
+  edge -lX f0
+  edge -yX f+0.5A
+  edge +lX f0
+  edge +lX f1
+  edge +yX f-0.5A
+  code
     tuck + f1 A
     knit - f0 A
 
-code make-left-split+ -lX +yX +lX +lX -yX
-  pass #TODO placeholder
+face make-left-split+
+  edge -lX f0
+  edge +yX f-0.5 A
+  edge +lX f1
+  edge +lX f0
+  edge -yX f0.5A
+  code
+  	pass #TODO placeholder
 
-code make-right-split+ -lX +yX +lX +lX -yX
-  pass #TODO placeholder
+face make-right-split+
+  edge -lX f0
+  edge +yX f0.5 A
+  edge +lX f1
+  edge +lX f0
+  edge -yX f-0.5A
+  code
+  	pass #TODO placeholder
 
-code decrease-right+ -lX -lX +yX +lX -yX #decrease onto the rightwards vs decrease the rightmost
-  loop-in f0 f1
-  yarn-in -0.5 A
-  loop-out f1
-  yarn-out 0.5 A
-  temporary b0
-  call
+face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
+  edge -lX f0
+  edge -lX f1
+  edge +yX f0.5 A
+  edge +lX f1
+  edge -yX f-0.5 A
+  code
     xfer f0 b0
-    rack 1
+    #rack 1, implicit racking should be fine right?
     xfer b0 f1
     knit + f1 A
 
 
-code decrease-left+ -lX -lX +yX +lX -yX
-  loop-in f0 f1
-  yarn-in -0.5 A
-  loop-out f0
-  yarn-out 0.5 A
-  temporary b1
-  call
+face decrease-left+ -lX -lX +yX +lX -yX
+  edge -lX f0
+  edge -lX f1
+  edge +yX f0.5 A
+  edge +lX f0
+  edge -yX f-0.5 A
+  code
     xfer f1 b1
-    rack -1
     xfer b1 f0
     knit + f1 A
 
-code turn-tuck)(( -lx +lX +yX -yX    #NOTE: tuck is in the direction of the lower course
-  loop-in f0
-  yarn-in +0.5 A
-  loop-out f0
-  yarn-out -0.5 A
-  call
+face turn-tuck)((    #NOTE: tuck is in the direction of the lower course
+  edge -lX f0
+  edge +lX f0
+  edge +yX f-0.5 A
+  edge -yX f-0.5 A
+  code
     tuck + f0 A
     miss - f0 A
 
-code turn-tuck))( -lX -yX +yX +lX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0
-  yarn-out +0.5 A
-  call
+face turn-tuck))(
+  edge -lX f0
+  edge -yX f0.5 A
+  edge +yX f0.5 A
+  edge +lX f0
+  code
     tuck - f0 A
     miss + f0 A
 
-code turn)(( -lX +lX +yX -yX
-  loop-in f0
-  yarn-in +0.5 A
-  loop-out f0
-  yarn-out -0.5 A
-  call
+face turn)((
+  edge -lX f0
+  edge +lX f0
+  edge +yX f-0.5 A
+  edge -yX f-0.5 A
+  code
     miss - f0 A
 
-code turn))( -lX -yX +yX +lX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0
-  yarn-out +0.5 A
-  call
+face turn))(
+  edge -lX f0
+  edge -yX f0.5 A
+  edge +yX f0.5 A
+  edge +lX f0
+  code
     miss + f0 A
 
-code edge( x -y1 +y1 x x
-  loop-in
-  yarn-in +0.5 A
-  loop-out
-  yarn-out -0.5 A
-  call
-      pass ; nothing to do other than get ready for going the other way
+face edge(
+  edge x
+  edge -y1 f0.5 A
+  edge +y1 f0.5 A
+  edge x
+  edge x
+  code
+    pass #misses, maybe nothing to do other than get ready for going the other way
 
-code edge) x x x +y1 -y1
-  loop-in
-  yarn-in -0.5 A
-  loop-out
-  yarn-out +0.5 A
-  call
-      pass ; nothing to do other than get ready for going the other way
+face edge)
+  edge x
+  edge x
+  edge x
+  edge +y1 f-0.5 A
+  edge -y1 f-0.5 A
+  code
+    pass #misses? nothing to do other than get ready for going the other way
 
-code end< -lX -yX +lX #NOTE: needs another type for "in" which is also the more complex type (inhook or tuck from  gripper/release)
-  loop-in f0
-  yarn-in +0.5 A
-  loop-out f0
-  yarn-out
-  temporary
-  call
+face end<  #NOTE: needs another type for "in" which is also the more complex type (inhook or tuck from  gripper/release)
+  edge -lX f0
+  edge -yX f+0.5 A
+  edge +lX f0
+  code
     knit - f0 A
     out A
 
-code end> -lX +lX -yX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0
-  yarn-out
-  temporary
-  call
+face end>
+  edge -lX f0
+  edge +lX f0
+  edge -yX f-0.5 A
+  code
     knit + f0 A
     out A
 
-code knit+ -lX +yX +lX -yX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0
-  yarn-out +0.5 A
-  temporary
-  call
+
+face knit+
+  edge -lX f0
+  edge +yX f0.5 A
+  edge +lX f0
+  edge -yX f-0.5 A
+  code
     knit + f0 A
 
-code knit- -lX -yX +lX +yX
-  loop-in f0
-  yarn-in +0.5 A
-  loop-out f0
-  yarn-out -0.5 A
-  temporary
-  call
+face knit-
+  edge -lX f0
+  edge -yX f+0.5 A
+  edge +lX f0
+  edge +yX f-0.5 A
+  code
     knit - f0 A
 
-code knit-fair-isle-2+ -lX +yX +lX -yX
-  loop-in f0
-  yarn-in -0.5 A B
-  loop-out f0
-  yarn-out +0.5 A B
-  temporary
-  call
+face knit-fair-isle-2+ #slightly awkward in terms of using all resources
+  edge -lX f0
+  edge +yX f0.5 A B
+  edge +lX f0
+  edge -yX f-0.5 A B
+  code
     knit + f0 B
 
-code knit-fair-isle-1+ -lX +yX +lX -yX
-  loop-in f0
-  yarn-in -0.5 A B
-  loop-out f0
-  yarn-out +0.5 A B
-  temporary
-  call
+face knit-fair-isle-1+
+  edge -lX f0
+  edge +yX f0.5 A B
+  edge +lX f0
+  edge -yX f-0.5 A B
+  code
     knit + f0 A
 
-code knit-plating-1+ -lX +yX +lX -yX
-  loop-in f0
-  yarn-in -0.5 A B
-  loop-out f0
-  yarn-out +0.5 A B
-  temporary
-  call
+face knit-plating-1+
+  edge -lX f0
+  edge +yX f0.5 A B
+  edge +lX f0
+  edge -yX f-0.5 A B
+  code
     knit + f0 A B
 
-code knit-plating-2+ -lX +yX +lX -yX
-  loop-in f0
-  yarn-in -0.5 A B
-  loop-out f0
-  yarn-out +0.5 A B
-  temporary
-  call
+face knit-plating-2+
+  edge -lX f0
+  edge +yX f0.5 A B
+  edge +lX f0
+  edge -yX f-0.5 A B
+  code
     knit + f0 B A
 
-code knit+.2111 -lX +yX +lX -yX #What is this?
-  pass
+face knit+.2111 #What face is this ??
+  edge -lX f0
+  edge +yX f-0.5 A
+  edge +lX f0
+  edge -yX f0.5 A
+  code
+  	knit + f0 A
 
-code drop+ -l1 +y0 +l0 -y0
-  loop-in f0
-  yarn-in -0.5
-  loop-out f0
-  yarn-out +0.5
-  temporary
-  call
+face drop+
+  edge -l1 f0
+  edge +y0 f0.5
+  edge +l0 f0
+  edge -y0 f-0.5
+  code
     drop f0
 
-code tuck-twist+ -lX +yX +lX -yX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0
-  yarn-out +0.5 A
-  temporary
-  call
+face tuck-twist+
+  edge -lX f0
+  edge +yX f0.5 A
+  edge +lX f0
+  edge -yX f-0.5 A
+  code
     tuck - f0 A
 
-face purl+ -lX +yX +lX -yX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0
-  yarn-out +0.5 A
-  temporary b0
-  call
+face purl+
+  edge -lX f0
+  edge +yX f0.5 A
+  edge +lX f0
+  edge -yX f-0.5 A
+  code
     xfer f0 b0
     knit + b0 A
     xfer b0 f0
 
-code purl- -lX -yX +lX +yX
-  loop-in f0
-  yarn-in -0.5 A
-  loop-out f0
-  yarn-out +0.5 A
-  temporary b0
-  call
+face purl-
+  edge -lX f0
+  edge -yX f0.5 A
+  edge +lX f0
+  edge +yX f-0.5 A
+  code
     xfer f0 b0
     knit - b0 A
     xfer b0 f0
