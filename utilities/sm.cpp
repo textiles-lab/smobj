@@ -136,8 +136,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			if (str >> temp) throw std::runtime_error("trailing junk (" + temp + "...) in e line");
 		} else if (cmd == "h"){
 			char slash;
-			int32_t face, edge, needle;
-			char bed;
+			int32_t face, edge;
 			if( !(str >> face >> slash >> edge) || slash != '/') throw std::runtime_error("h line doesn't begin like 1/2.");
 			Hint h;
 			if( face < 1 || face > int32_t(mesh.faces.size())) throw std::runtime_error("face out of range in h line.");
@@ -147,13 +146,17 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			h.fe.edge =  edge -1;
 
 			std::string next;
-			if(str >> next and next == "bed"){
-				if(!(str >> bed)) throw std::runtime_error("h line does not have valid bed information.");
-				h.bed = bed;
-			}
-			if(next == "needle" || (str >> next and next == "needle")){
-				if(!(str >> needle)) throw std::runtime_error("h line does not have valid needle information.");
-				h.needle = needle;
+			if (str >> next){
+				std::istringstream str2(next);
+				if(std::isalpha(next[0])){
+					char bed;
+					str2 >> bed;
+					h.bed = bed;
+				}
+				int needle;
+				if(str2 >> needle){
+					h.needle = needle;
+				}
 			}
 
 			if(h.bed || h.needle){
@@ -337,8 +340,8 @@ void sm::Mesh::save(std::string const &filename) const {
 	for (auto const &h : location_hints) {
 		if( !h.bed && !h.needle) continue;
 		out << "h " << (h.fe.face + 1) << "/" << (h.fe.edge+1) << " ";
-		if(h.bed) out << "bed " << *h.bed << " ";
-		if(h.needle) out <<"needle " << *h.needle;
+		if(h.bed) out  << *h.bed;
+		if(h.needle) out  << *h.needle;
 		out <<"\n";
 	}
 	for (auto const &u : units) {

@@ -32,13 +32,13 @@ e 1/1 2/-4
 # (optional) list of scheduler hints can be provided for edges using hint lines starting with 'h' 
 # face/edge inidcates the edge (indices are one-based as above, edges are always positive)
 # hints can indicate bed(char) or needle(integer) or both as shown:
-h 1/1 bed f needle 20 
-h 4/1 bed b
-h 1/3 needle -5
+h 1/1 f20 
+h 4/1 b
+h 1/3 -5
 # beds can also specify characters other than (f)front-needle (b)back-needle (x)dont-care-needle: 
 # two edges that should belong be scheduled the same bed:
-h 2/1 bed a
-h 3/1 bed a
+h 2/1 a
+h 3/1 a
 #(optional) list of checkpoints on yarns and desired length between them:
 # checkpoint list starts with unit library:
 U 1 1.0 #unit definition -- there is a length unit called '1' with [default] length '1.0'
