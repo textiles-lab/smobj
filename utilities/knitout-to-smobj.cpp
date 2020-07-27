@@ -1896,7 +1896,7 @@ struct Translator {
 		commit(gizmo);
 	}
 
-	void knit(Direction dir, BedColumns &bed, int32_t needle, std::vector< Carrier * > cs) {
+	void knit(Direction dir, BedColumns &bed, int32_t needle, std::vector< Carrier * > cs, float min_lift = -std::numeric_limits< float >::infinity()) {
 		assert(&bed == &back_bed || &bed == &front_bed);
 
 		Gizmo gizmo;
@@ -1969,6 +1969,9 @@ struct Translator {
 
 			//increase lift based on edge conflicts in stitch column:
 			gizmo.lift = std::max(gizmo.lift, bed[needle_index(needle)].top_y);
+
+			//increase lift if min_lift parameter demands it:
+			gizmo.lift = std::max(gizmo.lift, min_lift);
 
 			//apply lift and create merge faces:
 			commit(gizmo);
@@ -2662,21 +2665,21 @@ int main(int argc, char **argv) {
 		check_bed(translator->front_sliders, 0);
 		check_bed(translator->front_bed, 0);
 		
+		std::vector< std::tuple< BedColumns &, int32_t > > to_drop;
 		std::vector< std::string > dropped;
 
-		auto check_drop = [&translator,&dropped](BedColumns &bed, int32_t index, std::string const &bed_name) {
+		float min_lift = 0.0f;
+
+		auto check_drop = [&dropped, &to_drop, &min_lift](BedColumns &bed, int32_t index, std::string const &bed_name) {
 			if ((index % 4) != 0) return; //not a needle
 			int32_t needle = index / 4;
 			auto f = bed.find(index);
 			if (f == bed.end()) return; //nothing here
 			if (f->second.top_edge.count == 0) return; //no loop to drop
-			//okay, need to drop:
-			translator->knit(
-				Right,
-				bed,
-				needle,
-				std::vector< Carrier * >()
-			);
+
+			min_lift = std::max(min_lift, f->second.top_y);
+
+			to_drop.emplace_back(bed, needle);
 			dropped.emplace_back(bed_name + std::to_string(needle));
 		};
 
@@ -2686,6 +2689,17 @@ int main(int argc, char **argv) {
 			check_drop(translator->front_sliders, idx, "fs");
 			check_drop(translator->front_bed, idx, "f");
 		}
+
+		for (auto &[bed, needle] : to_drop) {
+			translator->knit(
+				Right,
+				bed,
+				needle,
+				std::vector< Carrier * >(),
+				min_lift
+			);
+		}
+
 		if (!dropped.empty()) {
 			std::cerr << "NOTE: dropped " << dropped.size() << " loops that remained on the bed at end of pattern:\n";
 			for (auto const &d : dropped) {
