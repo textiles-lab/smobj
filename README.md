@@ -145,7 +145,7 @@ face make-left-tuck+
 	edge ( 0.0, 1.2) +l1
 	edge (-1.6, 0.0) -y1
 	#yarn lines specify yarns inside the face, and are given by a boundary point, a list of internal points, and another boundarty point
-	# boundary points are writen [e:amt,z] and consist of a zero-based edge index, z; an amount along the edge, 0 < amt < 1; and a depth, z.
+	# boundary points are writen [e:amt,z] and consist of a zero-based edge index, e; an amount along the edge, 0 < amt < 1; and a depth, z.
 	# interal points are regular (x,y,z) tuples.
 	yarn [1:0.25,0] (0.321847,-0.211278,-0.19533) (0.390594,0.0406245,0.196892) [2:0.275,0]
 	yarn [2:0.725,0] (0.257785,0.276222,0.206233) (-0.0984679,0.224999,-0.276545) [3:0.275,0]
