@@ -99,7 +99,7 @@ face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
   edge +lX f1
   edge -yX f-0.5 A
   code
-    xfer f0 b0
+    xfer f0 b0 #figure out f0+ b0+ style instruction..
     #rack 1, implicit racking should be fine right?
     xfer b0 f1
     knit + f1 A
@@ -115,6 +115,19 @@ face decrease-left+ -lX -lX +yX +lX -yX
     xfer f1 b1
     xfer b1 f0
     knit + f1 A
+
+face decrease-right- 
+  edge -lX f0
+  edge -lX f1
+  edge -yX f-0.5 A
+  edge +lX f1
+  edge +yX f+0.5 A
+  code
+    xfer f0 b0
+    xfer b0 f1
+    knit + f1 A
+
+
 
 face turn-tuck)((    #NOTE: tuck is in the direction of the lower course
   edge -lX f0
@@ -185,6 +198,22 @@ face end>
     out A
 
 
+face start<
+	edge -lX f0
+	edge +lX f0
+	edge +yX f0.5 A
+	code
+		in A
+		knit - f0 A
+
+face start>
+	edge -lX f0
+	edge +yX f-0.5 A
+	edge +lX f0
+	code
+		in A
+		knit + f0 A
+
 face knit+
   edge -lX f0
   edge +yX f0.5 A
@@ -249,6 +278,14 @@ face drop+
   code
     drop f0
 
+#face drop- 
+#	edge -l1 f0
+#	edge -y0 f0.5 
+#	edge +l0 
+#	edge +y0 f-0.5
+#	code
+#		drop f0
+
 face tuck-twist+
   edge -lX f0
   edge +yX f0.5 A
@@ -256,6 +293,14 @@ face tuck-twist+
   edge -yX f-0.5 A
   code
     tuck - f0 A
+
+face tuck-twist-
+	edge -lX f0
+	edge -yX f+0.5 A  
+	edge +lX f0
+	edge +yX f-0.5 A
+	code
+		tuck + f0 A
 
 face purl+
   edge -lX f0
