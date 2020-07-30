@@ -192,7 +192,7 @@ face drop+
 	edge (-1,0.61) -y0
 	yarn [0:0.275,0] (-0.528105,-0.309375,0.0968753) (-0.632798,0.129689,-0.137508) (0,0.307824,0) (0.632798,0.129689,-0.137508) (0.528105,-0.309375,0.0968753) [0:0.725,0]
 
-#derive drop- -l1 -y0 +l0 +y0 by mirror-x from drop+ -l1 +y0 +l0 -y0
+derive drop- -l1 -y0 +l0 +y0 by mirror-x from drop+ -l1 +y0 +l0 -y0
 
 face tuck-twist+
 	edge (-1,-0.61) -lX
