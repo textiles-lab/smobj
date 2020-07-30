@@ -15,14 +15,14 @@
 #    - missing directional variants? bed variants (auto?)
 #
 face make-left-tuck+
-  edge  -lX f0
-  edge  +yX f0.5 A
-  edge  +lX f0
-  edge  +lX f-1
-  edge  -yX f-0.5 A
-  code
-    tuck + f-1 A
-    knit + f0 A
+	edge  -lX f0
+	edge  +yX f0.5 A
+	edge  +lX f0
+	edge  +lX f-1
+	edge  -yX f-0.5 A
+	code
+			tuck + f-1 A
+			knit + f0 A
 
 face make-right-tuck+
 	edge  -lX f0
@@ -30,9 +30,9 @@ face make-right-tuck+
 	edge  +lX f1
 	edge  +lX f0
 	edge  -yX f-0.5 A
-  code
-    knit + f0 A
-    tuck + f1 A
+	code
+		knit + f0 A
+		tuck + f1 A
 
 face make-left-tuck-twist+
 	edge -lX f0
@@ -40,9 +40,9 @@ face make-left-tuck-twist+
 	edge +lX f0
 	edge +lX f-1
 	edge -yX f-0.5 A
-  code
-    tuck - f-1 A
-    knit + f0 A
+	code
+		tuck - f-1 A
+		knit + f0 A
 
 face make-left-tuck-twist-
 	edge  -lX f0
@@ -50,152 +50,152 @@ face make-left-tuck-twist-
 	edge  +lX f0
 	edge  +lX f-1
 	edge  +yX f-0.5 A
-  code
-    knit - f0 A
-    tuck + f-1 A
+	code
+		knit - f0 A
+		tuck + f-1 A
 
 face make-right-tuck-twist+
-  edge -lX f0
-  edge +yX f0.5A
-  edge +lX f0
-  edge +lX f1
-  edge -yX f-0.5A
-  code
-    knit + f0 A
-    tuck - f1 A
+	edge -lX f0
+	edge +yX f0.5A
+	edge +lX f0
+	edge +lX f1
+	edge -yX f-0.5A
+	code
+		knit + f0 A
+		tuck - f1 A
 
 face make-right-tuck-twist-
-  edge -lX f0
-  edge -yX f+0.5A
-  edge +lX f0
-  edge +lX f1
-  edge +yX f-0.5A
-  code
-    tuck + f1 A
-    knit - f0 A
+	edge -lX f0
+	edge -yX f+0.5A
+	edge +lX f0
+	edge +lX f1
+	edge +yX f-0.5A
+	code
+		tuck + f1 A
+		knit - f0 A
 
 face make-left-split+
-  edge -lX f0
-  edge +yX f-0.5 A
-  edge +lX f1
-  edge +lX f0
-  edge -yX f0.5A
-  code
-  	pass #TODO placeholder
+	edge -lX f0
+	edge +yX f-0.5 A
+	edge +lX f1
+	edge +lX f0
+	edge -yX f0.5A
+	code
+		pass #TODO placeholder
 
 face make-right-split+
-  edge -lX f0
-  edge +yX f0.5 A
-  edge +lX f1
-  edge +lX f0
-  edge -yX f-0.5A
-  code
-  	pass #TODO placeholder
+	edge -lX f0
+	edge +yX f0.5 A
+	edge +lX f1
+	edge +lX f0
+	edge -yX f-0.5A
+	code
+		pass #TODO placeholder
 
 face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
-  edge -lX f0
-  edge -lX f1
-  edge +yX f0.5 A
-  edge +lX f1
-  edge -yX f-0.5 A
-  code
-    xfer f0 b0 #figure out f0+ b0+ style instruction..
-    #rack 1, implicit racking should be fine right?
-    xfer b0 f1
-    knit + f1 A
+	edge -lX f0
+	edge -lX f1
+	edge +yX f0.5 A
+	edge +lX f1
+	edge -yX f-0.5 A
+	code
+		xfer f0 b0 #figure out f0+ b0+ style instruction..
+		#rack 1, implicit racking should be fine right?
+		xfer b0 f1
+		knit + f1 A
 
 
 face decrease-left+ -lX -lX +yX +lX -yX
-  edge -lX f0
-  edge -lX f1
-  edge +yX f0.5 A
-  edge +lX f0
-  edge -yX f-0.5 A
-  code
-    xfer f1 b1
-    xfer b1 f0
-    knit + f1 A
+	edge -lX f0
+	edge -lX f1
+	edge +yX f0.5 A
+	edge +lX f0
+	edge -yX f-0.5 A
+	code
+		xfer f1 b1
+		xfer b1 f0
+		knit + f1 A
 
-face decrease-right- 
-  edge -lX f0
-  edge -lX f1
-  edge -yX f-0.5 A
-  edge +lX f1
-  edge +yX f+0.5 A
-  code
-    xfer f0 b0
-    xfer b0 f1
-    knit + f1 A
+face decrease-right-
+	edge -lX f0
+	edge -lX f1
+	edge -yX f-0.5 A
+	edge +lX f1
+	edge +yX f+0.5 A
+	code
+		xfer f0 b0
+		xfer b0 f1
+		knit + f1 A
 
 
 
 face turn-tuck)((    #NOTE: tuck is in the direction of the lower course
-  edge -lX f0
-  edge +lX f0
-  edge +yX f-0.5 A
-  edge -yX f-0.5 A
-  code
-    tuck + f0 A
-    miss - f0 A
+	edge -lX f0
+	edge +lX f0
+	edge +yX f-0.5 A
+	edge -yX f-0.5 A
+	code
+		tuck + f0 A
+		miss - f0 A
 
 face turn-tuck))(
-  edge -lX f0
-  edge -yX f0.5 A
-  edge +yX f0.5 A
-  edge +lX f0
-  code
-    tuck - f0 A
-    miss + f0 A
+	edge -lX f0
+	edge -yX f0.5 A
+	edge +yX f0.5 A
+	edge +lX f0
+	code
+		tuck - f0 A
+		miss + f0 A
 
 face turn)((
-  edge -lX f0
-  edge +lX f0
-  edge +yX f-0.5 A
-  edge -yX f-0.5 A
-  code
-    miss - f0 A
+	edge -lX f0
+	edge +lX f0
+	edge +yX f-0.5 A
+	edge -yX f-0.5 A
+	code
+		miss - f0 A
 
 face turn))(
-  edge -lX f0
-  edge -yX f0.5 A
-  edge +yX f0.5 A
-  edge +lX f0
-  code
-    miss + f0 A
+	edge -lX f0
+	edge -yX f0.5 A
+	edge +yX f0.5 A
+	edge +lX f0
+	code
+		miss + f0 A
 
 face edge(
-  edge x
-  edge -y1 f0.5 A
-  edge +y1 f0.5 A
-  edge x
-  edge x
-  code
-    pass #misses, maybe nothing to do other than get ready for going the other way
+	edge x
+	edge -y1 f0.5 A
+	edge +y1 f0.5 A
+	edge x
+	edge x
+	code
+		pass #misses, maybe nothing to do other than get ready for going the other way
 
 face edge)
-  edge x
-  edge x
-  edge x
-  edge +y1 f-0.5 A
-  edge -y1 f-0.5 A
-  code
-    pass #misses? nothing to do other than get ready for going the other way
+	edge x
+	edge x
+	edge x
+	edge +y1 f-0.5 A
+	edge -y1 f-0.5 A
+	code
+		pass #misses? nothing to do other than get ready for going the other way
 
 face end<  #NOTE: needs another type for "in" which is also the more complex type (inhook or tuck from  gripper/release)
-  edge -lX f0
-  edge -yX f+0.5 A
-  edge +lX f0
-  code
-    knit - f0 A
-    out A
+	edge -lX f0
+	edge -yX f+0.5 A
+	edge +lX f0
+	code
+		knit - f0 A
+		out A
 
 face end>
-  edge -lX f0
-  edge +lX f0
-  edge -yX f-0.5 A
-  code
-    knit + f0 A
-    out A
+	edge -lX f0
+	edge +lX f0
+	edge -yX f-0.5 A
+	code
+		knit + f0 A
+		out A
 
 
 face start<
@@ -215,109 +215,109 @@ face start>
 		knit + f0 A
 
 face knit+
-  edge -lX f0
-  edge +yX f0.5 A
-  edge +lX f0
-  edge -yX f-0.5 A
-  code
-    knit + f0 A
+	edge -lX f0
+	edge +yX f0.5 A
+	edge +lX f0
+	edge -yX f-0.5 A
+	code
+		knit + f0 A
 
 face knit-
-  edge -lX f0
-  edge -yX f+0.5 A
-  edge +lX f0
-  edge +yX f-0.5 A
-  code
-    knit - f0 A
+	edge -lX f0
+	edge -yX f+0.5 A
+	edge +lX f0
+	edge +yX f-0.5 A
+	code
+		knit - f0 A
 
 face knit-fair-isle-2+ #slightly awkward in terms of using all resources
-  edge -lX f0
-  edge +yX f0.5 A B
-  edge +lX f0
-  edge -yX f-0.5 A B
-  code
-    knit + f0 B
+	edge -lX f0
+	edge +yX f0.5 A B
+	edge +lX f0
+	edge -yX f-0.5 A B
+	code
+		knit + f0 B
 
 face knit-fair-isle-1+
-  edge -lX f0
-  edge +yX f0.5 A B
-  edge +lX f0
-  edge -yX f-0.5 A B
-  code
-    knit + f0 A
+	edge -lX f0
+	edge +yX f0.5 A B
+	edge +lX f0
+	edge -yX f-0.5 A B
+	code
+		knit + f0 A
 
 face knit-plating-1+
-  edge -lX f0
-  edge +yX f0.5 A B
-  edge +lX f0
-  edge -yX f-0.5 A B
-  code
-    knit + f0 A B
+	edge -lX f0
+	edge +yX f0.5 A B
+	edge +lX f0
+	edge -yX f-0.5 A B
+	code
+		knit + f0 A B
 
 face knit-plating-2+
-  edge -lX f0
-  edge +yX f0.5 A B
-  edge +lX f0
-  edge -yX f-0.5 A B
-  code
-    knit + f0 B A
+	edge -lX f0
+	edge +yX f0.5 A B
+	edge +lX f0
+	edge -yX f-0.5 A B
+	code
+		knit + f0 B A
 
 face knit+.2111 #What face is this ??
-  edge -lX f0
-  edge +yX f-0.5 A
-  edge +lX f0
-  edge -yX f0.5 A
-  code
-  	knit + f0 A
+	edge -lX f0
+	edge +yX f-0.5 A
+	edge +lX f0
+	edge -yX f0.5 A
+	code
+		knit + f0 A
 
 face drop+
-  edge -l1 f0
-  edge +y0 f0.5
-  edge +l0 f0
-  edge -y0 f-0.5
-  code
-    drop f0
+	edge -l1 f0
+	edge +y0 f0.5
+	edge +l0 f0
+	edge -y0 f-0.5
+	code
+		drop f0
 
-#face drop- 
+#face drop-
 #	edge -l1 f0
-#	edge -y0 f0.5 
-#	edge +l0 
+#	edge -y0 f0.5
+#	edge +l0
 #	edge +y0 f-0.5
 #	code
 #		drop f0
 
 face tuck-twist+
-  edge -lX f0
-  edge +yX f0.5 A
-  edge +lX f0
-  edge -yX f-0.5 A
-  code
-    tuck - f0 A
+	edge -lX f0
+	edge +yX f0.5 A
+	edge +lX f0
+	edge -yX f-0.5 A
+	code
+		tuck - f0 A
 
 face tuck-twist-
 	edge -lX f0
-	edge -yX f+0.5 A  
+	edge -yX f+0.5 A
 	edge +lX f0
 	edge +yX f-0.5 A
 	code
 		tuck + f0 A
 
 face purl+
-  edge -lX f0
-  edge +yX f0.5 A
-  edge +lX f0
-  edge -yX f-0.5 A
-  code
-    xfer f0 b0
-    knit + b0 A
-    xfer b0 f0
+	edge -lX f0
+	edge +yX f0.5 A
+	edge +lX f0
+	edge -yX f-0.5 A
+	code
+		xfer f0 b0
+		knit + b0 A
+		xfer b0 f0
 
 face purl-
-  edge -lX f0
-  edge -yX f0.5 A
-  edge +lX f0
-  edge +yX f-0.5 A
-  code
-    xfer f0 b0
-    knit - b0 A
-    xfer b0 f0
+	edge -lX f0
+	edge -yX f0.5 A
+	edge +lX f0
+	edge +yX f-0.5 A
+	code
+		xfer f0 b0
+		knit - b0 A
+		xfer b0 f0
