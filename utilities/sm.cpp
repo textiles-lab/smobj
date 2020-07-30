@@ -955,9 +955,18 @@ sm::Code sm::Code::load(std::string const &filename) {
 				ins.op = sm::Code::Face::Instr::Xfer;
 				char from_bed;
 				int from_needle;
-				if(!(str >> from_bed)){
-					throw std::runtime_error(line_info() + "xfer line without (from)bed");
+				char direction;
+				if(!(str >> direction)) throw std::runtime_error(line_info() + "xfer line without direction or bed");
+				if (direction == '+' || direction == '-'){
+					ins.direction = (direction == '+' ? sm::Code::Face::Instr::Right : sm::Code::Face::Instr::Left);
+					if(!(str >> from_bed)){
+						throw std::runtime_error(line_info() + "xfer line without (from)bed");
+					}
 				}
+				else{
+					from_bed = direction; // no direction was specified so that must have been the from bed
+				}
+
 				if(!(str >> from_needle)){
 					throw std::runtime_error(line_info() + "xfer line without (from)needle");
 				}
@@ -1160,6 +1169,9 @@ void sm::Code::save(std::string const &filename) {
 					break;
 				case sm::Code::Face::Instr::Xfer:
 					out <<"xfer ";
+					if(instr.direction != sm::Code::Face::Instr::None){
+						out << (char)instr.direction << ' ';
+					}
 					out << instr.src.bed << instr.src.needle << ' ';
 					out << instr.tgt.bed << instr.tgt.needle << ' ';
 					out << '\n';
@@ -2535,5 +2547,11 @@ bool sm::verify_hinted_schedule(sm::Mesh const &mesh, sm::Library const &library
 	// 	all connections have xfer hints (what should they be, though?)
 	// 	execution order exists for all faces that have split execution
 	assert(false && "TODO IMPLEMENT");
+	/*
+	std::cout << "Hints: " << std::endl;
+	for(auto h : mesh.location_hints){
+		std::cout << h.fe.face << "/" << h.fe.edge << " @ " << (h.bed ? *h.bed : 'x') << " " << (h.needle ? *h.needle : -1) << std::endl;
+	}*/
+
 	return false;
 }
