@@ -99,9 +99,9 @@ face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
 	edge +lX f1
 	edge -yX f-0.5 A
 	code
-		xfer f0 b0 #figure out f0+ b0+ style instruction..
+		xfer - f0 b0 #+/- direction are hints on the src, + = everything to the right of f0
 		#rack 1, implicit racking should be fine right?
-		xfer b0 f1
+		xfer - b0 f1
 		knit + f1 A
 
 
