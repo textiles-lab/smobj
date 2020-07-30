@@ -56,42 +56,42 @@ face make-left-tuck-twist-
 
 face make-right-tuck-twist+
 	edge -lX f0
-	edge +yX f0.5A
+	edge +yX f0.5 A
 	edge +lX f0
 	edge +lX f1
-	edge -yX f-0.5A
+	edge -yX f-0.5 A
 	code
 		knit + f0 A
 		tuck - f1 A
 
 face make-right-tuck-twist-
 	edge -lX f0
-	edge -yX f+0.5A
+	edge -yX f+0.5 A
 	edge +lX f0
 	edge +lX f1
-	edge +yX f-0.5A
+	edge +yX f-0.5 A
 	code
 		tuck + f1 A
 		knit - f0 A
 
-face make-left-split+
-	edge -lX f0
-	edge +yX f-0.5 A
-	edge +lX f1
-	edge +lX f0
-	edge -yX f0.5A
-	code
-		pass #TODO placeholder
-
-face make-right-split+
-	edge -lX f0
-	edge +yX f0.5 A
-	edge +lX f1
-	edge +lX f0
-	edge -yX f-0.5A
-	code
-		pass #TODO placeholder
-
+#face make-left-split+
+#	edge -lX f0
+#	edge +yX f-0.5 A
+#	edge +lX f1
+#	edge +lX f0
+#	edge -yX f0.5 A
+#	code
+#		pass #TODO placeholder
+#
+#face make-right-split+
+#	edge -lX f0
+#	edge +yX f0.5 A
+#	edge +lX f1
+#	edge +lX f0
+#	edge -yX f-0.5 A
+#	code
+#		pass #TODO placeholder
+#
 face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
 	edge -lX f0
 	edge -lX f1
@@ -105,7 +105,7 @@ face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
 		knit + f1 A
 
 
-face decrease-left+ -lX -lX +yX +lX -yX
+face decrease-left+ 
 	edge -lX f0
 	edge -lX f1
 	edge +yX f0.5 A
@@ -114,7 +114,7 @@ face decrease-left+ -lX -lX +yX +lX -yX
 	code
 		xfer f1 b1
 		xfer b1 f0
-		knit + f1 A
+		knit + f0 A
 
 face decrease-right-
 	edge -lX f0
@@ -170,7 +170,7 @@ face edge(
 	edge x
 	edge x
 	code
-		pass #misses, maybe nothing to do other than get ready for going the other way
+		#pass #misses, maybe nothing to do other than get ready for going the other way
 
 face edge)
 	edge x
@@ -179,7 +179,7 @@ face edge)
 	edge +y1 f-0.5 A
 	edge -y1 f-0.5 A
 	code
-		pass #misses? nothing to do other than get ready for going the other way
+		#pass #misses? nothing to do other than get ready for going the other way
 
 face end<  #NOTE: needs another type for "in" which is also the more complex type (inhook or tuck from  gripper/release)
 	edge -lX f0
@@ -273,18 +273,18 @@ face knit+.2111 #What face is this ??
 face drop+
 	edge -l1 f0
 	edge +y0 f0.5
-	edge +l0 f0
+	edge +l0 x
 	edge -y0 f-0.5
 	code
 		drop f0
 
-#face drop-
-#	edge -l1 f0
-#	edge -y0 f0.5
-#	edge +l0
-#	edge +y0 f-0.5
-#	code
-#		drop f0
+face drop-
+	edge -l1 f0
+	edge -y0 f0.5
+	edge +x
+	edge +y0 f-0.5
+	code
+		drop f0
 
 face tuck-twist+
 	edge -lX f0
@@ -321,3 +321,24 @@ face purl-
 		xfer f0 b0
 		knit - b0 A
 		xfer b0 f0
+
+face seed-stitch+
+	edge -l1 f0
+	edge -l1 f1
+	edge -y1 f1.5 A
+	edge +y1 f1.5 B
+	edge +l1 f1
+	edge +l1 f0
+	edge -y1 f0.5 B
+	edge +y1 f0.5 A
+	code
+		#block1
+		xfer f0 b0
+		knit - f1 A
+		knit - b0 A
+		xfer b0 f0
+		#block2
+		xfer f1 b1
+		knit + f0 B
+		knit + b1 B
+		xfer b1 f1

@@ -29,6 +29,9 @@ simplify-yarns : simplify-yarns.cpp sm.hpp sm.o
 sm.o : sm.cpp sm.hpp
 	$(CPP) -c -o '$@' '$<'
 
+test-code : test-code.cpp sm.hpp sm.o
+	$(CPP) -o '$@' '$<' sm.o
+
 #generic rules for knitout -> smobj -> yarns
 
 %.smobj : %.knitout knitout-to-smobj

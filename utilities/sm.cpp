@@ -781,6 +781,418 @@ void sm::Library::save(std::string const &filename) {
 
 //------------------------------------------------
 
+// Code
+
+sm::Code sm::Code::load(std::string const &filename) {
+	sm::Code code_library;
+	std::ifstream in(filename, std::ios::binary);
+	sm::Code::Face *current = nullptr;
+	std::vector< sm::Code::Face::Instr > *current_instrs = nullptr;
+	{
+
+		std::ifstream in(filename, std::ios::binary);
+		uint32_t line_number = 0;
+		auto line_info = [&]() -> std::string {
+			return "[" + filename + ":" + std::to_string(line_number) + "] ";
+		};
+		std::string line;
+		while (std::getline(in, line)) {
+			++line_number;
+			{ //trim comments
+				auto i = line.find('#');
+				if (i != std::string::npos) line = line.substr(0, i);
+			}
+			std::istringstream str(line);
+			std::string tok;
+			if (!(str >> tok)) continue; //ignore blank lines
+			if (tok == "face") {
+				std::string name;
+				if (!(str >> name)) throw std::runtime_error(line_info() + "Failed to read name field from face line");
+				std::string temp;
+				if (str >> temp) throw std::runtime_error(line_info() + "Trailing junk (" + temp + "...) in face line");
+
+				code_library.faces.emplace_back();
+				code_library.faces.back().name = name;
+				current = &code_library.faces.back();
+				current_instrs = nullptr;
+			} else if (tok == "edge") {
+				if (!current) throw std::runtime_error(line_info() + "edge line without face line");
+				Code::Face::Edge edge;
+				std::string type;
+				if (!(str >> type)) throw std::runtime_error(line_info() + "Failed to read [+-]?type in edge line");
+				if (type[0] == '+') {
+					edge.direction = sm::Code::Face::Edge::Out;
+					edge.type = type.substr(1);
+				} else if (type[0] == '-') {
+					edge.direction = sm::Code::Face::Edge::In;
+					edge.type = type.substr(1);
+				} else {
+					edge.direction = sm::Code::Face::Edge::Any;
+					edge.type = type;
+				}
+				if(edge.type != "x"){
+					char bed;
+					if (!(str >> bed)) throw std::runtime_error(line_info() + "edge without bed");
+					edge.bn.bed = bed;
+					float needle;
+					if (!(str >> needle) && !edge.bn.dontcare()) throw std::runtime_error(line_info() + "edge without needle");
+					if(!edge.bn.dontcare())
+					edge.bn.needle = needle;
+					edge.bn.nudge = (needle - edge.bn.needle)*2;
+					std::string y = "";
+					while (str >> y ){
+						if (!edge.yarns.empty()) edge.yarns += " ";
+						edge.yarns += y;
+					}
+				} else {
+					std::string temp;
+					if( str >> temp ) throw std::runtime_error(line_info() + "Trailing junk (" + temp + "...) with dontcare edge line");
+				}
+				// any trailing junk will be treated as yarn...
+				current->edges.emplace_back(edge);
+			} else if (tok == "code") {
+				if (!current) throw std::runtime_error(line_info() + "code line without face line");
+				current_instrs = &(current->instrs);
+			} else if (tok == "knit") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Code::Face::Instr::Knit;
+				char direction;
+				if(!(str >> direction)){
+					throw std::runtime_error(line_info() + "knit line without direction");
+				}
+				if( direction == '+'){
+					ins.direction = sm::Code::Face::Instr::Right;
+				} else if( direction == '-'){
+					ins.direction = sm::Code::Face::Instr::Left;
+				} else{
+					throw std::runtime_error(line_info() + "knit without +/- direction");
+				}
+				char bed;
+				int needle;
+				if(!(str >> bed)){
+					throw std::runtime_error(line_info() + "knit line without bed");
+				}
+				if(!(str >> needle)){
+					throw std::runtime_error(line_info() + "knit line without needle");
+				}
+				ins.src.bed = bed; ins.src.needle = needle;
+				ins.tgt = ins.src;
+				std::string y;
+				while(str >> y){
+					if(!ins.yarns.empty()) ins.yarns += " ";
+					ins.yarns += y;
+				}
+				//ins.rack = rack_from(ins.src, ins.tgt);
+			} else if (tok == "tuck") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Code::Face::Instr::Tuck;
+				char direction;
+				if(!(str >> direction)){
+					throw std::runtime_error(line_info() + "tuck line without direction");
+				}
+				if( direction == '+'){
+					ins.direction = sm::Code::Face::Instr::Right;
+				} else if( direction == '-'){
+					ins.direction = sm::Code::Face::Instr::Left;
+				} else{
+					throw std::runtime_error(line_info() + "tuck without +/- direction");
+				}
+				char bed; 
+				int needle;
+				if(!(str >> bed)){
+					throw std::runtime_error(line_info() + "tuck line without bed");
+				}
+				if(!(str >> needle)){
+					throw std::runtime_error(line_info() + "tuck line without needle");
+				}
+				ins.tgt.bed = bed; ins.tgt.needle = needle;
+				std::string y;
+				while(str >> y){
+					if(!ins.yarns.empty()) ins.yarns += " ";
+					ins.yarns += y;
+				}
+				//ins.rack = rack_from(ins.src, ins.tgt);
+			} else if (tok == "miss") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Code::Face::Instr::Miss;
+				char direction;
+				if(!(str >> direction)){
+					throw std::runtime_error(line_info() + "miss line without direction");
+				}
+				if( direction == '+'){
+					ins.direction = sm::Code::Face::Instr::Right;
+				} else if( direction == '-'){
+					ins.direction = sm::Code::Face::Instr::Left;
+				} else{
+					throw std::runtime_error(line_info() + "miss without +/- direction");
+				}
+				char bed;
+				int needle;
+				if(!(str >> bed)){
+					throw std::runtime_error(line_info() + "miss line without bed");
+				}
+				if(!(str >> needle)){
+					throw std::runtime_error(line_info() + "miss line without needle");
+				}
+				ins.src.bed = bed; ins.src.needle = needle;
+				ins.tgt = ins.src;
+				std::string y;
+				while(str >> y){
+					if(!ins.yarns.empty()) ins.yarns += " ";
+					ins.yarns += y;
+				}
+				//ins.rack = rack_from(ins.src, ins.tgt);
+			} else if (tok == "xfer") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Code::Face::Instr::Xfer;
+				char from_bed;
+				int from_needle;
+				if(!(str >> from_bed)){
+					throw std::runtime_error(line_info() + "xfer line without (from)bed");
+				}
+				if(!(str >> from_needle)){
+					throw std::runtime_error(line_info() + "xfer line without (from)needle");
+				}
+				ins.src.bed = from_bed; ins.src.needle = from_needle;
+				char to_bed;
+				int to_needle;
+				if(!(str >> to_bed)){
+					throw std::runtime_error(line_info() + "xfer line without (to)bed");
+				}
+				if(!(str >> to_needle)){
+					throw std::runtime_error(line_info() + "xfer line without (to)needle");
+				}
+				ins.tgt.bed = to_bed;
+				ins.tgt.needle = to_needle;
+				//ins.rack = rack_from(ins.src, ins.tgt);
+				std::string temp;
+				if (str >> temp) throw std::runtime_error(line_info() + "Trailing junk (" + temp + "...) in xfer line");
+			} else if (tok == "split") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Code::Face::Instr::Split;
+				char direction;
+				if(!(str >> direction)){
+					throw std::runtime_error(line_info() + "split line without direction");
+				}
+				if( direction == '+'){
+					ins.direction = sm::Code::Face::Instr::Right;
+				} else if( direction == '-'){
+					ins.direction = sm::Code::Face::Instr::Left;
+				} else{
+					throw std::runtime_error(line_info() + "split without +/- direction");
+				}
+				char bed;
+				int needle;
+				if(!(str >> bed)){
+					throw std::runtime_error(line_info() + "split line without bed");
+				}
+				if(!(str >> needle)){
+					throw std::runtime_error(line_info() + "split line without needle");
+				}
+				ins.src.bed = bed; ins.src.needle = needle;
+
+				char to_bed;
+				int to_needle;
+				if(!(str >> to_bed)) throw std::runtime_error(line_info() + "split without target bed");
+				if(!(str >> to_needle))  throw std::runtime_error(line_info() + "split without target needle");
+				ins.tgt.bed = to_bed; ins.tgt.needle = to_needle;
+				ins.tgt2 = ins.src;
+				std::string y;
+				while(str >> y){
+					if(!ins.yarns.empty()) ins.yarns += " ";
+					ins.yarns += y;
+				}
+				//ins.rack = rack_from(ins.src, ins.tgt);
+			} else if (tok == "drop"){
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Code::Face::Instr::Drop;
+				char bed; int needle;
+
+				if(!(str >> bed)) throw std::runtime_error(line_info() + "drop without bed");
+				if(!(str >> needle))  throw std::runtime_error(line_info() + "drop without needle");
+				ins.src.bed = bed;
+				ins.src.needle = needle;
+				std::string temp;
+				if (str >> temp) throw std::runtime_error(line_info() + "Trailing junk (" + temp + "...) in drop line");
+			} else if (tok == "in") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Code::Face::Instr::In;
+
+				std::string y;
+				while(str >> y){
+					if(!ins.yarns.empty()) ins.yarns += " ";
+					ins.yarns += y;
+				}
+			}  else if (tok == "out") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Code::Face::Instr::Out;
+
+				std::string y;
+				while(str >> y){
+					if(!ins.yarns.empty()) ins.yarns += " ";
+					ins.yarns += y;
+				}
+			}
+			else {
+				throw std::runtime_error(line_info() + "Unrecognized line-start token '" + tok + "'");
+			}
+		}
+
+		std::map< std::string, Code::Face const * > keys;
+
+		for (auto &face : code_library.faces) {
+			auto ret = keys.emplace(face.key(), &face);
+			if (!ret.second) throw std::runtime_error("Duplicate face signature in code library: '" + ret.first->first + "'");
+		}
+
+		// verify that instructions are valid (does this need to ssa?)
+		// todo: also verify yarn positions
+		for (auto const &face : code_library.faces){
+			std::set<BedNeedle> temporaries, incoming, outgoing;
+			std::set<std::string> carriers; // todo split into incoming and outgoing carriers
+			for (auto const &edge : face.edges){
+				if(edge.direction == Code::Face::Edge::In && edge.type[0] == 'l' && !edge.bn.dontcare()){
+					incoming.insert(edge.bn);
+				}
+				else if(edge.direction == Code::Face::Edge::Out &&  edge.type[0] == 'l' && !edge.bn.dontcare()){
+					outgoing.insert(edge.bn);
+				}
+				if(!edge.yarns.empty()) {
+					carriers.insert(edge.yarns);
+					// also include split up carriers
+					std::istringstream str(edge.yarns);
+					std::string yarn;
+					while(str >> yarn) {
+						carriers.insert(yarn);
+					}
+				}
+			}
+
+			for(auto const &ins : face.instrs){
+				if(!ins.src.dontcare() && !(incoming.count(ins.src) || temporaries.count(ins.src))){ 
+					throw std::runtime_error("src bed-needle " + ins.src.to_string() + " is not an input resource:" + face.key());
+				}
+				temporaries.erase(ins.src);
+				if(!ins.tgt.dontcare()) {
+					temporaries.insert(ins.tgt);
+				}
+				if(!ins.tgt2.dontcare()) {
+					temporaries.insert(ins.tgt2);
+				}
+				if(!ins.yarns.empty()){
+					std::istringstream str(ins.yarns);
+					std::string yarn;
+					while (str >> yarn){
+						if (!carriers.count(yarn)) throw std::runtime_error("yarn [" + yarn + " of " + ins.yarns + "] not specified on edge label by code:" + face.key());
+					}
+				}
+			}
+
+			for(auto bn : outgoing){
+				if(!temporaries.count(bn))
+					throw std::runtime_error("tgt bed-needle [" + bn.to_string() + "] is not produced by code:" + face.key());
+				temporaries.erase(bn);
+			}
+
+
+			if(!temporaries.empty()){
+				std::string err = "";
+				for(auto bn : temporaries) err += " " + bn.to_string();
+				throw std::runtime_error("Temporary locations [ " + err + " ] are not cleared in " + face.key()); 
+			}
+
+
+		}
+	}
+	return code_library;
+}
+
+void sm::Code::save(std::string const &filename) {
+	std::ofstream out(filename);
+	for(auto const &face : faces){
+		out << "face " << face.name << '\n';
+		for(auto const &edge : face.edges) {
+			out << "\tedge ";
+			if (edge.direction == sm::Code::Face::Edge::In) out << "-";
+			else if (edge.direction == sm::Code::Face::Edge::Out) out << "+";
+			out << edge.type << ' ';
+			out << edge.bn.bed <<  (edge.bn.needle + edge.bn.nudge * 0.5) << ' ';
+			out << edge.yarns;
+			out << '\n';
+		}
+		out << "\tcode \n";
+		for(auto const &instr : face.instrs) {
+			out <<"\t\t";
+			switch(instr.op){
+				case sm::Code::Face::Instr::Knit:
+					out <<"knit ";
+					out << (char)instr.direction << ' ';
+					out << instr.src.bed << instr.src.needle << ' ';
+					out << instr.yarns << '\n';
+					break;
+				case sm::Code::Face::Instr::Tuck:
+					out <<"tuck ";
+					out << (char)instr.direction << ' ';
+					out << instr.src.bed << instr.src.needle << ' ';
+					out << instr.yarns << '\n';
+					break;
+				case sm::Code::Face::Instr::Miss:
+					out <<"miss ";
+					out << (char)instr.direction << ' ';
+					out << instr.src.bed << instr.src.needle << ' ';
+					out << instr.yarns << '\n';
+					break;
+				case sm::Code::Face::Instr::Xfer:
+					out <<"xfer ";
+					out << instr.src.bed << instr.src.needle << ' ';
+					out << instr.tgt.bed << instr.tgt.needle << ' ';
+					out << '\n';
+					break;
+				case sm::Code::Face::Instr::Split:
+					out <<"split ";
+					out <<(char)instr.direction << ' ';
+					out << instr.src.bed << instr.src.needle << ' ';
+					out << instr.tgt.bed << instr.tgt.needle << ' ';
+					out << instr.yarns << '\n';
+					break;
+				case sm::Code::Face::Instr::Drop:
+					out <<"drop ";
+					out << instr.src.bed << instr.src.needle << '\n';
+					break;
+				case sm::Code::Face::Instr::In:
+					out <<"in ";
+					out << instr.yarns << '\n';
+					break;
+				case sm::Code::Face::Instr::Out:
+					out <<"out ";
+					out << instr.yarns << '\n';
+					break;
+				default:
+					assert(false && "unknown knitout operation");
+			}
+		}
+		out << '\n';
+	}
+}
+
+//------------------------------------------------
+
 
 namespace {
 	//internal structures used for yarns file format:
@@ -2111,4 +2523,17 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 		}
 	}
 
+}
+
+//-----------------------------------
+
+bool sm::verify_hinted_schedule(sm::Mesh const &mesh, sm::Library const &library, sm::Code const &code) {
+
+	// is the mesh fully hinted ?
+	// 	edge location for every valid edge type
+	// 	in trace sequence, all edges are hinted (with consistent per-face translation)
+	// 	all connections have xfer hints (what should they be, though?)
+	// 	execution order exists for all faces that have split execution
+	assert(false && "TODO IMPLEMENT");
+	return false;
 }

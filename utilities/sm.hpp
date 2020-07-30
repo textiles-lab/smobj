@@ -11,6 +11,7 @@
  * Data structures for dealing with common smobj-related tasks:
  * sm::Mesh represents the contents of '.smobj' files
  * sm::Library represents a face library
+ * sm::Code represents a face program library
  */
 
 namespace sm {
@@ -49,6 +50,7 @@ struct Mesh {
 		FaceEdge fe;               // target edge
 		std::optional<char> bed;   // front('f'), back('b'), anything else maps identically to either 'f' or 'b'
 		std::optional<int> needle; // would floating point values be nice for hints?
+		int8_t nudge = 0;		   // nudge to the left(-1), right(+1), or not (0)
 	};
 	std::vector< Hint > location_hints; // can be an unordered_map, but hints could be multiple?
 
@@ -143,6 +145,86 @@ struct Library {
 	std::vector< Face > faces;
 };
 
+//The contents of an '.code' face library are stored as a 'Code':
+struct Code {
+	//----- db management: load/save to a file -----
+	static Code load(std::string const &filename); //throws on error
+	void save(std::string const &filename);
+
+	// TODO: hoist to sm, use the same for hints
+	struct BedNeedle{
+		char bed = 'x'; // todo enum 'f','b'(hooks) 'F','B'(sliders) 'x' (dontcare)
+		int needle = 0;
+		int8_t nudge = 0; // location = needle + 0.5 * nudge
+		BedNeedle(){}
+		BedNeedle (char b, int n) {
+			bed = b; needle = n;
+		}
+		BedNeedle (char b, float n) {
+			bed = b; needle = n;
+			nudge = (n - needle)*2;
+		}
+		bool operator< (const BedNeedle& rhs) const {
+			return std::tie(bed, needle) < std::tie(rhs.bed, rhs.needle);
+		}
+		std::string to_string() const{
+			return bed + std::to_string(needle);
+		}
+		bool dontcare() const{
+			return bed == 'x';
+		}
+	};
+
+	//----- code per faces -----
+	struct Face {
+		std::string name; //descriptive name for type
+
+		struct Edge {
+			enum Direction : char {
+				In = '-', Out = '+', Any = '*'
+			} direction = Any;
+			std::string type;
+			BedNeedle bn;
+			std::string yarns=""; //string (z-index?) 
+		};
+
+		struct Instr{
+			enum Operation : char {
+				In = 'i', Out = 'o', Knit = 'k', Split = 's', Xfer = 'x', Miss = 'm',  Tuck = 't', Drop = 'd', Unknown = 'u' 
+			} op = Unknown;
+			float rack = 0.f;
+			enum Direction : char {
+				Left = '-', Right = '+', None = '*'
+			} direction = None;
+			BedNeedle src; // location consumed (n/a: tuck)
+			BedNeedle tgt;   // location produced (n/a: drop)
+			BedNeedle tgt2; // aux produced (only for split)
+			std::string yarns;
+		};
+		//face, with vertices in CCW order:
+		std::vector< Edge > edges;
+		//Instructions
+		std::vector< Instr > instrs;
+
+		//TODO: derive face code for opposite bed variant, opp direction variant
+		//key() produces the corresponding .smobj library ('L' line) signature for the face:
+		std::string key() const {
+			std::string ret = name;
+			for (auto const &e : edges) {
+				ret += ' ';
+				if (e.direction == Edge::In) ret += '-';
+				else if (e.direction == Edge::Out) ret += '+';
+				ret += e.type;
+			}
+			return ret;
+		}
+	};
+	std::vector< Face > faces;
+};
+
+
+
+
 //The contents of a '.yarns' file are represented as a 'Yarns' structure:
 struct Yarns {
 
@@ -177,6 +259,9 @@ struct Yarns {
 
 //------ helper functions ------
 
+
+// eventually: verify hints in mesh
+bool verify_hinted_schedule(Mesh const &mesh, Library const &library, Code const &code);
 
 //build from a mesh and library, connecting yarns over edges:
 // will warn on inconsistent edge types/directions, and missing face types
