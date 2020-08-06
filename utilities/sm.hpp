@@ -37,6 +37,9 @@ struct Mesh {
 		uint32_t face = -1U;
 		uint32_t edge = -1U;
 		bool operator==(FaceEdge const &o) const { return (face == o.face && edge == o.edge); }
+		bool operator< (const FaceEdge& rhs) const {
+			return std::tie(face, edge) < std::tie(rhs.face, rhs.edge);
+		}
 	};
 	struct Connection {
 		FaceEdge a,b;
@@ -77,6 +80,9 @@ struct Mesh {
 
 	//write an ".smobj" (precondition: mesh is valid)
 	void save(std::string const &filename) const;
+	
+	//write a text version of the instructions
+	void save_instructions(std::string const &filename) const;
 
 	//rip mesh : associate every face with its own vertex
 	void rip(uint32_t from = 0);

@@ -313,6 +313,31 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 	return mesh;
 }
 
+void sm::Mesh::save_instructions(std::string const &filename) const{
+	// TODO follow connections in some sense ( currently follows face sequence)
+	std::ofstream out(filename, std::ios::binary);
+	std::string prev_face = "--- pattern start ---- (" + std::to_string(faces.size()) + " stitch-faces )";
+	uint32_t count = 1;
+	for (auto const &f : faces) {
+		if(f.type < this->library.size()){
+			if(this->library[f.type] == prev_face){
+				count++;
+			}
+			else{
+				out << prev_face << " ... " << count << " times. \n";
+				prev_face = this->library[f.type];
+				count = 1;
+			}
+		}
+		else{
+			// shouldn't happen?
+			throw std::runtime_error("Face without type in library");
+		}
+	}
+	out << prev_face << " ...  " << count << " times.\n";
+	out << "---- pattern end ----\n";
+}
+
 void sm::Mesh::save(std::string const &filename) const {
 	std::ofstream out(filename, std::ios::binary);
 
@@ -2546,12 +2571,75 @@ bool sm::verify_hinted_schedule(sm::Mesh const &mesh, sm::Library const &library
 	// 	in trace sequence, all edges are hinted (with consistent per-face translation)
 	// 	all connections have xfer hints (what should they be, though?)
 	// 	execution order exists for all faces that have split execution
-	assert(false && "TODO IMPLEMENT");
-	/*
-	std::cout << "Hints: " << std::endl;
-	for(auto h : mesh.location_hints){
-		std::cout << h.fe.face << "/" << h.fe.edge << " @ " << (h.bed ? *h.bed : 'x') << " " << (h.needle ? *h.needle : -1) << std::endl;
-	}*/
 
-	return false;
+	std::map<sm::Mesh::FaceEdge, sm::Code::BedNeedle > hints;
+	std::map< std::pair<uint32_t, std::string> , sm::Code::BedNeedle> templates;
+	std::map< std::pair<uint32_t, std::string> , std::string> edge_types;
+	std::set< std::string > code_names;
+	std::cout << "hints " << hints.size() << std::endl;
+	std::cout << "templates " << templates.size() << std::endl;
+	std::cout << "code_names " << code_names.size() << std::endl;
+	
+	for(auto  &h : mesh.location_hints){
+		if(!h.bed || !h.needle) continue;
+		hints[h.fe] = sm::Code::BedNeedle(*h.bed, *h.needle);
+	}
+	
+	for(auto const &f : code.faces){
+		for(uint32_t i = 0; i < f.edges.size(); ++i){
+			templates[std::make_pair(i,f.key())] = f.edges[i].bn;
+			edge_types[std::make_pair(i,f.key())] = f.edges[i].type;
+			code_names.insert(f.key());
+		}
+	}
+	for(auto const &f : mesh.faces){
+		if (!code_names.count(mesh.library[f.type])){
+			std::cout << "Face " << &f - &mesh.faces[0] << " has a type signature " << mesh.library[f.type] << " that doesn't exist in the code library. " << std::endl;
+			return false;
+		}
+	}
+	auto print_details = [&](uint32_t fidx){
+		sm::Mesh::FaceEdge fe;
+		fe.face = fidx; 
+		auto f = mesh.faces[fidx];
+		std::cout << "Face " << fidx  << " of size " << f.size()  << std::endl;
+		for(uint32_t i = 0; i < f.size(); ++i){
+			fe.edge = i;
+			if(hints.count(fe)){
+				auto hint_value = hints[fe];
+				auto template_value = templates[std::make_pair(i,mesh.library[f.type])];
+				auto template_type = edge_types[std::make_pair(i,mesh.library[f.type])];
+				std::cout << "\t" << i <<" : hint:"<< hint_value.to_string() << ", template:" << template_value.to_string() << " type " << template_type<<  std::endl;
+			}
+			else{
+				auto template_value = templates[std::make_pair(i,mesh.library[f.type])];
+				auto template_type = edge_types[std::make_pair(i,mesh.library[f.type])];
+				std::cout << "\t"<<i<<": hint:xx" << ", template:" << template_value.to_string() << " type " << template_type << std::endl;
+			}
+		}
+	};
+	// revising for front and back..
+	for(auto const &f : mesh.faces){
+		uint32_t fi = &f - &mesh.faces[0];
+		int translation = 0;
+		bool found = false;
+		for(uint32_t i = 0; i < f.size(); ++i){
+			sm::Mesh::FaceEdge fe;
+			fe.face = fi; fe.edge = i;
+			if(hints.count(fe)){
+				auto hint_value = hints[fe];
+				auto template_value = templates[std::make_pair(i,mesh.library[f.type])];
+				if( template_value.bed == hint_value.bed ){
+					if( found  && translation != std::abs(hint_value.needle - template_value.needle)){
+						std::cout << "Hints for face " + std::to_string(fi) + " do not match template values for " + mesh.library[f.type] << std::endl;
+						print_details(fi);
+						break;
+					}
+					found = true;
+					translation = std::abs(hint_value.needle - template_value.needle);
+				}
+			}
+		}
+	}
+	return true;
 }
