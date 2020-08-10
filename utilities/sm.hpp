@@ -15,7 +15,7 @@
  */
 
 namespace sm {
-
+struct Library;
 //The contents of a .smobj can be loaded as a "Mesh":
 struct Mesh {
 	//Library signatures ('L' lines):
@@ -81,8 +81,8 @@ struct Mesh {
 	//write an ".smobj" (precondition: mesh is valid)
 	void save(std::string const &filename) const;
 	
-	//write a text version of the instructions
-	void save_instructions(std::string const &filename) const;
+	//write a text version of the instructions, also needs library to keep track of edge types..
+	void save_instructions(std::string const &filename, sm::Library const &library) const;
 
 	//rip mesh : associate every face with its own vertex
 	void rip(uint32_t from = 0);
@@ -265,6 +265,7 @@ struct Yarns {
 
 //------ helper functions ------
 
+sm::Mesh order_faces(sm::Mesh const  &mesh,  sm::Library const  &library);
 
 // eventually: verify hints in mesh
 bool verify_hinted_schedule(Mesh const &mesh, Library const &library, Code const &code);

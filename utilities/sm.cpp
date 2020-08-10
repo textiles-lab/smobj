@@ -313,20 +313,61 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 	return mesh;
 }
 
-void sm::Mesh::save_instructions(std::string const &filename) const{
-	// TODO follow connections in some sense ( currently follows face sequence)
+void sm::Mesh::save_instructions(std::string const &filename, sm::Library const &face_library) const{
+	// requires reorder_faces_in_construction_order() <-- traces
 	std::ofstream out(filename, std::ios::binary);
+	//slow but for now
+	auto out_loops = [&](sm::Mesh::Face f)->uint32_t{
+		for(auto l : face_library.faces){
+			if(l.key() == library[f.type]){
+				uint32_t c = 0;
+				for(auto e : l.edges){
+					// yarn edges are getting over counted, but they will get cancelled:
+					if(e.direction != sm::Library::Face::Edge::In && e.type != "x" ){
+						c++;
+					}
+				}
+				return c;
+			}
+		}
+		return 1;
+	};
+	auto in_loops = [&](sm::Mesh::Face f)->uint32_t{
+		for(auto l : face_library.faces){
+			if(l.key() == library[f.type]){
+				uint32_t c = 0;
+				for(auto e : l.edges){
+					if(e.direction != sm::Library::Face::Edge::Out && e.type != "x" ){
+						c++;
+					}
+				}
+				return c;
+			}
+		}
+		return 1;
+	};
 	std::string prev_face = "--- pattern start ---- (" + std::to_string(faces.size()) + " stitch-faces )";
 	uint32_t count = 1;
+	int active_loops = 0;
+	// requires : faces appear in construction sequence
+	uint32_t STEP  = 10;
 	for (auto const &f : faces) {
+		if(active_loops < 0) std::cout << "active_loops:" << active_loops << std::endl;
+		assert(active_loops >= 0);
 		if(f.type < this->library.size()){
-			if(this->library[f.type] == prev_face){
+			// go through all connections that have this face, adding the +edges, removing the -edges
+			// slow, but okay 
+			active_loops += -in_loops(f) + out_loops(f);
+			if(this->library[f.type] == prev_face && (&f-&faces[0])%STEP != 0){
 				count++;
 			}
 			else{
 				out << prev_face << " ... " << count << " times. \n";
 				prev_face = this->library[f.type];
 				count = 1;
+				if( f.size() != 4 or (&f - &faces[0])%STEP == 0 ){
+					out << "\t\tactive loops: " << active_loops << "\n";
+				}
 			}
 		}
 		else{
@@ -336,6 +377,8 @@ void sm::Mesh::save_instructions(std::string const &filename) const{
 	}
 	out << prev_face << " ...  " << count << " times.\n";
 	out << "---- pattern end ----\n";
+	std::cout << "active_loops " << active_loops << std::endl;
+	assert(active_loops == 0);
 }
 
 void sm::Mesh::save(std::string const &filename) const {
@@ -2642,4 +2685,84 @@ bool sm::verify_hinted_schedule(sm::Mesh const &mesh, sm::Library const &library
 		}
 	}
 	return true;
+}
+
+
+// partial order of faces
+// returns true if successfully ordered
+// maybe should return a reordered Mesh..
+// else false
+
+sm::Mesh sm::order_faces(sm::Mesh const &mesh, sm::Library const &library){
+	sm::Mesh out = mesh;
+	std::map<std::string, uint32_t> name_to_lib_idx;
+	std::vector<uint32_t> order;
+	for(auto const &l : library.faces){
+		name_to_lib_idx[l.key()] = &l-&library.faces[0];
+	}
+	uint32_t iterations = 0;
+	std::unordered_set<uint32_t> completed_faces;
+	// Build up candidate faces instead of this ridiculousness...but works
+	while(true){
+		for(auto const &f : mesh.faces){
+			uint32_t fid = &f - &mesh.faces[0];
+			if(completed_faces.count(fid)) continue;
+			if(name_to_lib_idx.count(mesh.library[f.type]) == 0) {
+				// probably not a throw?
+				std::cout << "Face " << fid << " does not have a valid library name " << mesh.library[f.type] << std::endl;
+				break; 
+			}
+			auto l = library.faces[name_to_lib_idx[mesh.library[f.type]]]; // library face
+			// does it have an "in", is the "in" connection done?
+			bool ins_available = true;
+			for(auto &e : l.edges){
+				auto eid = &e - &l.edges[0];
+				if(e.direction == sm::Library::Face::Edge::In){
+					sm::Mesh::FaceEdge fe; fe.face = fid; fe.edge = eid;
+					for(auto c : mesh.connections){
+						if(c.a == fe){
+							if(!completed_faces.count(c.b.face)) ins_available = false;
+						}
+						else if(c.b == fe){
+							if(!completed_faces.count(c.a.face)) ins_available = false;
+						}
+					}
+				}
+			}
+			if (ins_available){
+				completed_faces.insert(&f - &mesh.faces[0]);
+				order.emplace_back(&f - &mesh.faces[0]);
+			}
+		}
+		if(completed_faces.size() == mesh.faces.size()) break;
+		++iterations;
+		if(iterations > mesh.faces.size()) break;
+	}
+	//DEBUG
+	if(0){
+		std::cout << "ORDER:"; for(auto o : order) std::cout << o << " "; std::cout << std::endl; // DEBUG just print this out
+		if(mesh.faces.size() == completed_faces.size()){
+		}
+		else{
+			std::cout <<"WARNING: faces could NOT be ordered!" << std::endl;
+		}
+	}
+	if(completed_faces.size() == mesh.faces.size()){
+		for(uint32_t i = 0; i < mesh.faces.size(); ++i){
+			out.faces[i] = mesh.faces[order[i]];
+		}
+		for(auto &c : out.connections){
+			c.a.face = std::distance(order.begin(), std::find(order.begin(), order.end(), c.a.face));
+			c.b.face = std::distance(order.begin(), std::find(order.begin(), order.end(), c.b.face));
+		}
+		for(auto &h : out.location_hints){
+			h.fe.face = std::distance(order.begin(), std::find(order.begin(), order.end(), h.fe.face));
+		}
+		for(auto &c : out.checkpoints){
+			if(c.face != -1U)
+				c.face = std::distance(order.begin(), std::find(order.begin(), order.end(), c.face));
+		}
+	}
+	// A mesh where faces are correctly ordered if ordering was possible, else original..
+	return out;
 }
