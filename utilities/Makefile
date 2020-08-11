@@ -29,8 +29,11 @@ simplify-yarns : simplify-yarns.cpp sm.hpp sm.o
 sm.o : sm.cpp sm.hpp
 	$(CPP) -c -o '$@' '$<'
 
-test-code : test-code.cpp sm.hpp sm.o
-	$(CPP) -o '$@' '$<' sm.o
+hinters.o : hinters.cpp hinters.hpp
+	$(CPP) -c -o '$@' '$<'
+
+test-code : test-code.cpp hinters.hpp sm.hpp sm.o hinters.o
+	$(CPP) -o '$@' '$<'  hinters.o sm.o
 
 #generic rules for knitout -> smobj -> yarns
 

@@ -1,5 +1,6 @@
 #include<iostream>
 #include "sm.hpp"
+#include "hinters.hpp"
 
 int main(int argc, char *argv[]){
 	if(argc < 5){
@@ -25,6 +26,9 @@ int main(int argc, char *argv[]){
 	//std::cout << "verifier result " << res << std::endl;
 
 	sm::Mesh out = sm::order_faces(mesh, lib);
+
+	out = sm::hint_shortrow_only_patch(out, lib, code); // <-- add hints 
+
 	std::string knitout = sm::knitout(out, code);
 
 	std::cout << knitout << std::endl;
