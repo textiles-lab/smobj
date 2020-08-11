@@ -314,7 +314,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 }
 
 void sm::Mesh::save_instructions(std::string const &filename, sm::Library const &face_library) const{
-	// requires reorder_faces_in_construction_order() <-- traces
+		
 	std::ofstream out(filename, std::ios::binary);
 	//slow but for now
 	auto out_loops = [&](sm::Mesh::Face f)->uint32_t{
@@ -323,7 +323,7 @@ void sm::Mesh::save_instructions(std::string const &filename, sm::Library const 
 				uint32_t c = 0;
 				for(auto e : l.edges){
 					// yarn edges are getting over counted, but they will get cancelled:
-					if(e.direction != sm::Library::Face::Edge::In && e.type != "x" ){
+					if(e.direction == sm::Library::Face::Edge::Out ){
 						c++;
 					}
 				}
@@ -337,7 +337,7 @@ void sm::Mesh::save_instructions(std::string const &filename, sm::Library const 
 			if(l.key() == library[f.type]){
 				uint32_t c = 0;
 				for(auto e : l.edges){
-					if(e.direction != sm::Library::Face::Edge::Out && e.type != "x" ){
+					if(e.direction == sm::Library::Face::Edge::In){
 						c++;
 					}
 				}
@@ -352,8 +352,6 @@ void sm::Mesh::save_instructions(std::string const &filename, sm::Library const 
 	// requires : faces appear in construction sequence
 	uint32_t STEP  = 10;
 	for (auto const &f : faces) {
-		if(active_loops < 0) std::cout << "active_loops:" << active_loops << std::endl;
-		assert(active_loops >= 0);
 		if(f.type < this->library.size()){
 			// go through all connections that have this face, adding the +edges, removing the -edges
 			// slow, but okay 
@@ -370,15 +368,10 @@ void sm::Mesh::save_instructions(std::string const &filename, sm::Library const 
 				}
 			}
 		}
-		else{
-			// shouldn't happen?
-			throw std::runtime_error("Face without type in library");
-		}
 	}
 	out << prev_face << " ...  " << count << " times.\n";
 	out << "---- pattern end ----\n";
 	std::cout << "active_loops " << active_loops << std::endl;
-	assert(active_loops == 0);
 }
 
 void sm::Mesh::save(std::string const &filename) const {
@@ -1213,6 +1206,7 @@ void sm::Code::save(std::string const &filename) {
 			out << edge.yarns;
 			out << '\n';
 		}
+		// don't use instr.knitout_string() here, it uses translation and  also inserts racking
 		out << "\tcode \n";
 		for(auto const &instr : face.instrs) {
 			out <<"\t\t";
@@ -2765,4 +2759,43 @@ sm::Mesh sm::order_faces(sm::Mesh const &mesh, sm::Library const &library){
 	}
 	// A mesh where faces are correctly ordered if ordering was possible, else original..
 	return out;
+}
+
+
+// knitout from faces
+// assumes faces have been ordered
+// assumes hinting is complete and valid (does not check for validity)
+// assumes code can be run as-is without splitting (might need to be updated)
+std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
+
+	std::string knitout_string = "";
+
+	{
+		// knitout header
+		knitout_string += ";!knitout-2\n";
+		knitout_string += ";auto-generated knitout code from smobj\n";
+		knitout_string += ";;Carriers: 1 2 3 4 5 6 7 8 9 10\n";
+		knitout_string += ";;Machine: SWG\n";
+	}
+
+	std::map<std::string, uint32_t> name_to_code_idx;
+	for(auto const &c : code.faces){
+		name_to_code_idx[c.key()] = &c - &code.faces[0];
+	}
+
+	for(auto &f : mesh.faces){
+		if(!name_to_code_idx.count(mesh.library[f.type])){
+			std::cerr << "Code does not exist for face signature " << mesh.library[f.type] << std::endl; //eventually throw
+			return knitout_string;
+		}
+		auto const &l = code.faces[name_to_code_idx[mesh.library[f.type]]];
+		int translate_by = 0; // todo have a map assuming hints are complete
+		{
+			// TODO: use hints to identify offset
+		}
+		// what about split execution of code ? 
+		knitout_string += l.knitout_string(translate_by);
+	}
+
+	return knitout_string;
 }

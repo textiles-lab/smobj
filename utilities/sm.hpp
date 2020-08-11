@@ -198,7 +198,6 @@ struct Code {
 			enum Operation : char {
 				In = 'i', Out = 'o', Knit = 'k', Split = 's', Xfer = 'x', Miss = 'm',  Tuck = 't', Drop = 'd', Unknown = 'u' 
 			} op = Unknown;
-			float rack = 0.f;
 			enum Direction : char {
 				Left = '-', Right = '+', None = '*'
 			} direction = None;
@@ -206,6 +205,16 @@ struct Code {
 			BedNeedle tgt;   // location produced (n/a: drop)
 			BedNeedle tgt2; // aux produced (only for split)
 			std::string yarns;
+			int rack() const {
+				//TODO enum this
+				if(src.bed == 'b' && tgt.bed == 'f'){
+					return src.needle - tgt.needle;
+				}
+				else if(tgt.bed == 'b' && src.bed == 'f'){
+					return tgt.needle - src.needle;
+				}
+				return 0;
+			}
 		};
 		//face, with vertices in CCW order:
 		std::vector< Edge > edges;
@@ -222,6 +231,70 @@ struct Code {
 				else if (e.direction == Edge::Out) ret += '+';
 				ret += e.type;
 			}
+			return ret;
+		}
+
+		std::string knitout_string(int translate_to = 0) const {
+			std::string ret = "";
+			// concatenate all instructions
+			for(auto i : instrs){
+				i.src.needle += translate_to;
+				i.tgt.needle += translate_to;
+				i.tgt2.needle += translate_to;
+				switch(i.op){
+					case Instr::In :
+						ret += "in ";
+						ret += i.yarns;
+					break;
+					case Instr::Out :
+						ret += "out ";
+						ret += i.yarns;
+					break;
+					case Instr::Knit:
+						ret += "knit ";
+						ret += (char)i.direction; ret += " ";
+						ret += i.src.to_string() +  " ";
+						ret += i.yarns;
+					break;
+					case Instr::Tuck:
+						ret += "tuck ";
+						ret += (char)i.direction; ret += " ";
+						ret += i.src.to_string() + " ";
+						ret += i.yarns;
+						break;
+					case Instr::Miss:
+						ret += "miss ";
+						ret += (char)i.direction; ret += " ";
+						ret += i.src.to_string() + " ";
+						ret += i.yarns;
+						break;
+					case Instr::Xfer:
+						// insert rack, here 
+						ret += "rack " + std::to_string(i.rack()) + "\n";
+						ret += "xfer ";
+						ret += i.src.to_string() + " ";
+						ret += i.tgt.to_string() + " ";
+						break;
+					case Instr::Split:
+						// insert rack here
+						ret += "rack " + std::to_string(i.rack()) + "\n";
+						ret += "split ";
+						ret += (char)i.direction; ret += " ";
+						ret += i.src.to_string() + " ";
+						ret += i.tgt.to_string() + " ";
+						ret += i.yarns;
+						break;
+					case Instr::Drop:
+						ret += "drop ";
+						ret += i.src.to_string();
+						break;
+					default:
+						assert(false && "unknown instruction");
+
+				}
+				ret += "\n";
+			}
+
 			return ret;
 		}
 	};
@@ -264,8 +337,11 @@ struct Yarns {
 };
 
 //------ helper functions ------
-
+// order the mesh faces in a partial order that follows dependencies using the face library
 sm::Mesh order_faces(sm::Mesh const  &mesh,  sm::Library const  &library);
+
+// generate knitout code from an ordered set of faces using the code library
+std::string knitout(sm::Mesh const &mesh, sm::Code const &code);
 
 // eventually: verify hints in mesh
 bool verify_hinted_schedule(Mesh const &mesh, Library const &library, Code const &code);
