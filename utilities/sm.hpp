@@ -152,6 +152,7 @@ struct Library {
 };
 
 //The contents of an '.code' face library are stored as a 'Code':
+// TODO: This makes sm very knitting specific, should this be structured differently?
 struct Code {
 	//----- db management: load/save to a file -----
 	static Code load(std::string const &filename); //throws on error
