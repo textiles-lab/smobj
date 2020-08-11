@@ -365,7 +365,7 @@ void sm::Mesh::save_instructions(std::string const &filename, sm::Library const 
 				out << prev_face << " ... " << count << " times. \n";
 				prev_face = this->library[f.type];
 				count = 1;
-				if( f.size() != 4 or (&f - &faces[0])%STEP == 0 ){
+				if( f.size() != 4 || (&f - &faces[0])%STEP == 0 ){
 					out << "\t\tactive loops: " << active_loops << "\n";
 				}
 			}
