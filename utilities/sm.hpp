@@ -51,8 +51,8 @@ struct Mesh {
 
 	struct Hint {
 		FaceEdge fe;               // target edge
-		std::optional<char> bed;   // front('f'), back('b'), anything else maps identically to either 'f' or 'b'
-		std::optional<int> needle; // would floating point values be nice for hints?
+		std::optional<char> bed = std::nullopt;   // front('f'), back('b'), anything else maps identically to either 'f' or 'b'
+		std::optional<int> needle = std::nullopt; // would floating point values be nice for hints?
 		int8_t nudge = 0;		   // nudge to the left(-1), right(+1), or not (0)
 	};
 	std::vector< Hint > location_hints; // can be an unordered_map, but hints could be multiple?
