@@ -2809,7 +2809,15 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 				for(auto h : mesh.location_hints){
 					if(h.fe.face == &f - &mesh.faces[0]  && h.fe.edge == &e - &l.edges[0]){
 						if(h.needle){
+//https://stackoverflow.com/questions/21755206/how-to-get-around-gcc-void-b-4-may-be-used-uninitialized-in-this-funct
+#ifdef __linux__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 							translate_by += (h.needle ? *h.needle : 0);
+#pragma GCC diagnostic pop
+#else
+							translate_by += (h.needle ? *h.needle : 0);
+#endif
 							found_hint = true;
 
 						}
