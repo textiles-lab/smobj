@@ -3,8 +3,8 @@
 #include "hinters.hpp"
 
 int main(int argc, char *argv[]){
-	if(argc < 5){
-		std::cout << "Usage: ./test-code input.code input.sf input.smobj out-text" << std::endl;
+	if(argc < 4){
+		std::cout << "Usage: ./test-code input.code input.sf input.smobj" << std::endl;
 		return 0;
 	}
 	sm::Code code;
@@ -14,9 +14,6 @@ int main(int argc, char *argv[]){
 	code = sm::Code::load(argv[1]);
 	
 
-	std::cout << "Saving code to " << argv[4] << std::endl;
-	code.save(argv[4]);
-	
 	sm::Library lib = sm::Library::load(argv[2]);
 	sm::Mesh mesh = sm::Mesh::load(argv[3]);
 
@@ -27,7 +24,11 @@ int main(int argc, char *argv[]){
 
 	sm::Mesh out = sm::order_faces(mesh, lib);
 
-	out = sm::hint_shortrow_only_patch(out, lib, code); // <-- add hints 
+	out = sm::hint_shortrow_only_patch(out, code); // <-- add hints 
+
+	
+	out.save("hinted.smobj");
+	std::cout << "Saved hinted smobj as ./hinted.smobj" << std::endl; 
 
 	std::string knitout = sm::knitout(out, code);
 

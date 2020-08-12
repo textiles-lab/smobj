@@ -171,8 +171,19 @@ struct Code {
 			bed = b; needle = n;
 			nudge = (n - needle)*2;
 		}
+		float location() const{
+			return 0.5f*nudge + needle;
+		}
 		bool operator< (const BedNeedle& rhs) const {
-			return std::tie(bed, needle) < std::tie(rhs.bed, rhs.needle);
+			float loc = location();
+			float rloc = rhs.location();
+			return std::tie(bed, loc) < std::tie(rhs.bed, rloc);
+		}
+		bool operator== (const BedNeedle& rhs) const {
+			float loc = location();
+			float rloc = rhs.location();
+			return std::tie(bed, loc) == std::tie(rhs.bed, rloc);
+
 		}
 		std::string to_string() const{
 			return bed + std::to_string(needle);
@@ -180,6 +191,7 @@ struct Code {
 		bool dontcare() const{
 			return bed == 'x';
 		}
+
 	};
 
 	//----- code per faces -----
@@ -236,7 +248,7 @@ struct Code {
 		}
 
 		std::string knitout_string(int translate_to = 0) const {
-			std::string ret = "";
+			std::string ret = ";from: " +  key() + ":" +  "\n";
 			// concatenate all instructions
 			for(auto i : instrs){
 				i.src.needle += translate_to;
@@ -254,19 +266,19 @@ struct Code {
 					case Instr::Knit:
 						ret += "knit ";
 						ret += (char)i.direction; ret += " ";
-						ret += i.src.to_string() +  " ";
+						ret += i.tgt.to_string() +  " ";
 						ret += i.yarns;
 					break;
 					case Instr::Tuck:
 						ret += "tuck ";
 						ret += (char)i.direction; ret += " ";
-						ret += i.src.to_string() + " ";
+						ret += i.tgt.to_string() + " ";
 						ret += i.yarns;
 						break;
 					case Instr::Miss:
 						ret += "miss ";
 						ret += (char)i.direction; ret += " ";
-						ret += i.src.to_string() + " ";
+						ret += i.tgt.to_string() + " ";
 						ret += i.yarns;
 						break;
 					case Instr::Xfer:
@@ -281,8 +293,8 @@ struct Code {
 						ret += "rack " + std::to_string(i.rack()) + "\n";
 						ret += "split ";
 						ret += (char)i.direction; ret += " ";
-						ret += i.src.to_string() + " ";
-						ret += i.tgt.to_string() + " ";
+						ret += i.tgt.to_string() + " "; // src, tgt or tgt,tgt2
+						ret += i.tgt2.to_string() + " ";
 						ret += i.yarns;
 						break;
 					case Instr::Drop:

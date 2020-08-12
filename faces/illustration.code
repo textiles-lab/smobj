@@ -14,6 +14,142 @@
 #    - few complex faces (cable2x2f+, seed2x2)
 #    - missing directional variants? bed variants (auto?)
 #
+#
+
+#helper faces
+
+face xfer-a+1
+	edge -lX f0
+	edge +lX f1
+	code
+		xfer f0 b0 
+		xfer b0 f1
+
+face xfer-a-1
+	edge -lX f1
+	edge +lX f0
+	code
+		xfer f1 b1
+		xfer b1 f0
+
+#not sure if this is ever explicitly useful? but rack on op1 variant:
+face xfer-b+1
+	edge -lX f0
+	edge +lX f1
+	code
+		xfer f0 b1 
+		xfer b1 f1
+
+face xfer-b-1
+	edge -lX f1
+	edge +lX f0
+	code
+		xfer f1 b0
+		xfer b0 f0
+
+#+-8 for rack on op2:
+face xfer-a+2
+	edge -lX f0
+	edge +lX f2
+	code
+		xfer f0 b0 
+		xfer b0 f2
+
+face xfer-a-2
+	edge -lX f2
+	edge +lX f0
+	code
+		xfer f2 b2
+		xfer b2 f0
+
+face xfer-a+3
+	edge -lX f0
+	edge +lX f3
+	code
+		xfer f0 b0 
+		xfer b0 f3
+
+face xfer-a-3
+	edge -lX f3
+	edge +lX f0
+	code
+		xfer f3 b3
+		xfer b3 f0
+
+face xfer-a+4
+	edge -lX f0
+	edge +lX f4
+	code
+		xfer f0 b0 
+		xfer b0 f4
+
+face xfer-a-4
+	edge -lX f4
+	edge +lX f0
+	code
+		xfer f4 b4
+		xfer b4 f0
+
+face xfer-a+5
+	edge -lX f0
+	edge +lX f5
+	code
+		xfer f0 b0 
+		xfer b0 f5
+
+face xfer-a-5
+	edge -lX f5
+	edge +lX f0
+	code
+		xfer f5 b5
+		xfer b5 f0
+
+
+face xfer-a+6
+	edge -lX f0
+	edge +lX f6
+	code
+		xfer f0 b0 
+		xfer b0 f6
+
+face xfer-a-6
+	edge -lX f6
+	edge +lX f0
+	code
+		xfer f6 b6
+		xfer b6 f0
+
+face xfer-a+7
+	edge -lX f0
+	edge +lX f7
+	code
+		xfer f0 b0 
+		xfer b0 f7
+
+face xfer-a-7
+	edge -lX f7
+	edge +lX f0
+	code
+		xfer f7 b7
+		xfer b7 f0
+
+
+face xfer-a+8
+	edge -lX f0
+	edge +lX f8
+	code
+		xfer f0 b0 
+		xfer b0 f8
+
+face xfer-a-8
+	edge -lX f8
+	edge +lX f0
+	code
+		xfer f8 b8
+		xfer b8 f0
+
+
+
 face make-left-tuck+
 	edge  -lX f0
 	edge  +yX f0.5 A
@@ -104,6 +240,16 @@ face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
 		xfer - b0 f1
 		knit + f1 A
 
+face decrease-left-
+	edge -lX f0
+	edge -lX f1
+	edge -yX f1.5 A
+	edge +lX f0
+	edge +yX f-0.5 A
+	code
+		xfer f1 b1
+		xfer b1 f0
+		knit - f0 A
 
 face decrease-left+ 
 	edge -lX f0

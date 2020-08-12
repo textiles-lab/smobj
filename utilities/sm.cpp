@@ -2786,14 +2786,34 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 	for(auto &f : mesh.faces){
 		if(!name_to_code_idx.count(mesh.library[f.type])){
 			std::cerr << "Code does not exist for face signature " << mesh.library[f.type] << std::endl; //eventually throw
-			return knitout_string;
+			return "";//knitout_string;
 		}
 		auto const &l = code.faces[name_to_code_idx[mesh.library[f.type]]];
 		int translate_by = 0; // todo have a map assuming hints are complete
-		{
-			// TODO: use hints to identify offset
+		bool found_hint = false;
+		for(auto const &e : l.edges){
+			// should edges just have a type called 'loop'/'yarn'
+			// an edge Any would not have a needle associated with it
+			// everything else should be hinted
+			if(e.direction != sm::Code::Face::Edge::Any){
+				translate_by = - e.bn.needle;
+
+				for(auto h : mesh.location_hints){
+					if(h.fe.face == &f - &mesh.faces[0]  && h.fe.edge == &e - &l.edges[0]){
+						translate_by += *h.needle;
+					}
+				}
+				found_hint = true;
+				break; // if the face was consistent, only one location needs to be checked
+			}
+		}
+		if(!found_hint){
+			std::cerr << "Mesh is not sufficiently  hinted, face " << mesh.library[f.type] << " needs hints." << std::endl;
+			return "";
 		}
 		// what about split execution of code ? 
+		// maybe code should encode split structure in some way
+		// or annotated knitout?
 		knitout_string += l.knitout_string(translate_by);
 	}
 
