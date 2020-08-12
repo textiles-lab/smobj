@@ -2787,6 +2787,10 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 		name_to_code_idx[c.key()] = &c - &code.faces[0];
 	}
 
+	// TODO check hints are consistent, clean up
+	{
+	}
+
 	for(auto &f : mesh.faces){
 		if(!name_to_code_idx.count(mesh.library[f.type])){
 			std::cerr << "Code does not exist for face signature " << mesh.library[f.type] << std::endl; //eventually throw
@@ -2804,10 +2808,13 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 
 				for(auto h : mesh.location_hints){
 					if(h.fe.face == &f - &mesh.faces[0]  && h.fe.edge == &e - &l.edges[0]){
-						translate_by += *h.needle;
+						if(h.needle){
+							translate_by += *h.needle;
+							found_hint = true;
+
+						}
 					}
 				}
-				found_hint = true;
 				break; // if the face was consistent, only one location needs to be checked
 			}
 		}

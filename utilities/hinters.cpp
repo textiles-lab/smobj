@@ -104,6 +104,8 @@ sm::Mesh sm::hint_shortrow_only_patch(sm::Mesh const &mesh, sm::Code const &code
 			break;
 		}
 	}
+	// clear old hints??
+	out.location_hints.clear();
 	for(auto h : hints){
 		out.location_hints.emplace_back();
 		out.location_hints.back().fe = h.first;

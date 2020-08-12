@@ -427,7 +427,7 @@ face drop+
 face drop-
 	edge -l1 f0
 	edge -y0 f0.5
-	edge +x
+	edge +l0 x
 	edge +y0 f-0.5
 	code
 		drop f0
