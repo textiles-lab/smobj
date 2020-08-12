@@ -2809,7 +2809,7 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 				for(auto h : mesh.location_hints){
 					if(h.fe.face == &f - &mesh.faces[0]  && h.fe.edge == &e - &l.edges[0]){
 						if(h.needle){
-							translate_by += *h.needle;
+							translate_by += (h.needle ? *h.needle : 0);
 							found_hint = true;
 
 						}
