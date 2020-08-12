@@ -2770,14 +2770,18 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 
 	std::string knitout_string = "";
 
-	{
-		// knitout header
-		knitout_string += ";!knitout-2\n";
-		knitout_string += ";auto-generated knitout code from smobj\n";
-		knitout_string += ";;Carriers: 1 2 3 4 5 6 7 8 9 10\n";
-		knitout_string += ";;Machine: SWG\n";
-	}
+	// knitout header
+	knitout_string += ";!knitout-2\n";
 
+	std::string carriers = "A B"; // based on illustration.code
+	{
+		// hints don't currently specify yarn carriers, but should 
+	}
+	knitout_string += ";;Carriers: "+ carriers + "\n";
+
+	// what to blame:
+	knitout_string += ";auto-generated from smobj, see sm.cpp,  sm::knitout()\n";
+	
 	std::map<std::string, uint32_t> name_to_code_idx;
 	for(auto const &c : code.faces){
 		name_to_code_idx[c.key()] = &c - &code.faces[0];
