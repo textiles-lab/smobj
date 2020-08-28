@@ -15,138 +15,21 @@
 #    - missing directional variants? bed variants (auto?)
 #
 #
+#Code variant hints (variant name / face)
+#Ordering hints (“happens-after” / instruction)
+#Resource assignment hints (needle locations / edge)
+#Hints have different sources
+#User hints -- directly user specified
+#Conservative Inferred hints -- consequence of user hint or inferred hint (without any arbitrary decisions)
+#Heuristic hints -- consequence of existing hints under a heuristic/arbitrary/optimization rule
+#From the hints, total instruction ordering can be computed
+#A “scheduled smobj” contains all the hints + the total instruction order
+#Hint types are remembered in the file, since when editing probably the program wants to recompute the non-user hints.
+#Also we need a carrier order in the file (or carriers are alphabetical front-to-back)
+#And probably in the face programs for multi-carrier faces
+#E.g. `;;Carriers: ` header in face code
 
 #helper faces
-
-face xfer-a+1
-	edge -lX f0
-	edge +lX f1
-	code
-		xfer f0 b0 
-		xfer b0 f1
-
-face xfer-a-1
-	edge -lX f1
-	edge +lX f0
-	code
-		xfer f1 b1
-		xfer b1 f0
-
-#not sure if this is ever explicitly useful? but rack on op1 variant:
-face xfer-b+1
-	edge -lX f0
-	edge +lX f1
-	code
-		xfer f0 b1 
-		xfer b1 f1
-
-face xfer-b-1
-	edge -lX f1
-	edge +lX f0
-	code
-		xfer f1 b0
-		xfer b0 f0
-
-#+-8 for rack on op2:
-face xfer-a+2
-	edge -lX f0
-	edge +lX f2
-	code
-		xfer f0 b0 
-		xfer b0 f2
-
-face xfer-a-2
-	edge -lX f2
-	edge +lX f0
-	code
-		xfer f2 b2
-		xfer b2 f0
-
-face xfer-a+3
-	edge -lX f0
-	edge +lX f3
-	code
-		xfer f0 b0 
-		xfer b0 f3
-
-face xfer-a-3
-	edge -lX f3
-	edge +lX f0
-	code
-		xfer f3 b3
-		xfer b3 f0
-
-face xfer-a+4
-	edge -lX f0
-	edge +lX f4
-	code
-		xfer f0 b0 
-		xfer b0 f4
-
-face xfer-a-4
-	edge -lX f4
-	edge +lX f0
-	code
-		xfer f4 b4
-		xfer b4 f0
-
-face xfer-a+5
-	edge -lX f0
-	edge +lX f5
-	code
-		xfer f0 b0 
-		xfer b0 f5
-
-face xfer-a-5
-	edge -lX f5
-	edge +lX f0
-	code
-		xfer f5 b5
-		xfer b5 f0
-
-
-face xfer-a+6
-	edge -lX f0
-	edge +lX f6
-	code
-		xfer f0 b0 
-		xfer b0 f6
-
-face xfer-a-6
-	edge -lX f6
-	edge +lX f0
-	code
-		xfer f6 b6
-		xfer b6 f0
-
-face xfer-a+7
-	edge -lX f0
-	edge +lX f7
-	code
-		xfer f0 b0 
-		xfer b0 f7
-
-face xfer-a-7
-	edge -lX f7
-	edge +lX f0
-	code
-		xfer f7 b7
-		xfer b7 f0
-
-
-face xfer-a+8
-	edge -lX f0
-	edge +lX f8
-	code
-		xfer f0 b0 
-		xfer b0 f8
-
-face xfer-a-8
-	edge -lX f8
-	edge +lX f0
-	code
-		xfer f8 b8
-		xfer b8 f0
 
 
 
@@ -157,8 +40,9 @@ face make-left-tuck+
 	edge  +lX f-1
 	edge  -yX f-0.5 A
 	code
-			tuck + f-1 A
-			knit + f0 A
+		;;Carriers: A
+		tuck + f-1 A
+		knit + f0 A
 
 face make-right-tuck+
 	edge  -lX f0
@@ -167,6 +51,7 @@ face make-right-tuck+
 	edge  +lX f0
 	edge  -yX f-0.5 A
 	code
+		;;Carriers: A
 		knit + f0 A
 		tuck + f1 A
 
@@ -177,6 +62,7 @@ face make-left-tuck-twist+
 	edge +lX f-1
 	edge -yX f-0.5 A
 	code
+		;;Carriers: A
 		tuck - f-1 A
 		knit + f0 A
 
@@ -187,6 +73,7 @@ face make-left-tuck-twist-
 	edge  +lX f-1
 	edge  +yX f-0.5 A
 	code
+		;;Carriers: A
 		knit - f0 A
 		tuck + f-1 A
 
@@ -197,6 +84,7 @@ face make-right-tuck-twist+
 	edge +lX f1
 	edge -yX f-0.5 A
 	code
+		;;Carriers: A
 		knit + f0 A
 		tuck - f1 A
 
@@ -207,6 +95,7 @@ face make-right-tuck-twist-
 	edge +lX f1
 	edge +yX f-0.5 A
 	code
+		;;Carriers: A
 		tuck + f1 A
 		knit - f0 A
 
@@ -235,6 +124,7 @@ face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
 	edge +lX f1
 	edge -yX f-0.5 A
 	code
+		;;Carriers: A
 		xfer - f0 b0 #+/- direction are hints on the src, + = everything to the right of f0
 		#rack 1, implicit racking should be fine right?
 		xfer - b0 f1
@@ -247,6 +137,7 @@ face decrease-left-
 	edge +lX f0
 	edge +yX f-0.5 A
 	code
+		;;Carriers: A
 		xfer f1 b1
 		xfer b1 f0
 		knit - f0 A
@@ -258,6 +149,7 @@ face decrease-left+
 	edge +lX f0
 	edge -yX f-0.5 A
 	code
+		;;Carriers: A
 		xfer f1 b1
 		xfer b1 f0
 		knit + f0 A
@@ -269,6 +161,7 @@ face decrease-right-
 	edge +lX f1
 	edge +yX f+0.5 A
 	code
+		;;Carriers: A
 		xfer f0 b0
 		xfer b0 f1
 		knit + f1 A
@@ -281,6 +174,7 @@ face turn-tuck)((    #NOTE: tuck is in the direction of the lower course
 	edge +yX f-0.5 A
 	edge -yX f-0.5 A
 	code
+		;;Carriers: A
 		tuck + f0 A
 		miss - f0 A
 
@@ -290,6 +184,7 @@ face turn-tuck))(
 	edge +yX f0.5 A
 	edge +lX f0
 	code
+		;;Carriers: A
 		tuck - f0 A
 		miss + f0 A
 
@@ -299,6 +194,7 @@ face turn)((
 	edge +yX f-0.5 A
 	edge -yX f-0.5 A
 	code
+		;;Carriers: A
 		miss - f0 A
 
 face turn))(
@@ -307,6 +203,7 @@ face turn))(
 	edge +yX f0.5 A
 	edge +lX f0
 	code
+		;;Carriers: A
 		miss + f0 A
 
 face edge(
@@ -332,6 +229,7 @@ face end<  #NOTE: needs another type for "in" which is also the more complex typ
 	edge -yX f+0.5 A
 	edge +lX f0
 	code
+		;;Carriers: A
 		knit - f0 A
 		out A
 
@@ -340,6 +238,7 @@ face end>
 	edge +lX f0
 	edge -yX f-0.5 A
 	code
+		;;Carriers: A
 		knit + f0 A
 		out A
 
@@ -349,6 +248,7 @@ face start<
 	edge +lX f0
 	edge +yX f0.5 A
 	code
+		;;Carriers: A
 		in A
 		knit - f0 A
 
@@ -357,6 +257,7 @@ face start>
 	edge +yX f-0.5 A
 	edge +lX f0
 	code
+		;;Carriers: A
 		in A
 		knit + f0 A
 
@@ -366,6 +267,7 @@ face knit+
 	edge +lX f0
 	edge -yX f-0.5 A
 	code
+		;;Carriers: A
 		knit + f0 A
 
 face knit-
@@ -374,6 +276,7 @@ face knit-
 	edge +lX f0
 	edge +yX f-0.5 A
 	code
+		;;Carriers: A
 		knit - f0 A
 
 face knit-fair-isle-2+ #slightly awkward in terms of using all resources
@@ -382,6 +285,7 @@ face knit-fair-isle-2+ #slightly awkward in terms of using all resources
 	edge +lX f0
 	edge -yX f-0.5 A B
 	code
+		;;Carriers: A B
 		knit + f0 B
 
 face knit-fair-isle-1+
@@ -390,6 +294,7 @@ face knit-fair-isle-1+
 	edge +lX f0
 	edge -yX f-0.5 A B
 	code
+		;;Carriers: A B
 		knit + f0 A
 
 face knit-plating-1+
@@ -398,6 +303,7 @@ face knit-plating-1+
 	edge +lX f0
 	edge -yX f-0.5 A B
 	code
+		;;Carriers: A B
 		knit + f0 A B
 
 face knit-plating-2+
@@ -406,6 +312,7 @@ face knit-plating-2+
 	edge +lX f0
 	edge -yX f-0.5 A B
 	code
+		;;Carriers: A B
 		knit + f0 B A
 
 face knit+.2111 #What face is this ??
@@ -414,6 +321,7 @@ face knit+.2111 #What face is this ??
 	edge +lX f0
 	edge -yX f0.5 A
 	code
+		;;Carriers: A
 		knit + f0 A
 
 face drop+
@@ -422,6 +330,7 @@ face drop+
 	edge +l0 x
 	edge -y0 f-0.5
 	code
+		;;Carriers: A
 		drop f0
 
 face drop-
@@ -430,6 +339,7 @@ face drop-
 	edge +l0 x
 	edge +y0 f-0.5
 	code
+		;;Carriers: A
 		drop f0
 
 face tuck-twist+
@@ -438,6 +348,7 @@ face tuck-twist+
 	edge +lX f0
 	edge -yX f-0.5 A
 	code
+		;;Carriers: A
 		tuck - f0 A
 
 face tuck-twist-
@@ -446,6 +357,7 @@ face tuck-twist-
 	edge +lX f0
 	edge +yX f-0.5 A
 	code
+		;;Carriers: A
 		tuck + f0 A
 
 face purl+
@@ -454,6 +366,7 @@ face purl+
 	edge +lX f0
 	edge -yX f-0.5 A
 	code
+		;;Carriers: A
 		xfer f0 b0
 		knit + b0 A
 		xfer b0 f0
@@ -464,6 +377,7 @@ face purl-
 	edge +lX f0
 	edge +yX f-0.5 A
 	code
+		;;Carriers: A
 		xfer f0 b0
 		knit - b0 A
 		xfer b0 f0
@@ -478,6 +392,7 @@ face seed-stitch+
 	edge -y1 f0.5 B
 	edge +y1 f0.5 A
 	code
+		;;Carriers: A B
 		#block1
 		xfer f0 b0
 		knit - f1 A
@@ -488,3 +403,16 @@ face seed-stitch+
 		knit + f0 B
 		knit + b1 B
 		xfer b1 f1
+
+
+#-- transfer helpers
+face xfer+1
+	edge  -lX f0
+	edge  x
+	edge  +lX f1
+	edge  x 
+	code
+		xfer f0 b0
+		xfer b0 f1
+
+
