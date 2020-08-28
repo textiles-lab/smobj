@@ -876,6 +876,11 @@ sm::Code sm::Code::load(std::string const &filename) {
 				code_library.faces.back().name = name;
 				current = &code_library.faces.back();
 				current_instrs = nullptr;
+			} else if (tok == "version") {
+				if (!current) throw std::runtime_error(line_info() + "version line without face line");
+				std::string ver; 
+				if(!(str >> ver)) throw std::runtime_error(line_info() + "Failed to read name in version line");
+				current->version = ver;
 			} else if (tok == "edge") {
 				if (!current) throw std::runtime_error(line_info() + "edge line without face line");
 				Code::Face::Edge edge;
@@ -914,6 +919,13 @@ sm::Code sm::Code::load(std::string const &filename) {
 			} else if (tok == "code") {
 				if (!current) throw std::runtime_error(line_info() + "code line without face line");
 				current_instrs = &(current->instrs);
+			} else if (tok == ";;Carriers:") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "Carrier header line without code line");
+				//todo save local carrier order
+				std::string c; 
+				while(str >> c){
+					current->carriers.emplace_back(c);
+				}
 			} else if (tok == "knit") {
 				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
 				current_instrs->emplace_back();
@@ -1197,6 +1209,9 @@ void sm::Code::save(std::string const &filename) {
 	std::ofstream out(filename);
 	for(auto const &face : faces){
 		out << "face " << face.name << '\n';
+		if(face.version != ""){
+			out << "version " << face.version << '\n';
+		}
 		for(auto const &edge : face.edges) {
 			out << "\tedge ";
 			if (edge.direction == sm::Code::Face::Edge::In) out << "-";
@@ -1208,6 +1223,7 @@ void sm::Code::save(std::string const &filename) {
 		}
 		// don't use instr.knitout_string() here, it uses translation and  also inserts racking
 		out << "\tcode \n";
+		out << "\t\t;;Carriers: "; for(auto c : face.carriers) out << c << " "; out << '\n';
 		for(auto const &instr : face.instrs) {
 			out <<"\t\t";
 			switch(instr.op){

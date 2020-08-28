@@ -197,7 +197,8 @@ struct Code {
 	//----- code per faces -----
 	struct Face {
 		std::string name; //descriptive name for type
-
+		std::string version="";
+		std::vector<std::string> carriers;
 		struct Edge {
 			enum Direction : char {
 				In = '-', Out = '+', Any = '*'
