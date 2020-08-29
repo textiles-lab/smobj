@@ -12,8 +12,9 @@ int main(int argc, char *argv[]){
 	std::cout << "Loading library  from " << argv[2] << std::endl;
 	std::cout << "Loading mesh  from " << argv[3] << std::endl;
 	code = sm::Code::load(argv[1]);
-	
+	code.save("out.code");
 
+	
 	sm::Library lib = sm::Library::load(argv[2]);
 	sm::Mesh mesh = sm::Mesh::load(argv[3]);
 
