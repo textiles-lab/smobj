@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 #include <optional>
-
+#include <variant>
 /*
  * Data structures for dealing with common smobj-related tasks:
  * sm::Mesh represents the contents of '.smobj' files
@@ -15,8 +15,41 @@
  */
 
 namespace sm {
-struct Library;
-//The contents of a .smobj can be loaded as a "Mesh":
+
+struct BedNeedle{
+	char bed = 'x'; // todo enum 'f','b'(hooks) 'F','B'(sliders) 'x' (dontcare)
+	int needle = 0;
+	int8_t nudge = 0; // location = needle + 0.5 * nudge
+	BedNeedle(){}
+	BedNeedle (char b, int n) {
+		bed = b; needle = n;
+	}
+	BedNeedle (char b, float n) {
+		bed = b; needle = n;
+		nudge = (n - needle)*2;
+	}
+	float location() const{
+		return 0.5f*nudge + needle;
+	}
+	bool operator< (const BedNeedle& rhs) const {
+		float loc = location();
+		float rloc = rhs.location();
+		return std::tie(bed, loc) < std::tie(rhs.bed, rloc);
+	}
+	bool operator== (const BedNeedle& rhs) const {
+		float loc = location();
+		float rloc = rhs.location();
+		return std::tie(bed, loc) == std::tie(rhs.bed, rloc);
+	}
+	std::string to_string() const{
+		return bed + std::to_string(needle);
+	}
+	bool dontcare() const{
+		return bed == 'x';
+	}
+	};
+	struct Library;
+	//The contents of a .smobj can be loaded as a "Mesh":
 struct Mesh {
 	//Library signatures ('L' lines):
 	std::vector< std::string > library;
@@ -48,14 +81,25 @@ struct Mesh {
 		// flip: a[0] glued to b[1], a[1] glued to b[0]
 	};
 	std::vector< Connection > connections;
-
 	struct Hint {
-		FaceEdge fe;               // target edge
-		std::optional<char> bed = std::nullopt;   // front('f'), back('b'), anything else maps identically to either 'f' or 'b'
-		std::optional<int> needle = std::nullopt; // would floating point values be nice for hints?
-		int8_t nudge = 0;		   // nudge to the left(-1), right(+1), or not (0)
+		enum HintType : char{
+			Resource = 'r', // needle
+			Order = 'o', // Instruction order
+			Variant = 'v', // code face variant
+		} type;
+		enum HintSource : char{
+			User = 'u',
+			Inferred = 'i',
+			Heuristic = 'h',
+		} src;
+		FaceEdge lhs;;
+		std::variant<BedNeedle,  FaceEdge, std::string> rhs;
+		//FaceEdge fe;               // target edge
+		//std::optional<char> bed = std::nullopt;   // front('f'), back('b'), anything else maps identically to either 'f' or 'b'
+		//std::optional<int> needle = std::nullopt; // would floating point values be nice for hints?
+		//int8_t nudge = 0;		   // nudge to the left(-1), right(+1), or not (0)
 	};
-	std::vector< Hint > location_hints; // can be an unordered_map, but hints could be multiple?
+	std::vector< Hint > hints; // can be an unordered_map, but hints could be multiple?
 
 	//Units ('U' lines):
 	struct Unit {
@@ -158,41 +202,6 @@ struct Code {
 	static Code load(std::string const &filename); //throws on error
 	void save(std::string const &filename);
 
-	// TODO: hoist to sm, use the same for hints
-	struct BedNeedle{
-		char bed = 'x'; // todo enum 'f','b'(hooks) 'F','B'(sliders) 'x' (dontcare)
-		int needle = 0;
-		int8_t nudge = 0; // location = needle + 0.5 * nudge
-		BedNeedle(){}
-		BedNeedle (char b, int n) {
-			bed = b; needle = n;
-		}
-		BedNeedle (char b, float n) {
-			bed = b; needle = n;
-			nudge = (n - needle)*2;
-		}
-		float location() const{
-			return 0.5f*nudge + needle;
-		}
-		bool operator< (const BedNeedle& rhs) const {
-			float loc = location();
-			float rloc = rhs.location();
-			return std::tie(bed, loc) < std::tie(rhs.bed, rloc);
-		}
-		bool operator== (const BedNeedle& rhs) const {
-			float loc = location();
-			float rloc = rhs.location();
-			return std::tie(bed, loc) == std::tie(rhs.bed, rloc);
-
-		}
-		std::string to_string() const{
-			return bed + std::to_string(needle);
-		}
-		bool dontcare() const{
-			return bed == 'x';
-		}
-
-	};
 
 	//----- code per faces -----
 	struct Face {

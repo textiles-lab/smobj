@@ -24,7 +24,7 @@ sm::Mesh sm::hint_shortrow_only_patch(sm::Mesh const &mesh, sm::Code const &code
 			}
 		}
 	}
-	std::map<sm::Mesh::FaceEdge, sm::Code::BedNeedle> hints;
+	std::map<sm::Mesh::FaceEdge, sm::BedNeedle> hints;
 	char bed = 'x';
 	{
 		// assign hints for face 0, from the template directly
@@ -75,7 +75,7 @@ sm::Mesh sm::hint_shortrow_only_patch(sm::Mesh const &mesh, sm::Code const &code
 				}
 				else{
 					//std::cout << "B " << hints[c.b].to_string() << " nudge " << int(hints[c.b].nudge) << " A " << hints[c.a].to_string() <<  " nudge " << int(hints[c.a].nudge) << std::endl;
-				assert(hints[c.b] == hints[c.a] &&  "Connected edges should agree if no pentagons exist");
+				//assert(hints[c.b] == hints[c.a] &&  "Connected edges should agree if no pentagons exist");
 				}
 			}
 			else if(hints.count(c.b)){
@@ -96,7 +96,7 @@ sm::Mesh sm::hint_shortrow_only_patch(sm::Mesh const &mesh, sm::Code const &code
 				}
 				else{
 					//std::cout << "A " << hints[c.a].to_string() << " nudge " << int(hints[c.a].nudge) << " B " << hints[c.b].to_string() << " nudge " << int(hints[c.b].nudge) << std::endl;
-					assert(hints[c.b] == hints[c.a] &&  "Connected edges should agree if no pentagons exist");
+				//assert(hints[c.b] == hints[c.a] &&  "Connected edges should agree if no pentagons exist");
 				}
 			}
 		}
@@ -105,14 +105,27 @@ sm::Mesh sm::hint_shortrow_only_patch(sm::Mesh const &mesh, sm::Code const &code
 		}
 	}
 	// clear old hints??
-	out.location_hints.clear();
+	out.hints.clear();
 	for(auto h : hints){
-		out.location_hints.emplace_back();
-		out.location_hints.back().fe = h.first;
-		out.location_hints.back().bed = h.second.bed;
-		out.location_hints.back().needle = h.second.needle;
-		out.location_hints.back().nudge = h.second.nudge;
+		sm::BedNeedle bn;
+		out.hints.emplace_back();
+		out.hints.back().lhs = h.first;
+		bn.bed = h.second.bed;
+		bn.needle = h.second.needle;
+		bn.nudge = h.second.nudge;
+		out.hints.back().rhs = bn;
+		out.hints.back().type = sm::Mesh::Hint::Resource;
+		out.hints.back().src = sm::Mesh::Hint::User;
 	}
 	
 	return out;
+}
+// generate hints assuming:
+// 1. Patch has only short-rows <-- verify face signatures only consume/produce 1 loop
+// 2. Is entirely on (same) bed <-- verify code faces are the same (all "f" or all "b")
+//
+sm::Mesh sm::hint_shortrow_only_tubes(sm::Mesh const &mesh, sm::Code const &code_library){
+	assert(false && "TODO IMPLEMENT");
+	sm::Mesh m = mesh;
+	return m;
 }

@@ -139,30 +139,86 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			int32_t face, edge;
 			if( !(str >> face >> slash >> edge) || slash != '/') throw std::runtime_error("h line doesn't begin like 1/2.");
 			Hint h;
+			h.type = sm::Mesh::Hint::Resource;
+			h.src = sm::Mesh::Hint::User;
 			if( face < 1 || face > int32_t(mesh.faces.size())) throw std::runtime_error("face out of range in h line.");
 			if( edge < 1  || edge > int32_t(mesh.faces[face-1].size())) throw std::runtime_error("edge out of range in h line.");
 
-			h.fe.face = face - 1;
-			h.fe.edge =  edge -1;
+			h.lhs.face = face - 1;
+			h.lhs.edge =  edge -1;
 
+			sm::BedNeedle bn;
 			std::string next;
 			if (str >> next){
 				std::istringstream str2(next);
 				if(std::isalpha(next[0])){
 					char bed;
 					str2 >> bed;
-					h.bed = bed;
+					bn.bed = bed;
 				}
-				int needle;
+				float needle;
 				if(str2 >> needle){
-					h.needle = needle;
+					bn.needle = needle;
+					bn.nudge = (needle-bn.needle > 0 ? 1 : -1);
 				}
+				h.rhs = bn;
 			}
 
-			if(h.bed || h.needle){
-				mesh.location_hints.emplace_back(h);
+			char src;
+			if(str >> src){
+				if(src == 'u') h.src =  sm::Mesh::Hint::User;
+				else if(src == 'i') h.src =  sm::Mesh::Hint::Inferred;
+				else if(src == 'h') h.src =  sm::Mesh::Hint::Heuristic;
 			}
 
+			mesh.hints.emplace_back(h);
+
+		} else if(cmd == "o"){
+		
+			Hint h;
+			h.type = sm::Mesh::Hint::Order;
+			h.src  = sm::Mesh::Hint::User;
+			char slash;
+			int32_t face1, face2, edge1, edge2;
+			if(!(str >> face1 >> slash >> edge1) || slash != '/'){
+				throw std::runtime_error("order hint not as expected f/i");
+			}
+			if(!(str >> face2 >> slash >> edge2) || slash != '/'){
+				throw std::runtime_error("order hint not as expected f/i");
+			}
+			h.lhs.face = face1-1; h.lhs.edge = edge1-1;
+			FaceEdge rhs; rhs.face = face2-1; rhs.edge  = edge2-1;
+			h.rhs = rhs;
+
+			char src;
+			if(str >> src){
+				if(src == 'u') h.src =  sm::Mesh::Hint::User;
+				else if(src == 'i') h.src =  sm::Mesh::Hint::Inferred;
+				else if(src == 'h') h.src =  sm::Mesh::Hint::Heuristic;
+			}
+			mesh.hints.emplace_back(h);
+
+		} else if(cmd == "t"){
+
+			Hint h;
+			h.type = sm::Mesh::Hint::Variant;
+			h.src  = sm::Mesh::Hint::User;
+			int32_t face;
+			if(!(str >> face)){
+				throw std::runtime_error("version hint does not have a face");
+			}
+			h.lhs.face = face-1;
+			h.lhs.edge = -1;
+			std::string var; 
+			if(!(str >> var)) throw std::runtime_error("version hint does not have a variant name");
+			h.rhs = var;
+			char src;
+			if(str >> src){
+				if(src == 'u') h.src =  sm::Mesh::Hint::User;
+				else if(src == 'i') h.src =  sm::Mesh::Hint::Inferred;
+				else if(src == 'h') h.src =  sm::Mesh::Hint::Heuristic;
+			}
+			mesh.hints.emplace_back(h);
 		} else if (cmd == "U") { //unit definition
 			std::string name;
 			float length;
@@ -398,12 +454,27 @@ void sm::Mesh::save(std::string const &filename) const {
 	for (auto const &c : connections) {
 		out << "e " << (c.a.face+1) << "/" << (c.a.edge+1) << " " << (c.b.face+1) << "/" << (c.flip ? "-" : "") << (c.b.edge+1) << "\n";
 	}
-	for (auto const &h : location_hints) {
-		if( !h.bed && !h.needle) continue;
-		out << "h " << (h.fe.face + 1) << "/" << (h.fe.edge+1) << " ";
-		if(h.bed) out  << *h.bed;
-		if(h.needle) out  << *h.needle;
+	for (auto const &h : hints) {
+		if(h.type == sm::Mesh::Hint::Resource){
+		out << "h " << (h.lhs.face + 1) << "/" << (h.lhs.edge+1) << " ";
+		auto bn = std::get<sm::BedNeedle>(h.rhs);
+		out  << bn.bed;
+		out  << bn.needle + 0.5f*bn.nudge;
+		out  << ' ' << (char)h.src;
 		out <<"\n";
+		}
+		else if(h.type == sm::Mesh::Hint::Order){
+		out << "o " << (h.lhs.face + 1) << "/" << (h.lhs.edge+1) << " ";
+		auto fe = std::get<sm::Mesh::FaceEdge>(h.rhs);
+		out  << (fe.face+1) << "/" << (fe.edge +1) << " ";
+		out  << (char)h.src;
+		out <<"\n";
+		}
+		else if(h.type == sm::Mesh::Hint::Variant){
+		out << "t " << (h.lhs.face + 1) << " " << std::get<std::string>(h.rhs) << " ";
+		out  << (char)h.src;
+		out <<"\n";
+		}
 	}
 	for (auto const &u : units) {
 		out << "U " << u.name << " " << u.length << "\n";
@@ -1146,7 +1217,7 @@ sm::Code sm::Code::load(std::string const &filename) {
 		// verify that instructions are valid (does this need to ssa?)
 		// todo: also verify yarn positions
 		for (auto const &face : code_library.faces){
-			std::set<BedNeedle> temporaries, incoming, outgoing;
+			std::set<sm::BedNeedle> temporaries, incoming, outgoing;
 			std::set<std::string> carriers; // todo split into incoming and outgoing carriers
 			for (auto const &edge : face.edges){
 				if(edge.direction == Code::Face::Edge::In && edge.type[0] == 'l' && !edge.bn.dontcare()){
@@ -2625,17 +2696,19 @@ bool sm::verify_hinted_schedule(sm::Mesh const &mesh, sm::Library const &library
 	// 	all connections have xfer hints (what should they be, though?)
 	// 	execution order exists for all faces that have split execution
 
-	std::map<sm::Mesh::FaceEdge, sm::Code::BedNeedle > hints;
-	std::map< std::pair<uint32_t, std::string> , sm::Code::BedNeedle> templates;
+	std::map<sm::Mesh::FaceEdge, sm::BedNeedle > hints;
+	std::map< std::pair<uint32_t, std::string> , sm::BedNeedle> templates;
 	std::map< std::pair<uint32_t, std::string> , std::string> edge_types;
 	std::set< std::string > code_names;
 	std::cout << "hints " << hints.size() << std::endl;
 	std::cout << "templates " << templates.size() << std::endl;
 	std::cout << "code_names " << code_names.size() << std::endl;
 	
-	for(auto  &h : mesh.location_hints){
-		if(!h.bed || !h.needle) continue;
-		hints[h.fe] = sm::Code::BedNeedle(*h.bed, *h.needle);
+	for(auto  &h : mesh.hints){
+		if(h.type == sm::Mesh::Hint::Resource){
+			sm::BedNeedle bn = std::get<sm::BedNeedle>(h.rhs);
+			hints[h.lhs] = sm::BedNeedle(bn.bed, bn.needle);
+		}
 	}
 	
 	for(auto const &f : code.faces){
@@ -2765,8 +2838,8 @@ sm::Mesh sm::order_faces(sm::Mesh const &mesh, sm::Library const &library){
 			c.a.face = std::distance(order.begin(), std::find(order.begin(), order.end(), c.a.face));
 			c.b.face = std::distance(order.begin(), std::find(order.begin(), order.end(), c.b.face));
 		}
-		for(auto &h : out.location_hints){
-			h.fe.face = std::distance(order.begin(), std::find(order.begin(), order.end(), h.fe.face));
+		for(auto &h : out.hints){
+			h.lhs.face = std::distance(order.begin(), std::find(order.begin(), order.end(), h.lhs.face));
 		}
 		for(auto &c : out.checkpoints){
 			if(c.face != -1U)
@@ -2822,20 +2895,12 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 			if(e.direction != sm::Code::Face::Edge::Any){
 				translate_by = - e.bn.needle;
 
-				for(auto h : mesh.location_hints){
-					if(h.fe.face == &f - &mesh.faces[0]  && h.fe.edge == &e - &l.edges[0]){
-						if(h.needle){
-//https://stackoverflow.com/questions/21755206/how-to-get-around-gcc-void-b-4-may-be-used-uninitialized-in-this-funct
-#ifdef __linux__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-							translate_by += (h.needle ? *h.needle : 0);
-#pragma GCC diagnostic pop
-#else
-							translate_by += (h.needle ? *h.needle : 0);
-#endif
+				for(auto h : mesh.hints){
+					if(h.lhs.face == &f - &mesh.faces[0]  && h.lhs.edge == &e - &l.edges[0]){
+						auto bn = std::get<sm::BedNeedle>(h.rhs);
+						{
+							translate_by += bn.needle;
 							found_hint = true;
-
 						}
 					}
 				}
