@@ -81,6 +81,7 @@ struct Mesh {
 		// flip: a[0] glued to b[1], a[1] glued to b[0]
 	};
 	std::vector< Connection > connections;
+	std::vector< std::pair<uint32_t, uint32_t> > total_order;
 	struct Hint {
 		enum HintType : char{
 			Resource = 'r', // needle
@@ -98,6 +99,25 @@ struct Mesh {
 		//std::optional<char> bed = std::nullopt;   // front('f'), back('b'), anything else maps identically to either 'f' or 'b'
 		//std::optional<int> needle = std::nullopt; // would floating point values be nice for hints?
 		//int8_t nudge = 0;		   // nudge to the left(-1), right(+1), or not (0)
+		std::string to_string() const{
+			std::string str = std::to_string(lhs.face) + "/" + std::to_string(lhs.edge) + " ";
+			if(type == Resource){
+				BedNeedle r = std::get<BedNeedle>(rhs);
+				str += std::to_string(r.bed) + "/" + std::to_string(r.needle);
+			}
+			else if(type == Order){
+				FaceEdge r = std::get<FaceEdge>(rhs);
+				str += std::to_string(r.face) + "/" + std::to_string(r.edge);
+			}
+			else if(type == Variant){
+				std::string r = std::get<std::string>(rhs);
+				str += r;
+			}
+			else{
+				str += " NONE.";
+			}
+			return str;
+		}
 	};
 	std::vector< Hint > hints; // can be an unordered_map, but hints could be multiple?
 
@@ -257,10 +277,13 @@ struct Code {
 			return ret;
 		}
 
-		std::string knitout_string(int translate_to = 0) const {
-			std::string ret = ";from: " +  key() + ":" +  "\n";
+		std::string knitout_string(int translate_to = 0, int index = -1) const {
+			std::string ret = ";from: " +  key() + ":" + "instr  " + std::to_string(index)+  "\n";
 			// concatenate all instructions
-			for(auto i : instrs){
+			for(auto const &i_ : instrs){
+				int32_t idx = &i_ - &instrs[0];
+				auto i = i_;
+				if(index >= 0 && index != idx) continue;  // get instruction by index
 				i.src.needle += translate_to;
 				i.tgt.needle += translate_to;
 				i.tgt2.needle += translate_to;

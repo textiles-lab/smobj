@@ -40,6 +40,9 @@ h 1/1 f20 u
 o 1/1 2/1 u
 # type hints that indicate  variant name for face index, indices are 1-based
 t 1 variant-name u 
+# total order of instructions is saved as a sequence of face/instruction index, 1-based
+I 1/1
+I 1/2
 #(optional) list of checkpoints on yarns and desired length between them:
 # checkpoint list starts with unit library:
 U 1 1.0 #unit definition -- there is a length unit called '1' with [default] length '1.0'

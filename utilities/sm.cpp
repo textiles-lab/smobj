@@ -196,6 +196,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 				else if(src == 'i') h.src =  sm::Mesh::Hint::Inferred;
 				else if(src == 'h') h.src =  sm::Mesh::Hint::Heuristic;
 			}
+			std::cout << "Hint: " << h.to_string() << std::endl;
 			mesh.hints.emplace_back(h);
 
 		} else if(cmd == "t"){
@@ -262,7 +263,15 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 
 			std::string temp;
 			if (str >> temp) throw std::runtime_error("trailing junk (" + temp + "...) in c line");
-		} 
+		}
+		else if(cmd == "I"){
+			uint32_t f, i;
+			char slash;
+			if(!(str >> f >> slash >> i) || slash != '/'){
+				throw std::runtime_error("Instruction order is not in expected format face/instruction");
+			}
+			mesh.total_order.emplace_back(std::make_pair(f-1, i-1));
+		}
 		else if(cmd == "vn"){
 			//ignore
 		}
@@ -2855,8 +2864,15 @@ sm::Mesh sm::order_faces(sm::Mesh const &mesh, sm::Library const &library){
 // assumes faces have been ordered
 // assumes hinting is complete and valid (does not check for validity)
 // assumes code can be run as-is without splitting (might need to be updated)
+// TODO generate knitout using order hints 
 std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 
+	for(auto const &h : mesh.hints){
+		if(h.type == sm::Mesh::Hint::Order){
+			std::cout << "Order Hint " << h.to_string() << std::endl;
+		}
+	}
+	std::cout << "Done with order hints.. " << std::endl;
 	std::string knitout_string = "";
 
 	// knitout header
@@ -2879,7 +2895,7 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 	// TODO check hints are consistent, clean up
 	{
 	}
-
+	std::map<int32_t, int32_t> face_translation;
 	for(auto &f : mesh.faces){
 		if(!name_to_code_idx.count(mesh.library[f.type])){
 			std::cerr << "Code does not exist for face signature " << mesh.library[f.type] << std::endl; //eventually throw
@@ -2896,7 +2912,7 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 				translate_by = - e.bn.needle;
 
 				for(auto h : mesh.hints){
-					if(h.lhs.face == &f - &mesh.faces[0]  && h.lhs.edge == &e - &l.edges[0]){
+					if(h.type == sm::Mesh::Hint::Resource && h.lhs.face == &f - &mesh.faces[0]  && h.lhs.edge == &e - &l.edges[0]){
 						auto bn = std::get<sm::BedNeedle>(h.rhs);
 						{
 							translate_by += bn.needle;
@@ -2908,13 +2924,28 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 			}
 		}
 		if(!found_hint){
-			std::cerr << "Mesh is not sufficiently  hinted, face " << mesh.library[f.type] << " needs hints." << std::endl;
+			std::cerr << "Mesh is not sufficiently  hinted, face " << mesh.library[f.type] << " needs (resource) hints." << std::endl;
 			return "";
 		}
-		// what about split execution of code ? 
-		// maybe code should encode split structure in some way
-		// or annotated knitout?
-		knitout_string += l.knitout_string(translate_by);
+		// only save face offset, split execution is done using total instruction order saved in the fully hinted file
+		face_translation[&f - &mesh.faces[0]] = translate_by;
+	}
+
+	// sanity of total order
+	{
+		// no repetition:
+
+		// all face instructions covered:
+	}
+
+	// go by order, plug translate by and hint index to get knitout instruction
+	for(auto const &fi : mesh.total_order){
+		if(!face_translation.count(fi.first)) {
+		std::cerr << "Mesh is not sufficiently hinted, total order missing " << std::endl; break;
+		}
+		auto const &l = code.faces[name_to_code_idx[mesh.library[mesh.faces[fi.first].type]]];
+		int t = face_translation[fi.first];
+		knitout_string += l.knitout_string(t, fi.second);
 	}
 
 	return knitout_string;
