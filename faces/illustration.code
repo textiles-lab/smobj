@@ -279,6 +279,27 @@ face knit-
 		;;Carriers: A
 		knit - f0 A
 
+face knit+
+	edge -lX b0
+	edge +yX b0.5 A
+	edge +lX b0
+	edge -yX b-0.5 A
+	variant back-bed
+	code
+		;;Carriers: A
+		knit + b0 A
+
+face knit-
+	edge -lX b0
+	edge -yX b+0.5 A
+	edge +lX b0
+	edge +yX b-0.5 A
+	variant back-bed
+	code
+		;;Carriers: A
+		knit - b0 A
+
+
 face knit-fair-isle-2+ #slightly awkward in terms of using all resources
 	edge -lX f0
 	edge +yX f0.5 A B

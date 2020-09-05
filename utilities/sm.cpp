@@ -1290,14 +1290,19 @@ void sm::Code::save(std::string const &filename) {
 	for(auto const &face : faces){
 		out << "face " << face.name << '\n';
 		if(face.variant != ""){
-			out << "variant " << face.variant << '\n';
+			out << "\tvariant " << face.variant << '\n';
 		}
 		for(auto const &edge : face.edges) {
 			out << "\tedge ";
 			if (edge.direction == sm::Code::Face::Edge::In) out << "-";
 			else if (edge.direction == sm::Code::Face::Edge::Out) out << "+";
 			out << edge.type << ' ';
-			out << edge.bn.bed <<  (edge.bn.needle + edge.bn.nudge * 0.5) << ' ';
+			if(edge.type != "x"){ // convention none type ==> no bed-needle specified
+				if(edge.bn.bed != 'x')
+					out << edge.bn.bed <<  (edge.bn.needle + edge.bn.nudge * 0.5) << ' ';
+				else
+					out << 'x' << ' ';
+			}
 			out << edge.yarns;
 			out << '\n';
 		}
@@ -1310,13 +1315,13 @@ void sm::Code::save(std::string const &filename) {
 				case sm::Code::Face::Instr::Knit:
 					out <<"knit ";
 					out << (char)instr.direction << ' ';
-					out << instr.src.bed << instr.src.needle << ' ';
+					out << instr.tgt.bed << instr.tgt.needle << ' ';
 					out << instr.yarns << '\n';
 					break;
 				case sm::Code::Face::Instr::Tuck:
 					out <<"tuck ";
 					out << (char)instr.direction << ' ';
-					out << instr.src.bed << instr.src.needle << ' ';
+					out << instr.tgt.bed << instr.tgt.needle << ' ';
 					out << instr.yarns << '\n';
 					break;
 				case sm::Code::Face::Instr::Miss:
