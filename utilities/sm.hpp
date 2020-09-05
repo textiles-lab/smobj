@@ -226,7 +226,7 @@ struct Code {
 	//----- code per faces -----
 	struct Face {
 		std::string name; //descriptive name for type
-		std::string version="";
+		std::string variant="";
 		std::vector<std::string> carriers;
 		struct Edge {
 			enum Direction : char {
@@ -274,9 +274,19 @@ struct Code {
 				else if (e.direction == Edge::Out) ret += '+';
 				ret += e.type;
 			}
+			ret += ' ' + variant; //add variant to the key 
 			return ret;
 		}
-
+		std::string key_library() const {
+			std::string ret = name;
+			for (auto const &e : edges) {
+				ret += ' ';
+				if (e.direction == Edge::In) ret += '-';
+				else if (e.direction == Edge::Out) ret += '+';
+				ret += e.type;
+			}
+			return ret;
+		}
 		std::string knitout_string(int translate_to = 0, int index = -1) const {
 			std::string ret = ";from: " +  key() + ":" + "instr  " + std::to_string(index)+  "\n";
 			// concatenate all instructions

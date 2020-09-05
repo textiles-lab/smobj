@@ -206,12 +206,12 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			h.src  = sm::Mesh::Hint::User;
 			int32_t face;
 			if(!(str >> face)){
-				throw std::runtime_error("version hint does not have a face");
+				throw std::runtime_error("variant hint does not have a face");
 			}
 			h.lhs.face = face-1;
 			h.lhs.edge = -1;
 			std::string var; 
-			if(!(str >> var)) throw std::runtime_error("version hint does not have a variant name");
+			if(!(str >> var)) throw std::runtime_error("variant hint does not have a variant name");
 			h.rhs = var;
 			char src;
 			if(str >> src){
@@ -956,11 +956,11 @@ sm::Code sm::Code::load(std::string const &filename) {
 				code_library.faces.back().name = name;
 				current = &code_library.faces.back();
 				current_instrs = nullptr;
-			} else if (tok == "version") {
-				if (!current) throw std::runtime_error(line_info() + "version line without face line");
+			} else if (tok == "variant") {
+				if (!current) throw std::runtime_error(line_info() + "variant line without face line");
 				std::string ver; 
-				if(!(str >> ver)) throw std::runtime_error(line_info() + "Failed to read name in version line");
-				current->version = ver;
+				if(!(str >> ver)) throw std::runtime_error(line_info() + "Failed to read name in variant line");
+				current->variant = ver;
 			} else if (tok == "edge") {
 				if (!current) throw std::runtime_error(line_info() + "edge line without face line");
 				Code::Face::Edge edge;
@@ -1289,8 +1289,8 @@ void sm::Code::save(std::string const &filename) {
 	std::ofstream out(filename);
 	for(auto const &face : faces){
 		out << "face " << face.name << '\n';
-		if(face.version != ""){
-			out << "version " << face.version << '\n';
+		if(face.variant != ""){
+			out << "variant " << face.variant << '\n';
 		}
 		for(auto const &edge : face.edges) {
 			out << "\tedge ";
@@ -2888,8 +2888,15 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 	knitout_string += ";auto-generated from smobj, see sm.cpp,  sm::knitout()\n";
 	
 	std::map<std::string, uint32_t> name_to_code_idx;
+	std::map<uint32_t, std::string> face_variant;
 	for(auto const &c : code.faces){
 		name_to_code_idx[c.key()] = &c - &code.faces[0];
+	}
+	for(auto h : mesh.hints){
+		// TODO check that variant hints are consistent
+		if(h.type == sm::Mesh::Hint::Variant){
+			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
+		}
 	}
 
 	// TODO check hints are consistent, clean up
@@ -2897,11 +2904,16 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 	}
 	std::map<int32_t, int32_t> face_translation;
 	for(auto &f : mesh.faces){
-		if(!name_to_code_idx.count(mesh.library[f.type])){
+		std::string variant = "";
+		if(face_variant.count(&f- &mesh.faces[0])){
+			variant = face_variant[&f - &mesh.faces[0]];
+		}
+		std::string signature = mesh.library[f.type] + ' ' + variant;
+		if(!name_to_code_idx.count(signature)){
 			std::cerr << "Code does not exist for face signature " << mesh.library[f.type] << std::endl; //eventually throw
 			return "";//knitout_string;
 		}
-		auto const &l = code.faces[name_to_code_idx[mesh.library[f.type]]];
+		auto const &l = code.faces[name_to_code_idx[signature]];
 		int translate_by = 0; // todo have a map assuming hints are complete
 		bool found_hint = false;
 		for(auto const &e : l.edges){
@@ -2943,7 +2955,8 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 		if(!face_translation.count(fi.first)) {
 		std::cerr << "Mesh is not sufficiently hinted, total order missing " << std::endl; break;
 		}
-		auto const &l = code.faces[name_to_code_idx[mesh.library[mesh.faces[fi.first].type]]];
+		std::string signature = mesh.library[mesh.faces[fi.first].type] +  ' ' + (face_variant.count(fi.first) ? face_variant[fi.first] : "");
+		auto const &l = code.faces[name_to_code_idx[signature]];
 		int t = face_translation[fi.first];
 		knitout_string += l.knitout_string(t, fi.second);
 	}
