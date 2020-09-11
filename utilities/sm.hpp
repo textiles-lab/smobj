@@ -289,8 +289,9 @@ struct Code {
 		}
 		std::string knitout_string(int translate_to = 0, int index = -1, bool verbose = false) const {
 			// verbose generates explicit instructions for rack + additional comments
+			std::string ret ="";
 			if(verbose){
-				std::string ret = ";from: " +  key() + ":" + "instr  " + std::to_string(index)+  "\n";
+				ret += ";from: " +  key() + ":" + "instr  " + std::to_string(index)+  "\n";
 			}
 			// concatenate all instructions
 			for(auto const &i_ : instrs){
