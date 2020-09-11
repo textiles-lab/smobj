@@ -287,8 +287,11 @@ struct Code {
 			}
 			return ret;
 		}
-		std::string knitout_string(int translate_to = 0, int index = -1) const {
-			std::string ret = ";from: " +  key() + ":" + "instr  " + std::to_string(index)+  "\n";
+		std::string knitout_string(int translate_to = 0, int index = -1, bool verbose = false) const {
+			// verbose generates explicit instructions for rack + additional comments
+			if(verbose){
+				std::string ret = ";from: " +  key() + ":" + "instr  " + std::to_string(index)+  "\n";
+			}
 			// concatenate all instructions
 			for(auto const &i_ : instrs){
 				int32_t idx = &i_ - &instrs[0];
@@ -326,14 +329,18 @@ struct Code {
 						break;
 					case Instr::Xfer:
 						// insert rack, here 
-						ret += "rack " + std::to_string(i.rack()) + "\n";
+						if(verbose){
+							ret += "rack " + std::to_string(i.rack()) + "\n";
+						}
 						ret += "xfer ";
 						ret += i.src.to_string() + " ";
 						ret += i.tgt.to_string() + " ";
 						break;
 					case Instr::Split:
 						// insert rack here
-						ret += "rack " + std::to_string(i.rack()) + "\n";
+						if(verbose){
+							ret += "rack " + std::to_string(i.rack()) + "\n";
+						}
 						ret += "split ";
 						ret += (char)i.direction; ret += " ";
 						ret += i.tgt.to_string() + " "; // src, tgt or tgt,tgt2
