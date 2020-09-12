@@ -159,7 +159,8 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 				float needle;
 				if(str2 >> needle){
 					bn.needle = needle;
-					bn.nudge = (needle-bn.needle > 0 ? 1 : -1);
+					if(needle - bn.needle > 0.25) bn.nudge = 1;
+					if(bn.needle - needle > 0.25) bn.nudge = -1;
 				}
 				h.rhs = bn;
 			}
@@ -982,9 +983,10 @@ sm::Code sm::Code::load(std::string const &filename) {
 					edge.bn.bed = bed;
 					float needle;
 					if (!(str >> needle) && !edge.bn.dontcare()) throw std::runtime_error(line_info() + "edge without needle");
-					if(!edge.bn.dontcare())
-					edge.bn.needle = needle;
-					edge.bn.nudge = (needle - edge.bn.needle)*2;
+					if(!edge.bn.dontcare()){
+						edge.bn.needle = needle;
+						edge.bn.nudge = (needle - edge.bn.needle)*2;
+					}
 					std::string y = "";
 					while (str >> y ){
 						if (!edge.yarns.empty()) edge.yarns += " ";
@@ -2864,13 +2866,14 @@ sm::Mesh sm::order_faces(sm::Mesh const &mesh, sm::Library const &library){
 	return out;
 }
 
+//TODO
+//bool add_hint(Hint h, Mesh m, std::vector<Hint> *offending){
+//	return true if hint can be added without inconsistencies, else false (return offending hints)
+//}
 
 // knitout from faces
-// assumes faces have been ordered
-// assumes hinting is complete and valid (does not check for validity)
-// assumes code can be run as-is without splitting (might need to be updated)
+// assumes hinting is complete and valid 
 std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
-	//hints_are_complete(mesh, library, code);
 	// process all the hints into easy to access formats
 	std::map<std::string, uint32_t> name_to_code_idx;
 	std::map<uint32_t, std::string> face_variant;
@@ -2878,7 +2881,29 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 	for(auto const &c : code.faces){
 		name_to_code_idx[c.key()] = &c - &code.faces[0];
 	}
-	
+
+	// debug
+	{
+		int order = 0;
+		int variant = 0;
+		int resource = 0;
+		for(auto h : mesh.hints){
+			if(h.type == sm::Mesh::Hint::Order){
+				order++;
+			}
+			if(h.type == sm::Mesh::Hint::Variant){
+				variant++;
+			}
+			if(h.type == sm::Mesh::Hint::Resource){
+				resource++;
+			}
+		}
+		std::cout <<"#Hints [Order: " << order << " Variant: " << variant << " Resource: " << resource << " ]" << std::endl;
+	}
+
+	// ----------------- hint verification -------------
+	// TODO refactor this into a separate "verifier"
+	// Variant hints:
 	for(auto h : mesh.hints){
 		// TODO check that variant hints are consistent
 		if(h.type == sm::Mesh::Hint::Variant){
@@ -2913,24 +2938,26 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 			}
 		}
 	}
+
+	// Resource hints
 	for(auto h: mesh.hints){
 		if(h.type == sm::Mesh::Hint::Resource){
 			const sm::Mesh::Face &f = mesh.faces[h.lhs.face];
 			std::string signature = face_to_code_key(f);
 			auto const &l = code.faces[name_to_code_idx[signature]];
-			if(l.edges[h.lhs.edge].type[0] == 'y') continue; //DEBUG; skip yarns 
+			//if(l.edges[h.lhs.edge].type[0] == 'y') continue; //DEBUG; skip yarns 
 			if(l.edges.size() != f.size()){
 				std::cerr <<"Code face and mesh face have different number of edges." << std::endl;
 				return "";
 			}
 			const sm::BedNeedle bn = std::get<sm::BedNeedle>(h.rhs);
 			const sm::BedNeedle bn_template = l.edges[h.lhs.edge].bn;
+			if(bn_template.dontcare()) continue;
 			int offset = bn.location() - bn_template.location();
-			if(face_translation.count(h.lhs.face) && face_translation[h.lhs.face] != offset){
+			// TODO does this need to always hold true especially with yarn connections ?
+			if( face_translation.count(h.lhs.face) && face_translation[h.lhs.face] != offset){
 				std::cerr <<"Resource hints are not consistent!" << h.lhs.face << "/" << h.lhs.edge<< std::endl;
-				std::cerr <<"\tFace " << h.lhs.face << std::endl;
 				std::cerr <<"\tOld translation: " << face_translation[h.lhs.face] << " new translation: " << offset << std::endl;
-				std::cerr <<"\tTemplate: " << bn_template.to_string() << " Hint: " << bn.to_string() << std::endl;
 				std::cerr <<"\tLoc Template: " << bn_template.location() << " Hint: " << bn.location() << std::endl;
 				return "";
 			}
@@ -2940,7 +2967,7 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 	// all faces have a resource hint
 	for(auto &f : mesh.faces){
 		if(!face_translation.count(&f - &mesh.faces[0])){
-			std::cerr << "All faces have not been hinted. " << std::endl;
+			std::cerr << "All faces have not been hinted. "<< &f - &mesh.faces[0] << std::endl;
 			return "";
 		}
 	}
@@ -2974,6 +3001,87 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 		}
 	}
 
+	// Order hints
+	{
+
+		//check for consistency independent of total order for verification purposes
+		{
+			int N = 0;
+			std::map<sm::Mesh::FaceEdge, std::set<sm::Mesh::FaceEdge>> depends_on, inverse_depends_on;
+			for(auto const &f : mesh.faces){
+				std::string signature = face_to_code_key(f);
+				auto const &l = code.faces[name_to_code_idx[signature]];
+				N += l.instrs.size();
+				for(uint32_t i = 0; i < l.instrs.size(); ++i){
+					sm::Mesh::FaceEdge fe; fe.face = &f - &mesh.faces[0];
+					fe.edge = i;
+					depends_on[fe] = std::set<sm::Mesh::FaceEdge>();
+					inverse_depends_on[fe] = std::set<sm::Mesh::FaceEdge>();
+				}
+			}
+			std::vector<sm::Mesh::FaceEdge> total_order;
+			std::set<sm::Mesh::FaceEdge> done;
+			for(auto const &h: mesh.hints){
+				if(h.type == sm::Mesh::Hint::Order){
+					depends_on[h.lhs].insert(std::get<sm::Mesh::FaceEdge>(h.rhs));
+					inverse_depends_on[std::get<sm::Mesh::FaceEdge>(h.rhs)].insert(h.lhs);
+				}
+			}
+			bool did_update = true;
+			while(did_update){ //lazy-version
+				did_update = false;
+				for(auto ba : depends_on){
+					if(ba.second.empty() && !done.count(ba.first)){
+						total_order.emplace_back(ba.first);
+						done.insert(ba.first);
+						for(auto x: inverse_depends_on[ba.first]){
+							assert(depends_on[x].count(ba.first));
+							depends_on[x].erase(ba.first);
+						}
+						did_update = true;
+					}
+				}
+			}
+			if(total_order.size() < N){
+				std::cerr << "Order hints are inconsistent. " << std::endl;
+				return "";
+			}
+		}
+		// respect total order, as long as total order is consistent, this should be consistent
+		auto order = mesh.total_order;
+		for(auto const &h: mesh.hints){
+			if(h.type == sm::Mesh::Hint::Order){
+				std::pair<uint32_t, uint32_t> before, after;
+				before.first = h.lhs.face;
+				before.second = h.lhs.edge;
+				after.first = (std::get<sm::Mesh::FaceEdge>(h.rhs)).face;
+				after.second = (std::get<sm::Mesh::FaceEdge>(h.rhs)).edge;
+				auto a_it = std::find(order.begin(), order.end(), after);
+				auto b_it = std::find(order.begin(), order.end(), before);
+				if(std::distance(order.begin(), a_it) < std::distance(order.begin(), b_it)){
+					std::cerr << "Order hint inconsistent with total order " << std::endl;
+					return "";
+				}
+			}
+		}
+	}
+
+	// Slack is respected
+	for(auto const &c : mesh.connections){
+		int32_t a_offset  = face_translation[c.a.face];
+		int32_t b_offset  = face_translation[c.b.face];
+		auto const &ca = code.faces[name_to_code_idx[face_to_code_key(mesh.faces[c.a.face])]];
+		auto const &cb = code.faces[name_to_code_idx[face_to_code_key(mesh.faces[c.b.face])]];
+		auto const &ea = ca.edges[c.a.edge];
+		auto const &eb = cb.edges[c.b.edge];
+		float a = ea.bn.location() + a_offset;
+		float b = eb.bn.location() + b_offset;
+		if(std::abs(a-b) > 0.5){
+			// connection does not respect slack/loop constraint
+			std::cerr << "Slack is not respected at connection between " << c.a.face << "/" << c.a.edge << " and " << c.b.face << "/" << c.b.edge << " offsets: " << a << ", " << b  << std::endl;
+			return "";
+		}
+	}
 	// sanity of total order
 	{
 		
@@ -2999,10 +3107,11 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 				}
 			}
 		}
-		// TODO total order is acyclic on f/i
-		{
-		}
+		// if total order exists and covers all face/instructions without repetition then it must be acyclic
 	}
+	// --------------End of hint verification -------------
+	// TODO return inconsistencies/missing hints for generating more hints
+	
 
 
 	// --------------Code Generation------------------------
