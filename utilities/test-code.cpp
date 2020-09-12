@@ -1,4 +1,5 @@
 #include<iostream>
+#include <fstream>
 #include "sm.hpp"
 #include "hinters.hpp"
 
@@ -32,7 +33,9 @@ int main(int argc, char *argv[]){
 	std::cout << "Saved hinted smobj as ./hinted.smobj" << std::endl; 
 
 	std::string knitout = sm::knitout(out, code);
-
+	std::ofstream kw("out.knitout");
+	kw << knitout;
+	kw.close();
 	std::cout << knitout << std::endl;
 
 	return 0;

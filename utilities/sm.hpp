@@ -42,7 +42,8 @@ struct BedNeedle{
 		return std::tie(bed, loc) == std::tie(rhs.bed, rloc);
 	}
 	std::string to_string() const{
-		return bed + std::to_string(needle);
+		int n = location();
+		return bed + std::to_string(n);
 	}
 	bool dontcare() const{
 		return bed == 'x';
@@ -356,7 +357,9 @@ struct Code {
 						assert(false && "unknown instruction");
 
 				}
-				ret += "\n";
+				if(index < 0){
+					ret += "\n";
+				}
 			}
 
 			return ret;

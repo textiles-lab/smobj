@@ -2869,91 +2869,157 @@ sm::Mesh sm::order_faces(sm::Mesh const &mesh, sm::Library const &library){
 // assumes faces have been ordered
 // assumes hinting is complete and valid (does not check for validity)
 // assumes code can be run as-is without splitting (might need to be updated)
-// TODO generate knitout using order hints 
 std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
-
-	for(auto const &h : mesh.hints){
-		if(h.type == sm::Mesh::Hint::Order){
-			std::cout << "Order Hint " << h.to_string() << std::endl;
-		}
-	}
-	std::cout << "Done with order hints.. " << std::endl;
-	std::string knitout_string = "";
-
-	// knitout header
-	knitout_string += ";!knitout-2\n";
-
-	std::string carriers = "A B"; // based on illustration.code
-	{
-		// hints don't currently specify yarn carriers, but should 
-	}
-	knitout_string += ";;Carriers: "+ carriers + "\n";
-
-	// what to blame:
-	knitout_string += ";auto-generated from smobj, see sm.cpp,  sm::knitout()\n";
-	
+	//hints_are_complete(mesh, library, code);
+	// process all the hints into easy to access formats
 	std::map<std::string, uint32_t> name_to_code_idx;
 	std::map<uint32_t, std::string> face_variant;
+	std::map<int32_t, int32_t> face_translation;
 	for(auto const &c : code.faces){
 		name_to_code_idx[c.key()] = &c - &code.faces[0];
 	}
+	
 	for(auto h : mesh.hints){
 		// TODO check that variant hints are consistent
 		if(h.type == sm::Mesh::Hint::Variant){
+			if(face_variant.count(h.lhs.face) && face_variant[h.lhs.face] != std::get<std::string>(h.rhs)){
+				//throw std::runtime_error("[Variant] Hints for face " + std::to_string(h.lhs.face) + " are inconsistent".); 
+				std::cerr << "[Variant] Hints for face " << h.lhs.face << " are inconsistent: " << face_variant[h.lhs.face] << ", " << std::get<std::string>(h.rhs) << std::endl;
+				return "";
+			}
 			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
 		}
 	}
-
-	// TODO check hints are consistent, clean up
+	
 	{
+		// hints don't currently specify yarn carriers, but should 
 	}
-	std::map<int32_t, int32_t> face_translation;
-	for(auto &f : mesh.faces){
+	auto face_to_code_key = [&](const sm::Mesh::Face &f)->std::string{
 		std::string variant = "";
 		if(face_variant.count(&f- &mesh.faces[0])){
 			variant = face_variant[&f - &mesh.faces[0]];
 		}
 		std::string signature = mesh.library[f.type] + ' ' + variant;
-		if(!name_to_code_idx.count(signature)){
-			std::cerr << "Code does not exist for face signature " << mesh.library[f.type] << std::endl; //eventually throw
-			return "";//knitout_string;
-		}
-		auto const &l = code.faces[name_to_code_idx[signature]];
-		int translate_by = 0; // todo have a map assuming hints are complete
-		bool found_hint = false;
-		for(auto const &e : l.edges){
-			// should edges just have a type called 'loop'/'yarn'
-			// an edge Any would not have a needle associated with it
-			// everything else should be hinted
-			if(e.direction != sm::Code::Face::Edge::Any){
-				translate_by = - e.bn.needle;
-
-				for(auto h : mesh.hints){
-					if(h.type == sm::Mesh::Hint::Resource && h.lhs.face == &f - &mesh.faces[0]  && h.lhs.edge == &e - &l.edges[0]){
-						auto bn = std::get<sm::BedNeedle>(h.rhs);
-						{
-							translate_by += bn.needle;
-							found_hint = true;
-						}
-					}
-				}
-				break; // if the face was consistent, only one location needs to be checked
+		return signature;
+	};
+	
+	// faces are associated with code signatures that exist in the code library
+	{
+		for(auto const &f : mesh.faces){
+			std::string signature = face_to_code_key(f);
+			if(!name_to_code_idx.count(signature)){
+			std::cerr << "Code does not exist for face signature " << mesh.library[f.type] << std::endl; 
+			return "";
 			}
 		}
-		if(!found_hint){
-			std::cerr << "Mesh is not sufficiently  hinted, face " << mesh.library[f.type] << " needs (resource) hints." << std::endl;
+	}
+	for(auto h: mesh.hints){
+		if(h.type == sm::Mesh::Hint::Resource){
+			const sm::Mesh::Face &f = mesh.faces[h.lhs.face];
+			std::string signature = face_to_code_key(f);
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			if(l.edges[h.lhs.edge].type[0] == 'y') continue; //DEBUG; skip yarns 
+			if(l.edges.size() != f.size()){
+				std::cerr <<"Code face and mesh face have different number of edges." << std::endl;
+				return "";
+			}
+			const sm::BedNeedle bn = std::get<sm::BedNeedle>(h.rhs);
+			const sm::BedNeedle bn_template = l.edges[h.lhs.edge].bn;
+			int offset = bn.location() - bn_template.location();
+			if(face_translation.count(h.lhs.face) && face_translation[h.lhs.face] != offset){
+				std::cerr <<"Resource hints are not consistent!" << h.lhs.face << "/" << h.lhs.edge<< std::endl;
+				std::cerr <<"\tFace " << h.lhs.face << std::endl;
+				std::cerr <<"\tOld translation: " << face_translation[h.lhs.face] << " new translation: " << offset << std::endl;
+				std::cerr <<"\tTemplate: " << bn_template.to_string() << " Hint: " << bn.to_string() << std::endl;
+				std::cerr <<"\tLoc Template: " << bn_template.location() << " Hint: " << bn.location() << std::endl;
+				return "";
+			}
+			face_translation[h.lhs.face] = offset;
+		}
+	}
+	// all faces have a resource hint
+	for(auto &f : mesh.faces){
+		if(!face_translation.count(&f - &mesh.faces[0])){
+			std::cerr << "All faces have not been hinted. " << std::endl;
 			return "";
 		}
-		// only save face offset, split execution is done using total instruction order saved in the fully hinted file
-		face_translation[&f - &mesh.faces[0]] = translate_by;
+	}
+	
+
+	std::vector<std::string> carriers;
+	{
+		// Go over all the yarn carriers that appear in each face code
+		// to generate a carrier use string
+		for(auto const &f : mesh.faces){
+			std::string signature = face_to_code_key(f);
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			for(auto c : l.carriers){
+				if(std::find(carriers.begin(), carriers.end(), c) == carriers.end()){
+					carriers.emplace_back(c);
+				}
+			}
+		}
+		// Check that carriers are globally consistent
+		for(auto const &f : mesh.faces){
+			std::string signature = face_to_code_key(f);
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			for(uint32_t k = 1; k < l.carriers.size(); ++k){
+				auto d1 = std::distance(carriers.begin(), std::find(carriers.begin(), carriers.end(),l.carriers[k-1]));
+				auto d2 = std::distance(carriers.begin(), std::find(carriers.begin(), carriers.end(), l.carriers[k]));
+				if(d2 < d1){
+					std::cerr << "Local face carrier order not consistent with global order. " << std::endl;
+					return "";
+				}
+			}
+		}
 	}
 
 	// sanity of total order
 	{
-		// no repetition:
-
-		// all face instructions covered:
+		
+		// no repetition
+		{
+			auto order = mesh.total_order;
+			auto it = std::unique(order.begin(), order.end());
+			if(it != order.end()){
+				std::cerr << "Total order has duplicate entries!"  << std::endl;
+				return "";
+			}
+		}
+		// all face instructions covered
+		for(auto const &f : mesh.faces){
+			std::string signature = face_to_code_key(f);
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			for(uint32_t i = 0; i < l.instrs.size(); ++i){
+				const std::pair<uint32_t, uint32_t> fi = std::make_pair(&f - &mesh.faces[0], i);
+				auto it = std::find(mesh.total_order.begin(), mesh.total_order.end(), fi);
+				if(it == mesh.total_order.end()){
+					std::cerr << "Total order is incomplete, does not feature face/instr : "<< &f - &mesh.faces[0] << "/" << i << " ." << std::endl;
+					return "";
+				}
+			}
+		}
+		// TODO total order is acyclic on f/i
+		{
+		}
 	}
+
+
+	// --------------Code Generation------------------------
+	std::string knitout_string = "";
+	// knitout header
+	knitout_string += ";!knitout-2\n";
+
+
+	{
+		// append all the carriers
+		knitout_string += ";;Carriers: ";
+		for(auto c : carriers) knitout_string += c + " ";
+		knitout_string += "\n";
+	}
+	// what to blame:
+	knitout_string += ";auto-generated from smobj, see sm.cpp,  sm::knitout()\n";
+	
 
 	// go by order, plug translate by and hint index to get knitout instruction
 	for(auto const &fi : mesh.total_order){
@@ -2963,7 +3029,8 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 		std::string signature = mesh.library[mesh.faces[fi.first].type] +  ' ' + (face_variant.count(fi.first) ? face_variant[fi.first] : "");
 		auto const &l = code.faces[name_to_code_idx[signature]];
 		int t = face_translation[fi.first];
-		knitout_string += l.knitout_string(t, fi.second);
+		knitout_string += l.knitout_string(t, fi.second, true);
+		knitout_string += "\n";
 	}
 
 	return knitout_string;
