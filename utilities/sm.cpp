@@ -2865,12 +2865,29 @@ sm::Mesh sm::order_faces(sm::Mesh const &mesh, sm::Library const &library){
 	// A mesh where faces are correctly ordered if ordering was possible, else original..
 	return out;
 }
+bool sm::add_hint(sm::Mesh::Hint const h, sm::Mesh *_mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> * _offenders){
+	assert(_mesh);
+	assert(_offenders);
+	sm::Mesh &mesh = *_mesh;
+	//std::vector<sm::Mesh::Hint> &offenders = *_offenders;
+	
+	if(verify(mesh, library, code, _offenders)){
+		mesh.hints.emplace_back(h);
+		return true;
+	}
+	// erase hint h from offenders
+	//offenders.erase(std::remove_if(offenders.begin(), 
+	//			offenders.end(),
+	//			[h](sm::Mesh::Hint const x)->bool{return (x==h);}),
+	//		offenders.end());
+	return false;
+}
 
-//TODO
-//bool add_hint(Hint h, Mesh m, std::vector<Hint> *offending){
-//	return true if hint can be added without inconsistencies, else false (return offending hints)
-//}
-
+// if strict is true, checks also if mesh is fully hinted
+// else only checks if hints are consistent
+bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> *_offenders,  bool is_fully_hinted){
+	return true;
+}
 // knitout from faces
 // assumes hinting is complete and valid 
 std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
@@ -3006,7 +3023,7 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 
 		//check for consistency independent of total order for verification purposes
 		{
-			int N = 0;
+			uint32_t N = 0;
 			std::map<sm::Mesh::FaceEdge, std::set<sm::Mesh::FaceEdge>> depends_on, inverse_depends_on;
 			for(auto const &f : mesh.faces){
 				std::string signature = face_to_code_key(f);

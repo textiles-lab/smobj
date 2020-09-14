@@ -19,6 +19,8 @@ namespace sm {
 struct BedNeedle{
 	char bed = 'x'; // todo enum 'f','b'(hooks) 'F','B'(sliders) 'x' (dontcare)
 	int needle = 0;
+	// todo have a convention that nudge is always to the right of the lower needle index
+	// to make it easier to compare without bothering with floats
 	int8_t nudge = 0; // location = needle + 0.5 * nudge
 	BedNeedle(){}
 	BedNeedle (char b, int n) {
@@ -119,6 +121,10 @@ struct Mesh {
 			}
 			return str;
 		}
+		bool operator== (const Hint& other) const {
+		return std::tie(type,src,lhs,rhs) == std::tie(other.type, other.src, other.lhs, other.rhs);
+	}
+
 	};
 	std::vector< Hint > hints; // can be an unordered_map, but hints could be multiple?
 
@@ -409,6 +415,12 @@ sm::Mesh order_faces(sm::Mesh const  &mesh,  sm::Library const  &library);
 
 // generate knitout code from an ordered set of faces using the code library
 std::string knitout(sm::Mesh const &mesh, sm::Code const &code);
+
+// can Hint h be added to mesh m without offending any existing hints?
+bool add_hint(sm::Mesh::Hint h, sm::Mesh *mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> *offenders);
+
+// verify existing hints
+bool verify(sm::Mesh const &mesh, Library const &library, Code const &code, std::vector<Mesh::Hint> *_offenders, bool strict=false);
 
 // eventually: verify hints in mesh
 bool verify_hinted_schedule(Mesh const &mesh, Library const &library, Code const &code);
