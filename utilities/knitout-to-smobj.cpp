@@ -2328,6 +2328,7 @@ int main(int argc, char **argv) {
 		std::string out_smobj = "";
 		bool drop_all = true;
 		bool compact = false;
+		bool checkpoints = true;
 	} args;
 
 	{ //parse arguments:
@@ -2345,7 +2346,9 @@ int main(int argc, char **argv) {
 					args.compact = true;
 				} else if (option == "no-drop") {
 					args.drop_all = false;
-				} else {
+				} else if (option == "no-checkpoints"){
+					args.checkpoints = false;
+				}else {
 					std::cerr << "Unrecognized option '" << arg << "'" << std::endl;
 					usage = true;
 				}
@@ -2362,7 +2365,7 @@ int main(int argc, char **argv) {
 		}
 
 		if (usage) {
-			std::cerr << "Usage:\n\t./knitout-to-smobj [--compact] [--no-drop] [--] <in.knitout> <out.smobj>" << std::endl;
+			std::cerr << "Usage:\n\t./knitout-to-smobj [--compact] [--no-drop] [--no-checkpoints] [--] <in.knitout> <out.smobj>" << std::endl;
 			return 1;
 		}
 	}
@@ -2791,43 +2794,44 @@ int main(int argc, char **argv) {
 		out << "\n";
 	}
 
-	//units:
-	for (auto const &u : translator->units) {
-		out << "U " << u.name << " " << u.length << "\n";
-	}
-
-	{ //checkpoints:
-		std::unordered_map< Unit const *, uint32_t > unit_index;
+	if ( args.checkpoints) {
+		//units:
 		for (auto const &u : translator->units) {
-			unit_index[&u] = unit_index.size() + 1; //1-based
+			out << "U " << u.name << " " << u.length << "\n";
 		}
 
-		std::unordered_map< glm::uvec3, std::map< uint32_t, float > > checkpoints;
-		//aggregate checkpoints:
-		for (auto const &c : translator->checkpoints) {
-			glm::uvec3 key = glm::uvec3(c.face, c.edge, c.crossing);
-			checkpoints[key].insert( std::make_pair( unit_index[c.unit], 0.0f )).first->second += c.length;
-		}
-
-		//output aggregated checkpoints:
-		for (auto const &c : translator->checkpoints) {
-			glm::uvec3 key = glm::uvec3(c.face, c.edge, c.crossing);
-			auto f = checkpoints.find(key);
-			if (f == checkpoints.end()) continue; //I guess we already got this one
-
-			out << "c " << (c.face+1) << "/" << (c.edge+1) << "/" << (c.crossing+1);
-			for (auto const &l : f->second) {
-				if (l.first == 0 && l.second == 0.0f) {
-					continue; //remove 0.0*'1' -- any other zero-length checkpoints shouldn't exist but we'll leave 'em in anyway.
-				}
-				assert(l.first != 0 && "this process should *never* use an absolute unit.");
-				out << ' ' << l.second << ' ' << l.first;
+		{ //checkpoints:
+			std::unordered_map< Unit const *, uint32_t > unit_index;
+			for (auto const &u : translator->units) {
+				unit_index[&u] = unit_index.size() + 1; //1-based
 			}
-			out << '\n';
-			checkpoints.erase(f);
-		}
-		
-	}
 
+			std::unordered_map< glm::uvec3, std::map< uint32_t, float > > checkpoints;
+			//aggregate checkpoints:
+			for (auto const &c : translator->checkpoints) {
+				glm::uvec3 key = glm::uvec3(c.face, c.edge, c.crossing);
+				checkpoints[key].insert( std::make_pair( unit_index[c.unit], 0.0f )).first->second += c.length;
+			}
+
+			//output aggregated checkpoints:
+			for (auto const &c : translator->checkpoints) {
+				glm::uvec3 key = glm::uvec3(c.face, c.edge, c.crossing);
+				auto f = checkpoints.find(key);
+				if (f == checkpoints.end()) continue; //I guess we already got this one
+
+				out << "c " << (c.face+1) << "/" << (c.edge+1) << "/" << (c.crossing+1);
+				for (auto const &l : f->second) {
+					if (l.first == 0 && l.second == 0.0f) {
+						continue; //remove 0.0*'1' -- any other zero-length checkpoints shouldn't exist but we'll leave 'em in anyway.
+					}
+					assert(l.first != 0 && "this process should *never* use an absolute unit.");
+					out << ' ' << l.second << ' ' << l.first;
+				}
+				out << '\n';
+				checkpoints.erase(f);
+			}
+
+		}
+	}
 	return 0;
 }
