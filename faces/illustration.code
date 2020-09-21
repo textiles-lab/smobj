@@ -120,9 +120,9 @@ face make-right-tuck-twist-
 face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
 	edge -lX f0
 	edge -lX f1
-	edge +yX f0.5 A
+	edge +yX f1.5 A
 	edge +lX f1
-	edge -yX f-0.5 A
+	edge -yX f0.5 A
 	code
 		;;Carriers: A
 		xfer - f0 b0 #+/- direction are hints on the src, + = everything to the right of f0
@@ -208,7 +208,7 @@ face turn))(
 
 face edge(
 	edge x
-	edge -y1 f0.5 A
+	edge -y1 f-0.5 A
 	edge +y1 f0.5 A
 	edge x
 	edge x
@@ -284,7 +284,7 @@ face knit+
 	edge +yX b0.5 A
 	edge +lX b0
 	edge -yX b-0.5 A
-	variant back-bed
+	variant bb
 	code
 		;;Carriers: A
 		knit + b0 A
@@ -294,7 +294,7 @@ face knit-
 	edge -yX b+0.5 A
 	edge +lX b0
 	edge +yX b-0.5 A
-	variant back-bed
+	variant bb
 	code
 		;;Carriers: A
 		knit - b0 A
@@ -346,6 +346,7 @@ face knit+.2111 #What face is this ??
 		knit + f0 A
 
 face drop+
+	variant ff
 	edge -l1 f0
 	edge +y0 f0.5
 	edge +l0 x
@@ -355,6 +356,7 @@ face drop+
 		drop f0
 
 face drop-
+	variant ff
 	edge -l1 f0
 	edge -y0 f0.5
 	edge +l0 x
@@ -363,7 +365,29 @@ face drop-
 		;;Carriers: A
 		drop f0
 
+face drop+
+	variant bb
+	edge -l1 b0
+	edge +y0 b0.5
+	edge +l0 x
+	edge -y0 b-0.5
+	code
+		;;Carriers: A
+		drop b0
+
+face drop-
+	variant bb
+	edge -l1 b0
+	edge -y0 b0.5
+	edge +l0 x
+	edge +y0 b-0.5
+	code
+		;;Carriers: A
+		drop b0
+
+
 face tuck-twist+
+	variant ff
 	edge -lX f0
 	edge +yX f0.5 A
 	edge +lX f0
@@ -373,6 +397,7 @@ face tuck-twist+
 		tuck - f0 A
 
 face tuck-twist-
+	variant ff
 	edge -lX f0
 	edge -yX f+0.5 A
 	edge +lX f0
@@ -381,7 +406,31 @@ face tuck-twist-
 		;;Carriers: A
 		tuck + f0 A
 
+#back-bed
+face tuck-twist+
+	variant bb
+	edge -lX b0
+	edge +yX b0.5 A
+	edge +lX b0
+	edge -yX b-0.5 A
+	code
+		;;Carriers: A
+		tuck - b0 A
+
+face tuck-twist-
+	variant bb
+	edge -lX b0
+	edge -yX b+0.5 A
+	edge +lX b0
+	edge +yX b-0.5 A
+	code
+		;;Carriers: A
+		tuck + b0 A
+
+
+
 face purl+
+	variant ff
 	edge -lX f0
 	edge +yX f0.5 A
 	edge +lX f0
@@ -393,6 +442,7 @@ face purl+
 		xfer b0 f0
 
 face purl-
+	variant ff
 	edge -lX f0
 	edge -yX f0.5 A
 	edge +lX f0
@@ -402,6 +452,31 @@ face purl-
 		xfer f0 b0
 		knit - b0 A
 		xfer b0 f0
+
+face purl+
+	variant bb
+	edge -lX b0
+	edge +yX b0.5 A
+	edge +lX b0
+	edge -yX b-0.5 A
+	code
+		;;Carriers: A
+		xfer b0 f0
+		knit + f0 A
+		xfer f0 b0
+
+face purl-
+	variant bb
+	edge -lX b0
+	edge -yX b0.5 A
+	edge +lX b0
+	edge +yX b-0.5 A
+	code
+		;;Carriers: A
+		xfer b0 f0
+		knit - f0 A
+		xfer f0 b0
+
 
 face seed-stitch+
 	edge -l1 f0
