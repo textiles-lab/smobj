@@ -125,23 +125,51 @@ int main(int argc, char* argv[]){
 				for(auto yb : lb.yarns){
 					//std::cout << "\tyb begin " << yb.begin.edge << " end " << yb.end.edge << std::endl;
 					if(ya.end.edge == a.edge && yb.begin.edge == b.edge){
-						l.yarns.emplace_back(yb);
-						l.yarns.back().begin.edge = b_edge_map[l.yarns.back().begin.edge];
-						l.yarns.back().end = ya.end;
-						l.yarns.back().end.edge = a_edge_map[ya.end.edge];
-						// add middle point 3D 
-						for(auto m : ya.middle) l.yarns.back().middle.emplace_back(m);
+						l.yarns.emplace_back();
+						l.yarns.back().begin = ya.begin;
+						l.yarns.back().begin.edge = a_edge_map[l.yarns.back().begin.edge];
+						l.yarns.back().end = yb.end;
+						l.yarns.back().end.edge = b_edge_map[l.yarns.back().end.edge];
 						
+						glm::vec3 p1 = glm::vec3(la.edges[ya.end.edge].vertex * (1.f - ya.end.along) + ya.end.along * la.edges[(ya.end.edge+1)%la.edges.size()].vertex, 0.f); 
+						glm::vec3 p2 = glm::vec3((lb.edges[yb.begin.edge].vertex * (1.f - yb.begin.along) + yb.begin.along * lb.edges[(yb.begin.edge+1)%lb.edges.size()].vertex) + translate, 0.f); 
+						// add middle point 3D 
+						for(auto a_it = ya.middle.begin(); a_it != ya.middle.end(); ++a_it){
+							l.yarns.back().middle.emplace_back(*a_it);
+						}
+						
+						l.yarns.back().middle.emplace_back(p1);
+						l.yarns.back().middle.emplace_back(p2);
+						
+						for(auto b_it = yb.middle.begin(); b_it != yb.middle.end(); ++b_it){
+							l.yarns.back().middle.emplace_back(*b_it);
+						}
+
+
+
 						std::cout << "Merge yarn point between yb and ya (1)" << std::endl;
 					}
 					else if(ya.begin.edge == a.edge && yb.end.edge == b.edge){
-						l.yarns.emplace_back(ya);
-						l.yarns.back().begin.edge = a_edge_map[l.yarns.back().begin.edge];
-						l.yarns.back().end = yb.end;
-						l.yarns.back().end.edge = b_edge_map[yb.end.edge];
-						// add middle point 3D 
-						for(auto m : yb.middle) l.yarns.back().middle.emplace_back(m);
+						l.yarns.emplace_back();
+						l.yarns.back().begin = yb.begin;
+						l.yarns.back().begin.edge = b_edge_map[l.yarns.back().begin.edge];
+						l.yarns.back().end = ya.end;
+						l.yarns.back().end.edge = a_edge_map[l.yarns.back().end.edge];
 						
+						glm::vec3 p1 = glm::vec3((lb.edges[yb.end.edge].vertex * (1.f - yb.end.along) + yb.end.along * lb.edges[(yb.end.edge+1)%lb.edges.size()].vertex) + translate, 0.f); 
+						glm::vec3 p2 = glm::vec3(la.edges[ya.begin.edge].vertex * (1.f - ya.begin.along) + ya.begin.along * la.edges[(ya.begin.edge+1)%la.edges.size()].vertex, 0.f); 
+						// add middle point 3D 
+						
+						for(auto b_it = yb.middle.begin(); b_it != yb.middle.end(); ++b_it){
+							l.yarns.back().middle.emplace_back(*b_it);
+						}
+						l.yarns.back().middle.emplace_back(p1);
+						l.yarns.back().middle.emplace_back(p2);
+						for(auto a_it = ya.middle.begin(); a_it != ya.middle.end(); ++a_it){
+							l.yarns.back().middle.emplace_back(*a_it);
+						}
+
+
 						std::cout << "Merge yarn point between ya and yb (2)" << std::endl;
 					}
 					else if(ya.begin.edge == a.edge && yb.begin.edge == b.edge){
@@ -151,8 +179,8 @@ int main(int argc, char* argv[]){
 						l.yarns.back().end = yb.end;
 						l.yarns.back().end.edge = b_edge_map[l.yarns.back().end.edge];
 						
-						glm::vec3 p1 = glm::vec3(la.edges[ya.begin.edge].vertex + ya.begin.along * la.edges[(ya.begin.edge+1)%la.edges.size()].vertex, 0.f); 
-						glm::vec3 p2 = glm::vec3((lb.edges[yb.begin.edge].vertex + yb.begin.along * lb.edges[(yb.begin.edge+1)%lb.edges.size()].vertex) + translate, 0.f); 
+						glm::vec3 p1 = glm::vec3(la.edges[ya.begin.edge].vertex * (1.f - ya.begin.along) + ya.begin.along * la.edges[(ya.begin.edge+1)%la.edges.size()].vertex, 0.f); 
+						glm::vec3 p2 = glm::vec3((lb.edges[yb.begin.edge].vertex * (1.f - yb.begin.along) + yb.begin.along * lb.edges[(yb.begin.edge+1)%lb.edges.size()].vertex) + translate, 0.f); 
 						// add middle point 3D 
 						
 						for(auto a_it = ya.middle.rbegin(); a_it != ya.middle.rend(); ++a_it){
@@ -174,8 +202,8 @@ int main(int argc, char* argv[]){
 						l.yarns.back().end = yb.begin;
 						l.yarns.back().end.edge = b_edge_map[l.yarns.back().end.edge];
 						
-						glm::vec3 p1 = glm::vec3(la.edges[ya.end.edge].vertex + ya.end.along * la.edges[(ya.end.edge+1)%la.edges.size()].vertex, 0.f); 
-						glm::vec3 p2 = glm::vec3((lb.edges[yb.end.edge].vertex + yb.end.along * lb.edges[(yb.end.edge+1)%lb.edges.size()].vertex) + translate, 0.f); 
+						glm::vec3 p1 = glm::vec3(la.edges[ya.end.edge].vertex * (1.f - ya.end.along) + ya.end.along * la.edges[(ya.end.edge+1)%la.edges.size()].vertex, 0.f); 
+						glm::vec3 p2 = glm::vec3((lb.edges[yb.end.edge].vertex * (1.f - yb.end.along) + yb.end.along * lb.edges[(yb.end.edge+1)%lb.edges.size()].vertex) + translate, 0.f); 
 						// add middle point 3D 
 						
 						for(auto a_it = ya.middle.begin(); a_it != ya.middle.end(); ++a_it){
@@ -250,8 +278,8 @@ int main(int argc, char* argv[]){
 			smobj.faces[a.face] = face; // update "a"
 		}
 
-		// any new 
 		// create a new library face and assign the face type of a.face as that library face
+		// this creates way too many temps, but that is probably okay
 		library_name_to_index[library.faces.back().key()] = library.faces.size()-1;
 		smobj.library.emplace_back(library.faces.back().key());
 
