@@ -30,8 +30,23 @@
 #E.g. `;;Carriers: ` header in face code
 
 #helper faces
+#face yarn-in+
+#	edge -lX f0
+#	edge +yX f0.5 A
+#	edge +lX f0
+#	edge -yX f-0.5 A
+#	code
+#		;;Carriers: A
+#		inhook A
+#		#do some tuck dance...
+#		tuck + f0 A
+#		tuck - f0 A
+#		releasehook A
 
-
+#face yarn-out+
+#
+#
+# out A
 
 face make-left-tuck+
 	edge  -lX f0
@@ -142,7 +157,7 @@ face decrease-left-
 		xfer b1 f0
 		knit - f0 A
 
-face decrease-left+ 
+face decrease-left+
 	edge -lX f0
 	edge -lX f1
 	edge +yX f0.5 A
@@ -208,7 +223,7 @@ face turn))(
 
 face edge(
 	edge x
-	edge -y1 f-0.5 A
+	edge -y1 f0.5 A
 	edge +y1 f0.5 A
 	edge x
 	edge x
@@ -506,9 +521,7 @@ face xfer+1
 	edge  -lX f0
 	edge  x
 	edge  +lX f1
-	edge  x 
+	edge  x
 	code
 		xfer f0 b0
 		xfer b0 f1
-
-
