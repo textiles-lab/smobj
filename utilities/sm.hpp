@@ -84,7 +84,7 @@ struct Mesh {
 		// flip: a[0] glued to b[1], a[1] glued to b[0]
 	};
 	std::vector< Connection > connections;
-	std::vector< std::pair<uint32_t, uint32_t> > total_order;
+	std::vector< std::pair<uint32_t, uint32_t> > total_order; // face-id/instruction-id
 	struct Hint {
 		enum HintType : char{
 			Resource = 'r', // needle
@@ -151,7 +151,7 @@ struct Mesh {
 
 	//write an ".smobj" (precondition: mesh is valid)
 	void save(std::string const &filename) const;
-	
+
 	//write a text version of the instructions, also needs library to keep track of edge types..
 	void save_instructions(std::string const &filename, sm::Library const &library) const;
 
@@ -188,7 +188,7 @@ struct Library {
 			} direction = Any;
 			std::string type;
 		};
-	
+
 		//face, with vertices in CCW order on the xy plane:
 		std::vector< Edge > edges;
 
@@ -241,12 +241,12 @@ struct Code {
 			} direction = Any;
 			std::string type;
 			BedNeedle bn;
-			std::string yarns=""; //string (z-index?) 
+			std::string yarns=""; //string (z-index?)
 		};
 
 		struct Instr{
 			enum Operation : char {
-				In = 'i', Out = 'o', Knit = 'k', Split = 's', Xfer = 'x', Miss = 'm',  Tuck = 't', Drop = 'd', Unknown = 'u' 
+				In = 'i', Out = 'o', Knit = 'k', Split = 's', Xfer = 'x', Miss = 'm',  Tuck = 't', Drop = 'd', Unknown = 'u'
 			} op = Unknown;
 			enum Direction : char {
 				Left = '-', Right = '+', None = '*'
@@ -281,7 +281,7 @@ struct Code {
 				else if (e.direction == Edge::Out) ret += '+';
 				ret += e.type;
 			}
-			ret += ' ' + variant; //add variant to the key 
+			ret += ' ' + variant; //add variant to the key
 			return ret;
 		}
 		std::string key_library() const {
@@ -336,7 +336,7 @@ struct Code {
 						ret += i.yarns;
 						break;
 					case Instr::Xfer:
-						// insert rack, here 
+						// insert rack, here
 						if(verbose){
 							ret += "rack " + std::to_string(i.rack()) + "\n";
 						}
