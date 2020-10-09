@@ -208,21 +208,155 @@ sm::Mesh sm::hint_shortrow_only_tubes(sm::Mesh const &mesh, sm::Code const &code
 	return m;
 }
 
+sm::BedNeedle find_edge_resource(sm::Mesh const &mesh, uint32_t fidx, uint32_t eidx) {
+    // go through resource hints
+    for(auto &h : mesh.hints) {
+        if (h.type == sm::Mesh::Hint::Resource && h.lhs.face == fidx && h.lhs.edge == eidx)
+            return std::get<sm::BedNeedle>(h.rhs);
+    }
+    sm::BedNeedle bn;
+    return bn;
+};
 
-// (a) if all edge in a face has a resource hints and the only reasonable code in .code has one variant, then assign that
+
+// Inference rules
+// - Resource
+//   (a) one resource hints exist for one edge and you want to infer everything else for that face
+//   (b) one edge A has a resource constraint and this edge has a connection to some other edge B, then assign B the constraint of A
+//   (c) if there is a resource conflict, then remove every infered constraints along that path, and warn the user that something's wrong
+bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const &code_library){
+
+    std::map<std::string, uint32_t > name_to_code_idx;
+    // Doesn't work if edges in the code library face are different among variants!
+	for(auto const &c : code_library.faces){
+        // What to do if there is a same library name with different variants?
+        name_to_code_idx[c.key_library()] = &c - &code_library.faces[0];
+	}
+
+    // Accumulate all changes here and assign afterwards
+	std::map<sm::Mesh::FaceEdge, sm::BedNeedle> constraints;
+
+    // (a)
+    // Iterate through edges and obtain BedNeedle
+    // TODO: How to obtain right/left for each edge and adjust nudge according to that?
+	for(auto &f : mesh.faces){
+		std::string lib_name = mesh.library[f.type];
+        uint32_t face_id = &f - &mesh.faces[0];
+        uint32_t code_idx = name_to_code_idx[lib_name];
+        
+        // Obtain the first edge that resource hint is not 'x' and store it in edge_constraint
+        bool found_resource = false;
+		auto l = code_library.faces[code_idx];
+        std::pair<sm::BedNeedle, uint32_t> edge_constraint;
+		for(auto &e : l.edges) {
+			uint32_t eidx = &e - &l.edges[0];
+            sm::BedNeedle bn = find_edge_resource(mesh, face_id, eidx);
+            if (bn.bed != 'x') {
+                found_resource = true;
+                edge_constraint.first = bn;
+                edge_constraint.second = eidx;
+                break;
+            }
+		}
+
+        // Propagate constraints to other edges in this face.
+        // Raise error if there is a resource conflict and return false
+        if (found_resource) {
+            for(auto &e : l.edges) {
+                uint32_t eidx = &e - &l.edges[0];
+                // skip if this edge is edge_constraint edge
+                if (eidx == edge_constraint.second) continue;
+
+                sm::BedNeedle bn = find_edge_resource(mesh, face_id, eidx);
+                // If there is already a resource assigned to this edge, make sure that it's not conflicting
+                if (bn.bed != 'x') {
+                    // TODO!! Also check nudge here???
+                    if (bn.bed != edge_constraint.first.bed ||
+                        bn.needle != edge_constraint.first.needle) {
+                        // Resource conflict!!
+                        std::cerr << "Resource conflict while running verifier." << std::endl;
+                        std::cerr << "Check resource constraint of edge " << eidx << " in face " << face_id << std::endl;;
+                        
+                        return false;
+                    }
+                } else {
+                    // Assign resource constraint to this edge
+                    sm::Mesh::FaceEdge fe;
+                    fe.face = face_id;
+                    fe.edge = eidx;
+                    // TODO: This is probably wrong!! We need to modify nudge here, right?
+                    constraints[fe] = edge_constraint.first;
+                    // TODO: Is this correct?
+					int offset = -l.edges[eidx].bn.location() + edge_constraint.first.location();
+                    constraints[fe].needle += offset;
+                }
+            }
+        }
+    }
+
+    // (b)
+	bool did_update = true;
+	while( did_update ){
+		did_update = false;
+		for(auto const &c : mesh.connections){
+            if(constraints.count(c.a) and !constraints.count(c.b)){
+                did_update = true;
+                constraints[c.b] = constraints[c.a];
+                // now assign the rest of c.b
+                std::string lib_name = mesh.library[mesh.faces[c.b.face].type];
+                auto l = code_library.faces[name_to_code_idx[lib_name]];
+
+                int offset = -l.edges[c.b.edge].bn.location() + constraints[c.b].location();
+                for(uint32_t i = 0; i < l.edges.size(); ++i){
+                    sm::Mesh::FaceEdge fe;
+                    fe.face = c.b.face;
+                    fe.edge = i;
+                    constraints[fe] = l.edges[i].bn;
+                    constraints[fe].needle += offset;
+                }
+            } else if (constraints.count(c.b) and !constraints.count(c.a)) {
+                did_update = true;
+                constraints[c.a] = constraints[c.b];
+                // now assign the rest of c.a
+                std::string lib_name = mesh.library[mesh.faces[c.b.face].type];
+                auto l = code_library.faces[name_to_code_idx[lib_name]];
+
+                int offset = -l.edges[c.a.edge].bn.location() + constraints[c.a].location();
+                for(uint32_t i = 0; i < l.edges.size(); ++i){
+                    sm::Mesh::FaceEdge fe;
+                    fe.face = c.a.face;
+                    fe.edge = i;
+                    constraints[fe] = l.edges[i].bn;
+                    constraints[fe].needle += offset;
+                }
+            }
+		}
+
+		if(!did_update) break;
+	}
+
+    // return this
+    bool is_changed = false;
+	for(auto h : constraints){
+        is_changed = true;
+		sm::BedNeedle bn;
+		mesh.hints.emplace_back();
+		mesh.hints.back().lhs = h.first;
+		bn.bed = h.second.bed;
+		bn.needle = h.second.needle;
+		bn.nudge = h.second.nudge;
+		mesh.hints.back().rhs = bn;
+		mesh.hints.back().type = sm::Mesh::Hint::Resource;
+		mesh.hints.back().src = sm::Mesh::Hint::Inferred;
+	}
+
+    return is_changed;
+}
+
+// If all edge in a face has a resource hints and the only reasonable code in .code has one variant, then assign that
 bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const &code_library){
     // return this
     bool is_changed = false;
-
-	auto find_edge_resource = [&](uint32_t fidx, uint32_t eidx)->sm::BedNeedle{
-		// go through resource hints
-		for(auto &h : mesh.hints) {
-			if (h.type == sm::Mesh::Hint::Resource && h.lhs.face == fidx && h.lhs.edge == eidx)
-                return std::get<sm::BedNeedle>(h.rhs);
-		}
-        sm::BedNeedle bn;
-		return bn;
-	};
 
     std::map<std::string, std::vector<uint32_t> > name_to_code_idx;
 	for(auto const &c : code_library.faces){
@@ -252,7 +386,7 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
 
         // TODO: Also check needle number???
         // Assign first edge bed to `first`
-        sm::BedNeedle first = find_edge_resource(face_id, 0);
+        sm::BedNeedle first = find_edge_resource(mesh, face_id, 0);
         if (first.bed == 'x') continue;
         bool is_same = true;
 
@@ -261,7 +395,7 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
 		auto l = code_library.faces[code_idx[0]];
 		for(auto &e : l.edges){
 			uint32_t eidx = &e - &l.edges[0];
-            sm::BedNeedle bn = find_edge_resource(face_id, eidx);
+            sm::BedNeedle bn = find_edge_resource(mesh, face_id, eidx);
             if (first.bed != bn.bed) {
                 is_same = false;
                 break;
@@ -275,7 +409,7 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
 
             sm::Mesh::Hint h;
 			h.type = sm::Mesh::Hint::Variant;
-			h.lhs.face = &f - &mesh.faces[0];
+			h.lhs.face = face_id;
             // Get variant from the only face that has a variant
 			h.rhs = l.variant;
 			h.src = sm::Mesh::Hint::Inferred;
@@ -284,17 +418,6 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
     }
 
     return is_changed;
-}
-
-bool sm::constraint_extend_resource_from_resource(sm::Mesh  &mesh, sm::Code const &code_library){
-    return false;
-	//Inferred
-
-	// Inference rules
-	// - Resource
-	//   (a) one resource hints exist for one edge and you want to infer everything else for that face
-	//   (b) one edge A has a resource constraint and this edge has a connection to some other edge B, then assign B the constraint of A
-	//   (c) if there is a resource conflict, then remove every infered constraints along that path, and warn the user that something's wrong
 }
 
 bool sm::constraint_face_instruction_order(sm::Mesh &mesh, sm::Code const &code_library){
@@ -309,7 +432,7 @@ sm::Mesh sm::infer_constraints(sm::Mesh &mesh, sm::Code const &code_library) {
         flag = false;
 		flag = constraint_extend_resource_from_resource(mesh, code_library);
         flag = constraint_assign_variant_from_resource(mesh, code_library);
-		flag =  constraint_face_instruction_order(mesh, code_library);
+		flag = constraint_face_instruction_order(mesh, code_library);
 	}
 
     return mesh;
