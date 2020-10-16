@@ -70,7 +70,6 @@ sm::Mesh sm::hint_shortrow_only_patch(sm::Mesh const &mesh, sm::Code const &code
         std::string variant = find_face_variant(0);
         std::string code_name = lib_name + " " + variant;
         // ideally
-        std::cout << "Code name " << code_name << std::endl;
         assert(name_to_code_idx.count(code_name) && "code name not in name_to_code_idx");
         auto l = code_library.faces[name_to_code_idx[code_name]];
         for(auto &e : l.edges){
@@ -80,7 +79,6 @@ sm::Mesh sm::hint_shortrow_only_patch(sm::Mesh const &mesh, sm::Code const &code
             hints[fe] = e.bn;
             if(e.bn.bed != 'x') bed = e.bn.bed;
         }
-        //std::cout << "Starting bed " << bed << std::endl;
         for(auto &h : hints) h.second.bed = bed;
     }
 
@@ -233,7 +231,7 @@ std::pair<sm::BedNeedle, sm::Mesh::Hint::HintSource> find_edge_resource
 //   (b) one edge A has a resource constraint and this edge has a connection to some other edge B, then assign B the constraint of A
 //   (c) if there is a resource conflict, then remove every infered constraints along that path, and warn the user that something's wrong
 bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const &code_library){
-    
+
     std::map<std::string, std::vector<uint32_t> > name_to_code_idx;
     for(auto const &c : code_library.faces){
         // What to do if there is a same library name with different variants?
@@ -260,7 +258,10 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
                  break;
             }
         }
-        if (!has_variant) continue;
+        if (!has_variant){
+            std::cout << "contnuing: " << face_id << " " << face_variant << std::endl;
+            continue;
+        }
 
         // Make sure we pick the code face which has the same variant
         // as the face's variant constraint.
@@ -289,11 +290,13 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
                     f_src = sm::Mesh::Hint::Heuristic;
 
                 // sanity check that e.bn.bed == bn.bed
-                found_resource = true;
                 edge_constraint.first = bn;
                 edge_constraint.second = eidx;
                 // offset between e.bn and bn should be the same for all edges in this face
+                assert((!found_resource || offset == e.bn.location() - bn.location())
+                        && "Offset is constant across all edge resources, right?");
                 offset = e.bn.location() - bn.location();
+                found_resource = true;
             }
         }
 
@@ -322,7 +325,6 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
                     return false;
                 }
             } else {
-
                 // Assign resource constraint to this edge
                 sm::Mesh::FaceEdge fe;
                 fe.face = face_id;
@@ -330,9 +332,10 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
                 // get the bed-needle value from e.bn and add offset to it
                 sm::BedNeedle new_bn;
                 new_bn.bed = e.bn.bed;
-                float location = e.bn.location() + offset;
+                float location = e.bn.location() - offset;
                 new_bn.needle = location;
-                new_bn.nudge = (location - new_bn.needle) > eps ? 1 : -1;
+                if (std::abs(location - new_bn.needle) > eps)
+                    new_bn.nudge = (location - new_bn.needle) > eps ? 1 : -1;
 
                 constraints[fe] = std::make_pair(new_bn, f_src);
             }
@@ -392,10 +395,10 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
 
     std::map<std::string, std::vector<uint32_t> > name_to_code_idx;
     for(auto const &c : code_library.faces){
-        // What to do if there is a same library name with different variants?
         std::vector<uint32_t> &vec = name_to_code_idx[c.key_library()];
         vec.push_back(&c - &code_library.faces[0]);
     }
+    //std::cout << "sm::constraint_assign_variant_from_resource called" << std::endl;
 
     // If all edge in a face has resource hints
     // Check if resource hints are consistant
@@ -410,7 +413,10 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
                 has_variant = true;
             }
         }
-        if (has_variant) continue;
+        if (has_variant) {
+          //std::cout << "debug: continuing on face " << face_id << " because variant exists already. " << std::endl;
+          continue;
+        }
 
         // If resource constraint exists for this face,
         // save that constraint
@@ -439,6 +445,14 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
         sm::Mesh::Hint::HintSource f_src =
             (name_to_code_idx[lib_name].size() == 1) ? sm::Mesh::Hint::Inferred
                                                      : sm::Mesh::Hint::Heuristic;
+
+
+        /*
+        TODO:
+        face 4 edges, bottom edge: f0 top edge: b0 variants: ff, fb, bb
+        Case 1: Only bottom edge has resource hint, that hint is say F123 --> assign "ff" ("fb also compatible but second in list")
+        Case 2: Bottom edge has resource hint F123, top edge has resource hint B123 --> assign "fb" ("ff" is not compatible because top edge doesn't match)
+        */
         for (auto face_code : name_to_code_idx[lib_name]) {
             // Get code face
             auto l = code_library.faces[face_code];
@@ -465,7 +479,12 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
                             // We have found one resource constraint for this edge
                             e_resource = true;
                             // Assign variant
+                            // TODO: Do this after checking all edges and make sure that they're compatible
+                            //std::cout << "[debug] Assigning variant " << l.variant << " for face " << face_id << std::endl;
                             f_variant_constraint = l.variant;
+                        }
+                        else{
+                          //std::cout << "[debug] Ignoring this edge resource for this variant since beds don't agree. " << " e.bn.bed = " << e.bn.bed << " f_bn.bed = " << f_bn.bed << std::endl;
                         }
                     }
                 }
@@ -491,7 +510,12 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
                 constraints.push_back(face_hint);
 
                 // Assign the first compatible code face
+                //std::cout << "[debug] Actually assigning hint variant  " << f_variant_constraint << " to face "  << face_id << std::endl;
+
                 break;
+            }
+            else{
+              //std::cout << "[debug] No edge has resource, so did not assign variant to " << face_id << std::endl;
             }
         }
     }

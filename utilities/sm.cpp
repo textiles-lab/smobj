@@ -142,10 +142,10 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			h.type = sm::Mesh::Hint::Resource;
 			h.src = sm::Mesh::Hint::User;
 			if( face < 1 || face > int32_t(mesh.faces.size())) throw std::runtime_error("face out of range in h line.");
-			if( edge < 1  || edge > int32_t(mesh.faces[face-1].size())) throw std::runtime_error("edge out of range in h line.");
+			if( edge < 1 || edge > int32_t(mesh.faces[face-1].size())) throw std::runtime_error("edge out of range in h line.");
 
 			h.lhs.face = face - 1;
-			h.lhs.edge =  edge -1;
+			h.lhs.edge = edge -1;
 
 			sm::BedNeedle bn;
 			std::string next;

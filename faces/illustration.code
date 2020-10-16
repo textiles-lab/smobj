@@ -208,6 +208,7 @@ face turn)((
 	edge +lX f0
 	edge +yX f-0.5 A
 	edge -yX f-0.5 A
+    variant ff
 	code
 		;;Carriers: A
 		miss - f0 A
@@ -217,6 +218,7 @@ face turn))(
 	edge -yX f0.5 A
 	edge +yX f0.5 A
 	edge +lX f0
+    variant ff
 	code
 		;;Carriers: A
 		miss + f0 A
@@ -281,6 +283,7 @@ face knit+
 	edge +yX f0.5 A
 	edge +lX f0
 	edge -yX f-0.5 A
+    variant ff
 	code
 		;;Carriers: A
 		knit + f0 A
@@ -290,6 +293,7 @@ face knit-
 	edge -yX f+0.5 A
 	edge +lX f0
 	edge +yX f-0.5 A
+	variant ff
 	code
 		;;Carriers: A
 		knit - f0 A
