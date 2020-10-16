@@ -361,11 +361,10 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
 // When some edges in a face are user constraint, or all edges have constraints but are heuristic, or
 // if there are more than 2 compatible faces in code library, then assign the first variant And
 // call it heuristic.
-
-// If all edge in a face has a resource hints and the only reasonable code in .code has one variant, then assign that
 bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const &code_library){
-    // return this
-    bool is_changed = false;
+
+    // Accumulate all changes here and assign afterwards
+    std::vector<sm::Mesh::Hint> constraints;
 
     std::map<std::string, std::vector<uint32_t> > name_to_code_idx;
     for(auto const &c : code_library.faces){
@@ -377,14 +376,10 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
     // If all edge in a face has resource hints
     // Check if resource hints are consistant
     for(auto &f : mesh.faces){
-        // TODO:
-        // std::vector<BedNeedle> face_constraints; face_constraints.assign(f.size(), BedNeedle());
-        // go through all the resource hints that match faceedge (f,i) and update face_constraints.
-        // then if compatible(l, face_constraints), set variant hint to l.variant
-        std::string lib_name = mesh.library[f.type];
+
         uint32_t face_id = &f - &mesh.faces[0];
 
-        // If this face already has variant hint, return
+        // If this face already has variant hint, continue
         bool has_variant = false;
         for(auto &h : mesh.hints) {
             if (h.type == sm::Mesh::Hint::Variant && h.lhs.face == face_id) {
@@ -393,55 +388,95 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
         }
         if (has_variant) continue;
 
-        // If the code of this face has more than two variants, return
-        // TODO: Heuristic constraint if there are multiple options with the same beds
-        // Or if the resource constraint are Heuristic
-        std::vector<uint32_t> code_idx = name_to_code_idx[lib_name];
-        if (code_idx.size() > 1) continue;
-        // go through each variant, and see if edge resource type and variant type are compatible
-        // for(auto c : code_idx){
-        //   auto l= code_library.faces[c];
-        // goal: check that l is compatible with existing resource hints of f
-        // std::vector<BedNeedle> f_edge_bns; <-- if resource constraint exists, save that else default bn (bn.bed == 'x')
-        // for(auto &e : l.edges){
+        // If resource constraint exists for this face,
+        // save that constraint
+        std::vector<sm::Mesh::Hint> face_constraints;
+        // Obtain constraints of this face
+        for (auto &h : mesh.hints) {
+            if (h.type == sm::Mesh::Hint::Resource && h.lhs.face == face_id)
+                face_constraints.push_back(h);
+        }
+
+        // Possible case:
+        // 1. All edges have resource constraints and are inferred or user.
+        //    Only one compatible face in the code library
+        //    -> Assign variable constraint as Inferred
+        // 2. Only subset of edges have resource constraints
+        //    -> Assign variable constraint as Heuristic
+        // 3. All edges have resource constraints but some of them are Heuristic
+        //    -> Assign variable constraint as Heuristic
+        // 4. There are more than 2 compatible face
+        //    -> Assign the first code face variant as Heuristic
         //
-        //  (e.bn.bed == f_edge_bns[idx])
-        //}
-        //}
-        //
+        // Go through each variant of this face,
+        // and see if edge resource type and variant type are compatible
+        // If they are compatible, assign the variant constraint.
+        std::string lib_name = mesh.library[f.type];
+        sm::Mesh::Hint::HintSource f_src =
+            (name_to_code_idx[lib_name].size() == 1) ? sm::Mesh::Hint::Inferred
+                                                     : sm::Mesh::Hint::Heuristic;
+        for (auto face_code : name_to_code_idx[lib_name]) {
+            // Get code face
+            auto l = code_library.faces[face_code];
+            bool one_edge_has_resource = false;
+            std::string f_variant_constraint = "";
+
+            // For each edge in this code face
+            for (int i = 0; i < (int)l.edges.size(); i++) {
+                bool e_resource = false;
+                sm::Code::Face::Edge e = l.edges[i];
+                // For all resource constraints that this face has
+                for (auto f_constraint : face_constraints) {
+                    // If a resource constraint is for this edge
+                    if (i == (int)f_constraint.lhs.edge) {
+                        // Get constraint content
+                        sm::BedNeedle f_bn = std::get<sm::BedNeedle>(f_constraint.rhs);
+                        // Code face and resource constraint matches!
+                        if (e.bn.bed == f_bn.bed) {
+                            // If some edges' resource constraint were Heuristic,
+                            // Variant constraint that we're trying to construct should
+                            // also be Heuristic.
+                            if (f_constraint.src == sm::Mesh::Hint::Heuristic)
+                                f_src = sm::Mesh::Hint::Heuristic;
+                            // We have found one resource constraint for this edge
+                            e_resource = true;
+                            // Assign variant
+                            f_variant_constraint = l.variant;
+                        }
+                    }
+                }
+
+                if (e_resource)
+                    one_edge_has_resource = true;
+                else
+                    f_src = sm::Mesh::Hint::Heuristic;
+            }
 
 
-        // TODO: Also check needle number???
-        // Assign first edge bed to `first`
-        sm::BedNeedle first = find_edge_resource(mesh, face_id, 0);
-        if (first.bed == 'x') continue;
-        bool is_same = true;
+            if (one_edge_has_resource) {
+                sm::Mesh::Hint face_hint;
 
-        // Iterate through edges of this face and is_same = false if
-        // the bed doesn't match with `first`
-        auto l = code_library.faces[code_idx[0]];
-        for(auto &e : l.edges){
-            uint32_t eidx = &e - &l.edges[0];
-            sm::BedNeedle bn = find_edge_resource(mesh, face_id, eidx);
-            if (first.bed != bn.bed) {
-                is_same = false;
+                sm::Mesh::FaceEdge fe;
+                fe.face = face_id;
+                face_hint.lhs = fe;
+                face_hint.type = sm::Mesh::Hint::Variant;
+
+                face_hint.rhs = f_variant_constraint;
+                face_hint.src = f_src;
+
+                constraints.push_back(face_hint);
+
+                // Assign the first compatible code face
                 break;
             }
         }
+    }
 
-        // If is_same == true, it means that all edges of f had resource hints and its bed was `first`.
-        // So assign the only variant in the code as variant hint and mark it has Inferred
-        if (is_same) {
-            is_changed = true;
-
-            sm::Mesh::Hint h;
-            h.type = sm::Mesh::Hint::Variant;
-            h.lhs.face = face_id;
-            // Get variant from the only face that has a variant
-            h.rhs = l.variant;
-            h.src = sm::Mesh::Hint::Inferred;
-            mesh.hints.emplace_back(h);
-        }
+    // return this
+    bool is_changed = false;
+    for (auto h : constraints) {
+        is_changed = true;
+        mesh.hints.push_back(h);
     }
 
     return is_changed;
