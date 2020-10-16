@@ -308,6 +308,29 @@ face knit+
 		;;Carriers: A
 		knit + b0 A
 
+# TODO-hinter: example of b and f combnation
+face knit+
+	edge -lX b0
+	edge +yX b0.5 A
+	edge +lX f0
+	edge -yX b-0.5 A
+	variant bf
+	code
+		;;Carriers: A
+		knit + b0 A
+        xfer b0 f0
+
+face knit+
+	edge -lX f0
+	edge +yX f0.5 A
+	edge +lX b0
+	edge -yX f-0.5 A
+	variant fb
+	code
+		;;Carriers: A
+		knit + f0 A
+        xfer f0 b0
+
 face knit-
 	edge -lX b0
 	edge -yX b+0.5 A

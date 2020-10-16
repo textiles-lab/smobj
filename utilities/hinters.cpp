@@ -30,7 +30,6 @@ sm::Mesh sm::constraint_assign_frontface_variant(sm::Mesh const &mesh, sm::Code 
             h.lhs.face = &f - &out.faces[0];
             h.rhs = variant;
             h.src = sm::Mesh::Hint::Heuristic;
-            // TODO if hint already exists, replace else append...
 
             out.hints.emplace_back(h);
         }
@@ -259,7 +258,6 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
             }
         }
         if (!has_variant){
-            std::cout << "contnuing: " << face_id << " " << face_variant << std::endl;
             continue;
         }
 
@@ -316,8 +314,9 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
             if (bn.bed != 'x') {
                 // needle 1, nudge -1 and needle 0, nudge 1 --> compatible since location is 0.5, location returns a float
                 // needle check: std::abs(bn.location()- other.location()) < eps)
-                if (bn.bed != edge_constraint.first.bed ||
-                        std::abs(bn.location()- edge_constraint.first.location()) < eps) {
+                float e_location = e.bn.location() - offset; 
+                if (bn.bed != e.bn.bed || 
+                        std::abs(e_location - bn.location()) > eps) {
                     // Resource conflict!!
                     std::cerr << "Resource conflict while running verifier." << std::endl;
                     std::cerr << "Check resource constraint of edge " << eidx << " in face " << face_id << std::endl;;
@@ -343,6 +342,7 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
     }
 
     // (b)
+    // TODO-hinter: This is going into infinite loop..
     for(auto const &c : mesh.connections){
         if(constraints.count(c.a) && !constraints.count(c.b)){
             constraints[c.b] = constraints[c.a];
@@ -354,6 +354,14 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
     // return this
     bool is_changed = false;
     for (auto h : constraints) {
+        // TODO-hinter: Need more reasonable fix for infinite loop
+        bool flag = true;
+        for (auto &hint : mesh.hints) {
+            if (hint.lhs == h.first && std::get<sm::BedNeedle>(hint.rhs) == h.second.first)
+                flag = false;
+        }
+        if (!flag) continue;
+
         is_changed = true;
         mesh.hints.emplace_back();
         mesh.hints.back().lhs = h.first;
@@ -365,20 +373,6 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
 
     return is_changed;
 }
-
-// TODO: Error reporting
-// We want to tell users which constraints doesn't make sense to users
-// Get a list of incompatible constraints, and somehow report it to users
-// Maybe implement a better API which can be called from EditMesh.cpp??
-
-// TODO: Also Error reporting
-// If constraint 0 and 1 are incompatible, then 1 is incompatibe with 0
-
-
-// Helper function that checks if code-template-face is compatible with edge-resources
-//{
-
-//}
 
 
 // 1. inffered constraints
@@ -398,7 +392,6 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
         std::vector<uint32_t> &vec = name_to_code_idx[c.key_library()];
         vec.push_back(&c - &code_library.faces[0]);
     }
-    //std::cout << "sm::constraint_assign_variant_from_resource called" << std::endl;
 
     // If all edge in a face has resource hints
     // Check if resource hints are consistant
@@ -413,10 +406,7 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
                 has_variant = true;
             }
         }
-        if (has_variant) {
-          //std::cout << "debug: continuing on face " << face_id << " because variant exists already. " << std::endl;
-          continue;
-        }
+        if (has_variant) continue;
 
         // If resource constraint exists for this face,
         // save that constraint
@@ -448,7 +438,7 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
 
 
         /*
-        TODO:
+        TODO-hinter: handle ff and bb mixed in one face case
         face 4 edges, bottom edge: f0 top edge: b0 variants: ff, fb, bb
         Case 1: Only bottom edge has resource hint, that hint is say F123 --> assign "ff" ("fb also compatible but second in list")
         Case 2: Bottom edge has resource hint F123, top edge has resource hint B123 --> assign "fb" ("ff" is not compatible because top edge doesn't match)
@@ -479,12 +469,8 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
                             // We have found one resource constraint for this edge
                             e_resource = true;
                             // Assign variant
-                            // TODO: Do this after checking all edges and make sure that they're compatible
-                            //std::cout << "[debug] Assigning variant " << l.variant << " for face " << face_id << std::endl;
+                            // TODO-hinter: Do this after checking all edges and make sure that they're compatible
                             f_variant_constraint = l.variant;
-                        }
-                        else{
-                          //std::cout << "[debug] Ignoring this edge resource for this variant since beds don't agree. " << " e.bn.bed = " << e.bn.bed << " f_bn.bed = " << f_bn.bed << std::endl;
                         }
                     }
                 }
@@ -510,12 +496,7 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
                 constraints.push_back(face_hint);
 
                 // Assign the first compatible code face
-                //std::cout << "[debug] Actually assigning hint variant  " << f_variant_constraint << " to face "  << face_id << std::endl;
-
                 break;
-            }
-            else{
-              //std::cout << "[debug] No edge has resource, so did not assign variant to " << face_id << std::endl;
             }
         }
     }
@@ -523,6 +504,16 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
     // return this
     bool is_changed = false;
     for (auto h : constraints) {
+        /*
+         * We don't need this, but just in case
+        bool flag = true;
+        for (auto &hint : mesh.hints) {
+            if (hint.type == h.type && hint.lhs == h.lhs && hint.rhs == h.rhs)
+                flag = false;
+        }
+        if (!flag) continue;
+        */
+
         is_changed = true;
         mesh.hints.push_back(h);
     }
@@ -532,7 +523,7 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
 
 bool sm::constraint_face_instruction_order(sm::Mesh &mesh, sm::Code const &code_library){
 
-  // calling some sort of transfer planner that is "verified"
+// calling some sort of transfer planner that is "verified"
 // Transfer planning problem:
 // Going from infinite gauge m/c to discrete m/c by introducing xfer/xfer pairs and moving them around
 //
@@ -551,6 +542,36 @@ bool sm::constraint_face_instruction_order(sm::Mesh &mesh, sm::Code const &code_
     // Eventually, something here
     // Maybe from a known database ? From instruction ordering
 }
+
+// TODO-hinter: To make test cases for infer_constraints
+// Add some example smobj, 3x3 and test following
+// 1. No valid variant exists for a particular resource assignment
+//    -> Code does not try to assign random variant
+// 2. Edge resource have combination of front and back
+//    code:
+//    knit f0 
+//    xfer f0 b0
+//    bottom loop will have f0, top will have b0
+//
+
+// TODO-hinter: Error reporting
+// We want to tell users which constraints doesn't make sense to users
+// Get a list of incompatible constraints, and somehow report it to users
+// Maybe implement a better API which can be called from EditMesh.cpp??
+//
+// Have selected_faces like infrastructure in EditMesh.cpp
+// Add problematic faces/edges to that whenever we call infer_constraints
+// Highlight it with red?
+
+// TODO-hinter: Also Error reporting
+// If constraint 0 and 1 are incompatible, then 1 is incompatibe with 0
+
+
+// Helper function that checks if code-template-face is compatible with edge-resources
+//{
+
+//}
+//
 
 sm::Mesh sm::infer_constraints(sm::Mesh &mesh, sm::Code const &code_library) {
     bool flag = true;
