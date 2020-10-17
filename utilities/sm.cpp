@@ -664,6 +664,22 @@ void sm::Mesh::rip(uint32_t fixed_id){
 
 }
 
+
+void sm::Mesh::remove_inferred_hints(uint32_t from){ // default-1U
+	hints.erase(std::remove_if(hints.begin(), hints.end(),[from](sm::Mesh::Hint const &h)->bool{
+				return (h.src == sm::Mesh::Hint::Inferred && (from == -1U || h.inferred_from == from));
+				}), hints.end());
+}
+
+void sm::Mesh::remove_heuristic_hints(uint32_t from){ // default-1U
+
+	hints.erase(std::remove_if(hints.begin(), hints.end(),[from](sm::Mesh::Hint const &h)->bool{
+				return (h.src == sm::Mesh::Hint::Heuristic && (from == -1U || h.inferred_from == from));
+				}), hints.end());
+}
+
+
+
 sm::Library sm::Library::load(std::string const &filename) {
 	sm::Library library;
 	sm::Library::Face *current = nullptr;
@@ -2703,90 +2719,6 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 }
 
 //-----------------------------------
-
-bool sm::verify_hinted_schedule(sm::Mesh const &mesh, sm::Library const &library, sm::Code const &code) {
-
-	// is the mesh fully hinted ?
-	// 	edge location for every valid edge type
-	// 	in trace sequence, all edges are hinted (with consistent per-face translation)
-	// 	all connections have xfer hints (what should they be, though?)
-	// 	execution order exists for all faces that have split execution
-
-	std::map<sm::Mesh::FaceEdge, sm::BedNeedle > hints;
-	std::map< std::pair<uint32_t, std::string> , sm::BedNeedle> templates;
-	std::map< std::pair<uint32_t, std::string> , std::string> edge_types;
-	std::set< std::string > code_names;
-	std::cout << "hints " << hints.size() << std::endl;
-	std::cout << "templates " << templates.size() << std::endl;
-	std::cout << "code_names " << code_names.size() << std::endl;
-	
-	for(auto  &h : mesh.hints){
-		if(h.type == sm::Mesh::Hint::Resource){
-			sm::BedNeedle bn = std::get<sm::BedNeedle>(h.rhs);
-			hints[h.lhs] = sm::BedNeedle(bn.bed, bn.needle);
-		}
-	}
-	
-	for(auto const &f : code.faces){
-		for(uint32_t i = 0; i < f.edges.size(); ++i){
-			templates[std::make_pair(i,f.key())] = f.edges[i].bn;
-			edge_types[std::make_pair(i,f.key())] = f.edges[i].type;
-			code_names.insert(f.key());
-		}
-	}
-	for(auto const &f : mesh.faces){
-		if (!code_names.count(mesh.library[f.type])){
-			std::cout << "Face " << &f - &mesh.faces[0] << " has a type signature " << mesh.library[f.type] << " that doesn't exist in the code library. " << std::endl;
-			return false;
-		}
-	}
-	auto print_details = [&](uint32_t fidx){
-		sm::Mesh::FaceEdge fe;
-		fe.face = fidx; 
-		auto f = mesh.faces[fidx];
-		std::cout << "Face " << fidx  << " of size " << f.size()  << std::endl;
-		for(uint32_t i = 0; i < f.size(); ++i){
-			fe.edge = i;
-			if(hints.count(fe)){
-				auto hint_value = hints[fe];
-				auto template_value = templates[std::make_pair(i,mesh.library[f.type])];
-				auto template_type = edge_types[std::make_pair(i,mesh.library[f.type])];
-				std::cout << "\t" << i <<" : hint:"<< hint_value.to_string() << ", template:" << template_value.to_string() << " type " << template_type<<  std::endl;
-			}
-			else{
-				auto template_value = templates[std::make_pair(i,mesh.library[f.type])];
-				auto template_type = edge_types[std::make_pair(i,mesh.library[f.type])];
-				std::cout << "\t"<<i<<": hint:xx" << ", template:" << template_value.to_string() << " type " << template_type << std::endl;
-			}
-		}
-	};
-	// revising for front and back..
-	for(auto const &f : mesh.faces){
-		uint32_t fi = &f - &mesh.faces[0];
-		int translation = 0;
-		bool found = false;
-		for(uint32_t i = 0; i < f.size(); ++i){
-			sm::Mesh::FaceEdge fe;
-			fe.face = fi; fe.edge = i;
-			if(hints.count(fe)){
-				auto hint_value = hints[fe];
-				auto template_value = templates[std::make_pair(i,mesh.library[f.type])];
-				if( template_value.bed == hint_value.bed ){
-					if( found  && translation != std::abs(hint_value.needle - template_value.needle)){
-						std::cout << "Hints for face " + std::to_string(fi) + " do not match template values for " + mesh.library[f.type] << std::endl;
-						print_details(fi);
-						break;
-					}
-					found = true;
-					translation = std::abs(hint_value.needle - template_value.needle);
-				}
-			}
-		}
-	}
-	return true;
-}
-
-
 // partial order of faces
 // returns true if successfully ordered
 // maybe should return a reordered Mesh..
@@ -2869,28 +2801,27 @@ bool sm::add_hint(sm::Mesh::Hint const h, sm::Mesh *_mesh, sm::Library const &li
 	assert(_mesh);
 	assert(_offenders);
 	sm::Mesh &mesh = *_mesh;
+	sm::Mesh temp = *_mesh;
 	//std::vector<sm::Mesh::Hint> &offenders = *_offenders;
-	
-	if(verify(mesh, library, code, _offenders)){
+	temp.hints.emplace_back(h);
+	if(verify(temp, code, _offenders)){
 		mesh.hints.emplace_back(h);
 		return true;
 	}
-	// erase hint h from offenders
-	//offenders.erase(std::remove_if(offenders.begin(), 
-	//			offenders.end(),
-	//			[h](sm::Mesh::Hint const x)->bool{return (x==h);}),
-	//		offenders.end());
+	
 	return false;
 }
 
 // if strict is true, checks also if mesh is fully hinted
 // else only checks if hints are consistent
-bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> *_offenders,  bool is_fully_hinted){
-	return true;
-}
-// knitout from faces
-// assumes hinting is complete and valid 
-std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
+bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh::Hint> *_offenders,  bool is_fully_hinted){
+	
+	assert(_offenders);
+	std::vector<sm::Mesh::Hint> &offenders = *_offenders;
+
+	offenders.clear();
+	// TODO fill this up with offending hints
+
 	// process all the hints into easy to access formats
 	std::map<std::string, uint32_t> name_to_code_idx;
 	std::map<uint32_t, std::string> face_variant;
@@ -2898,6 +2829,13 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 	for(auto const &c : code.faces){
 		name_to_code_idx[c.key()] = &c - &code.faces[0];
 	}
+
+	//---debug
+	//std::cout << "Code signatures that exist: " << std::endl;
+	//for(auto x : name_to_code_idx){
+		//std::cout << "\t" << x.first << std::endl;
+	//}
+	//------
 
 	// debug
 	{
@@ -2915,19 +2853,18 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 				resource++;
 			}
 		}
-		std::cout <<"#Hints [Order: " << order << " Variant: " << variant << " Resource: " << resource << " ]" << std::endl;
+		//std::cout <<"#Hints [Order: " << order << " Variant: " << variant << " Resource: " << resource << " ]" << std::endl;
 	}
 
 	// ----------------- hint verification -------------
-	// TODO refactor this into a separate "verifier"
 	// Variant hints:
 	for(auto h : mesh.hints){
 		// TODO check that variant hints are consistent
 		if(h.type == sm::Mesh::Hint::Variant){
 			if(face_variant.count(h.lhs.face) && face_variant[h.lhs.face] != std::get<std::string>(h.rhs)){
-				//throw std::runtime_error("[Variant] Hints for face " + std::to_string(h.lhs.face) + " are inconsistent".); 
 				std::cerr << "[Variant] Hints for face " << h.lhs.face << " are inconsistent: " << face_variant[h.lhs.face] << ", " << std::get<std::string>(h.rhs) << std::endl;
-				return "";
+				offenders.emplace_back(h);
+				return false;
 			}
 			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
 		}
@@ -2950,8 +2887,9 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 		for(auto const &f : mesh.faces){
 			std::string signature = face_to_code_key(f);
 			if(!name_to_code_idx.count(signature)){
-			std::cerr << "Code does not exist for face signature " << mesh.library[f.type] << std::endl; 
-			return "";
+			// nothing offends, just missing hint -- can create an empty hint signature to indicate which face is missing?
+			std::cerr << "Code does not exist for face signature " << mesh.library[f.type] << " code signature " << signature << std::endl; 
+			return false;
 			}
 		}
 	}
@@ -2962,30 +2900,33 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 			const sm::Mesh::Face &f = mesh.faces[h.lhs.face];
 			std::string signature = face_to_code_key(f);
 			auto const &l = code.faces[name_to_code_idx[signature]];
-			//if(l.edges[h.lhs.edge].type[0] == 'y') continue; //DEBUG; skip yarns 
 			if(l.edges.size() != f.size()){
+				// resource hint is not offending, code and face don't match -- must be caught much earlier than this...
 				std::cerr <<"Code face and mesh face have different number of edges." << std::endl;
-				return "";
+				return false;
 			}
 			const sm::BedNeedle bn = std::get<sm::BedNeedle>(h.rhs);
 			const sm::BedNeedle bn_template = l.edges[h.lhs.edge].bn;
 			if(bn_template.dontcare()) continue;
 			int offset = bn.location() - bn_template.location();
-			// TODO does this need to always hold true especially with yarn connections ?
 			if( face_translation.count(h.lhs.face) && face_translation[h.lhs.face] != offset){
 				std::cerr <<"Resource hints are not consistent!" << h.lhs.face << "/" << h.lhs.edge<< std::endl;
 				std::cerr <<"\tOld translation: " << face_translation[h.lhs.face] << " new translation: " << offset << std::endl;
 				std::cerr <<"\tLoc Template: " << bn_template.location() << " Hint: " << bn.location() << std::endl;
-				return "";
+				
+				offenders.emplace_back(h);
+
+				return false;
 			}
 			face_translation[h.lhs.face] = offset;
 		}
 	}
 	// all faces have a resource hint
 	for(auto &f : mesh.faces){
-		if(!face_translation.count(&f - &mesh.faces[0])){
+		if(!face_translation.count(&f - &mesh.faces[0]) && is_fully_hinted){
+			// no offenders, missing hints
 			std::cerr << "All faces have not been hinted. "<< &f - &mesh.faces[0] << std::endl;
-			return "";
+			return false;
 		}
 	}
 	
@@ -3011,8 +2952,9 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 				auto d1 = std::distance(carriers.begin(), std::find(carriers.begin(), carriers.end(),l.carriers[k-1]));
 				auto d2 = std::distance(carriers.begin(), std::find(carriers.begin(), carriers.end(), l.carriers[k]));
 				if(d2 < d1){
+					// maybe this should be a wrong variant offence TODO
 					std::cerr << "Local face carrier order not consistent with global order. " << std::endl;
-					return "";
+					return false;
 				}
 			}
 		}
@@ -3059,9 +3001,10 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 					}
 				}
 			}
-			if(total_order.size() < N){
+			if(total_order.size() < N){ 
 				std::cerr << "Order hints are inconsistent. " << std::endl;
-				return "";
+				//TODO order hints are inconsistent, need to figure out which one and add to offending list
+				return false;
 			}
 		}
 		// respect total order, as long as total order is consistent, this should be consistent
@@ -3077,7 +3020,8 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 				auto b_it = std::find(order.begin(), order.end(), before);
 				if(std::distance(order.begin(), a_it) < std::distance(order.begin(), b_it)){
 					std::cerr << "Order hint inconsistent with total order " << std::endl;
-					return "";
+					offenders.emplace_back(h);
+					return false;
 				}
 			}
 		}
@@ -3096,7 +3040,8 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 		if(std::abs(a-b) > 0.5){
 			// connection does not respect slack/loop constraint
 			std::cerr << "Slack is not respected at connection between " << c.a.face << "/" << c.a.edge << " and " << c.b.face << "/" << c.b.edge << " offsets: " << a << ", " << b  << std::endl;
-			return "";
+			//TODO find the resource hints for these connections and add them to offending
+			return false;
 		}
 	}
 	// sanity of total order
@@ -3108,7 +3053,7 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 			auto it = std::unique(order.begin(), order.end());
 			if(it != order.end()){
 				std::cerr << "Total order has duplicate entries!"  << std::endl;
-				return "";
+				return false;
 			}
 		}
 		// all face instructions covered
@@ -3118,19 +3063,136 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 			for(uint32_t i = 0; i < l.instrs.size(); ++i){
 				const std::pair<uint32_t, uint32_t> fi = std::make_pair(&f - &mesh.faces[0], i);
 				auto it = std::find(mesh.total_order.begin(), mesh.total_order.end(), fi);
-				if(it == mesh.total_order.end()){
+				if(it == mesh.total_order.end() && is_fully_hinted){
 					std::cerr << "Total order is incomplete, does not feature face/instr : "<< &f - &mesh.faces[0] << "/" << i << " ." << std::endl;
-					return "";
+					return false;
 				}
 			}
 		}
 		// if total order exists and covers all face/instructions without repetition then it must be acyclic
 	}
 	// --------------End of hint verification -------------
-	// TODO return inconsistencies/missing hints for generating more hints
+
+	// if !is_fully_hinted, then true only indicates that no inconsistency exists 
+	return true;
+}
+
+bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code){
+
+	mesh.total_order.clear();
+
+	// go through all the faces and just add them as-is
+	// process all the hints into easy to access formats
+	std::map<std::string, uint32_t> name_to_code_idx;
+	std::map<uint32_t, std::string> face_variant;
+	
+	for(auto const &c : code.faces){
+		name_to_code_idx[c.key()] = &c - &code.faces[0];
+	}
+	for(auto h : mesh.hints){
+		// TODO check that variant hints are consistent
+		if(h.type == sm::Mesh::Hint::Variant){
+			if(face_variant.count(h.lhs.face) && face_variant[h.lhs.face] != std::get<std::string>(h.rhs)){
+				std::cerr << "[Variant] Hints for face " << h.lhs.face << " are inconsistent: " << face_variant[h.lhs.face] << ", " << std::get<std::string>(h.rhs) << std::endl;
+				return false;
+			}
+			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
+		}
+	}
+
+
+	for(uint32_t fid = 0; fid < mesh.faces.size(); ++fid){
+		std::string name = mesh.library[mesh.faces[fid].type] + " " + face_variant[fid];
+		assert(name_to_code_idx.count(name));
+		uint32_t cid = name_to_code_idx[name];
+		auto const &c = code.faces[cid];
+		for(uint32_t i = 0; i < c.instrs.size(); ++i){
+			std::pair<uint32_t, uint32_t> fi;
+			fi.first = fid;
+			fi.second = i;
+			mesh.total_order.emplace_back(fi);
+		}
+	}
+	return true;
+}
+
+// knitout from faces
+// assumes hinting is complete and valid 
+std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
+
+
+	std::vector<Mesh::Hint> offenders;
+	bool strict = true;
+	bool verified = verify(mesh, code, &offenders, strict);
+
+	if(!verified){
+		std::cout << "Constraints are not complete; #offending constraints = " << offenders.size() << std::endl;
+		return "";
+	}
+	assert(offenders.empty());
+
+
+
+	// process all the hints into easy to access formats
+	std::map<std::string, uint32_t> name_to_code_idx;
+	std::map<uint32_t, std::string> face_variant;
+	std::map<int32_t, int32_t> face_translation;
+	std::vector<std::string> carriers;
+	
+	auto face_to_code_key = [&](const sm::Mesh::Face &f)->std::string{
+		std::string variant = "";
+		if(face_variant.count(&f- &mesh.faces[0])){
+			variant = face_variant[&f - &mesh.faces[0]];
+		}
+		std::string signature = mesh.library[f.type] + ' ' + variant;
+		return signature;
+	};
 	
 
+	for(auto const &c : code.faces){
+		name_to_code_idx[c.key()] = &c - &code.faces[0];
+	}
+	for(auto h : mesh.hints){
+		// TODO check that variant hints are consistent
+		if(h.type == sm::Mesh::Hint::Variant){
+			if(face_variant.count(h.lhs.face) && face_variant[h.lhs.face] != std::get<std::string>(h.rhs)){
+				std::cerr << "[Variant] Hints for face " << h.lhs.face << " are inconsistent: " << face_variant[h.lhs.face] << ", " << std::get<std::string>(h.rhs) << std::endl;
+				return "";
+			}
+			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
+		}
+	}
 
+	// Resource hints
+	for(auto h: mesh.hints){
+		if(h.type == sm::Mesh::Hint::Resource){
+			const sm::Mesh::Face &f = mesh.faces[h.lhs.face];
+			std::string signature = face_to_code_key(f);
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			const sm::BedNeedle bn = std::get<sm::BedNeedle>(h.rhs);
+			const sm::BedNeedle bn_template = l.edges[h.lhs.edge].bn;
+			if(bn_template.dontcare()) continue;
+			int offset = bn.location() - bn_template.location();
+			// verify checks that these are indeed valid.
+			face_translation[h.lhs.face] = offset;
+		}
+	}
+	{
+		// Go over all the yarn carriers that appear in each face code
+		// to generate a carrier header string
+		// TODO this needs to be order consistent.
+		// a face with c:1,3 c:2,3 c:1,2 should generate carriers:1,2,3
+		// i.e., sort with a function that goes over all the code faces
+		for(auto const &f : mesh.faces){
+			std::string signature = face_to_code_key(f);
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			for(auto c : l.carriers){
+				if(std::find(carriers.begin(), carriers.end(), c) == carriers.end()){
+					carriers.emplace_back(c);
+				}
+			}
+		}
+	}
 	// --------------Code Generation------------------------
 	std::string knitout_string = "";
 	// knitout header

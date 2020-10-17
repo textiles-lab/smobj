@@ -22,6 +22,7 @@ struct BedNeedle{
 	// todo have a convention that nudge is always to the right of the lower needle index
 	// to make it easier to compare without bothering with floats
 	int8_t nudge = 0; // location = needle + 0.5 * nudge
+	uint32_t depth = 0; // maybe a way to hold more needles at the same location without overlap, 0 is the actual needle
 	BedNeedle(){}
 	BedNeedle (char b, int n) {
 		bed = b; needle = n;
@@ -98,10 +99,7 @@ struct Mesh {
 		} src;
 		FaceEdge lhs;;
 		std::variant<BedNeedle,  FaceEdge, std::string> rhs;
-		//FaceEdge fe;               // target edge
-		//std::optional<char> bed = std::nullopt;   // front('f'), back('b'), anything else maps identically to either 'f' or 'b'
-		//std::optional<int> needle = std::nullopt; // would floating point values be nice for hints?
-		//int8_t nudge = 0;		   // nudge to the left(-1), right(+1), or not (0)
+		uint32_t inferred_from = -1U; // optional index to maintain what constraint this was inferred from if at all
 		std::string to_string() const{
 			std::string str = std::to_string(lhs.face) + "/" + std::to_string(lhs.edge) + " ";
 			if(type == Resource){
@@ -158,6 +156,9 @@ struct Mesh {
 	//rip mesh : associate every face with its own vertex
 	void rip(uint32_t from = 0);
 
+
+	void remove_inferred_hints(uint32_t from = -1U);
+	void remove_heuristic_hints(uint32_t from = -1U);
 };
 
 
@@ -410,6 +411,11 @@ struct Yarns {
 };
 
 //------ helper functions ------
+
+// order face instructions to generate a total order (base order, may be reordered for efficiency)
+
+bool compute_total_order(sm::Mesh &mesh, sm::Code const &code);
+
 // order the mesh faces in a partial order that follows dependencies using the face library
 sm::Mesh order_faces(sm::Mesh const  &mesh,  sm::Library const  &library);
 
@@ -420,10 +426,8 @@ std::string knitout(sm::Mesh const &mesh, sm::Code const &code);
 bool add_hint(sm::Mesh::Hint h, sm::Mesh *mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> *offenders);
 
 // verify existing hints
-bool verify(sm::Mesh const &mesh, Library const &library, Code const &code, std::vector<Mesh::Hint> *_offenders, bool strict=false);
+bool verify(sm::Mesh const &mesh,  Code const &code, std::vector<Mesh::Hint> *_offenders, bool strict=false);
 
-// eventually: verify hints in mesh
-bool verify_hinted_schedule(Mesh const &mesh, Library const &library, Code const &code);
 
 //build from a mesh and library, connecting yarns over edges:
 // will warn on inconsistent edge types/directions, and missing face types
