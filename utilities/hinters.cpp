@@ -291,8 +291,13 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
                 edge_constraint.first = bn;
                 edge_constraint.second = eidx;
                 // offset between e.bn and bn should be the same for all edges in this face
-                assert((!found_resource || offset == e.bn.location() - bn.location())
-                        && "Offset is constant across all edge resources, right?");
+                if(found_resource && offset != (e.bn.location() - bn.location())){
+					std::cerr << "Inconsistent resource allocation for face " << face_id << " edge " << eidx << ", old offset = " << offset << " current = " << e.bn.location() - bn.location() << std::endl; 
+					return false;
+				}
+
+				//assert((!found_resource || offset == e.bn.location() - bn.location())
+                //        && "Offset is constant across all edge resources, right?");
                 offset = e.bn.location() - bn.location();
                 found_resource = true;
             }
@@ -341,15 +346,23 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
         }
     }
 
-    // (b)
-    // TODO-hinter: This is going into infinite loop..
-    for(auto const &c : mesh.connections){
-        if(constraints.count(c.a) && !constraints.count(c.b)){
-            constraints[c.b] = constraints[c.a];
-        } else if (constraints.count(c.b) && !constraints.count(c.a)) {
-            constraints[c.a] = constraints[c.b];
-        }
-    }
+	// (b)
+	for(auto const &c : mesh.connections){
+		auto const &lib_str = mesh.library[mesh.faces[c.a.face].type];
+		auto const &l = name_to_code_idx[lib_str].front();
+		auto const &edge_type = code_library.faces[l].edges[c.a.edge].type;
+		if(edge_type[0] == 'y'){ // todo maybe maintian 'l' vs 'y' as an actual enum type.
+			// don't propagate over yarn edges since they can go across beds.
+			// todo: perhaps check if variant exists and match, in which case okay to prop.
+			continue; 
+		}
+
+		if(constraints.count(c.a) && !constraints.count(c.b)){
+			constraints[c.b] = constraints[c.a];
+		} else if (constraints.count(c.b) && !constraints.count(c.a)) {
+			constraints[c.a] = constraints[c.b];
+		}
+	}
 
     // return this
     bool is_changed = false;
