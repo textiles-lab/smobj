@@ -3477,28 +3477,28 @@ bool sm::create_out_slack_xfer(uint32_t face_id,  sm::Mesh &mesh, sm::Library &l
 		}
 	
 
-		for(int i = 0; i < edge_list.size(); ++i){
+		for(uint32_t i = 0; i < edge_list.size(); ++i){
 			//fixed values for connections to work sensibly:
 			auto fe = edge_list[i];
 			
 			if(fe.face == face_id && fe.edge == yarn_out_edge){
 				sm::Library::Face::Yarn yarn;
 				yarn.begin.edge = i;
-				yarn.begin.along = 0.25;
+				yarn.begin.along = 0.25f;
 				yarn.end.edge = (edge_list.size() - i +edge_list.size());
-				yarn.end.along = 0.75;
+				yarn.end.along = 0.75f;
 
 				lib_face.yarns.emplace_back(yarn);
 			}
 			else{
 				sm::Library::Face::Yarn yarn;
 				yarn.begin.edge = i;
-				yarn.begin.along = 0.275;
+				yarn.begin.along = 0.275f;
 				yarn.end.edge = (edge_list.size() - i +edge_list.size());
-				yarn.end.along = 0.725;
+				yarn.end.along = 0.725f;
 				lib_face.yarns.emplace_back(yarn);
-				yarn.begin.along = 0.725;
-				yarn.end.along = 0.275;
+				yarn.begin.along = 0.725f;
+				yarn.end.along = 0.275f;
 				lib_face.yarns.emplace_back(yarn);
 			}
 			// for each edge, add yarn segments
