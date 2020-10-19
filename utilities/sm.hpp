@@ -166,7 +166,7 @@ struct Mesh {
 struct Library {
 	//----- db management: load/save to a file -----
 	static Library load(std::string const &filename); //throws on error
-	void save(std::string const &filename);
+	void save(std::string const &filename) const;
 
 	//----- library stores faces -----
 	struct Face {
@@ -228,13 +228,14 @@ struct Library {
 struct Code {
 	//----- db management: load/save to a file -----
 	static Code load(std::string const &filename); //throws on error
-	void save(std::string const &filename);
+	void save(std::string const &filename) const;
 
 
 	//----- code per faces -----
 	struct Face {
 		std::string name; //descriptive name for type
 		std::string variant="";
+		bool check_bn = true; // if false, the template bedneedles are overwritten by hints, not checked
 		std::vector<std::string> carriers;
 		struct Edge {
 			enum Direction : char {
@@ -427,6 +428,18 @@ bool add_hint(sm::Mesh::Hint h, sm::Mesh *mesh, sm::Library const &library, sm::
 
 // verify existing hints
 bool verify(sm::Mesh const &mesh,  Code const &code, std::vector<Mesh::Hint> *_offenders, bool strict=false);
+
+
+// transfer and slack helpers
+// insert a custom face to satisfy some slack and/or xfer constraint
+// given the entire structure of the mesh.
+bool create_out_slack_xfer(uint32_t face_id,  sm::Mesh &mesh, sm::Library &library, sm::Code &code);
+bool create_in_slack_xfer(uint32_t face_id,  sm::Mesh &mesh, sm::Library &library, sm::Code &code);
+//bool create_out_xfer();	// TODO
+//bool create_in_xfer();	// TODO
+//bool create_out_slack(); // this is not allowed, right (unless explicit)?
+//bool create_in_slack();  // this is not allowed, right (unless explicit)?
+
 
 
 //build from a mesh and library, connecting yarns over edges:

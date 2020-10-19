@@ -899,7 +899,7 @@ sm::Library sm::Library::load(std::string const &filename) {
 	return library;
 }
 
-void sm::Library::save(std::string const &filename) {
+void sm::Library::save(std::string const &filename) const{
 	std::ofstream out(filename, std::ios::binary);
 	for (auto const &face : faces) {
 		if (face.derive.from != "") {
@@ -1303,7 +1303,7 @@ sm::Code sm::Code::load(std::string const &filename) {
 	return code_library;
 }
 
-void sm::Code::save(std::string const &filename) {
+void sm::Code::save(std::string const &filename) const {
 	std::ofstream out(filename);
 	for(auto const &face : faces){
 		out << "face " << face.name << '\n';
@@ -3102,8 +3102,17 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code){
 
 
 	for(uint32_t fid = 0; fid < mesh.faces.size(); ++fid){
+		if(face_variant.count(fid) == 0){
+			std::cout << "Variant missing for face " << fid << std::endl;
+			return false;
+		}
+	}
+	for(uint32_t fid = 0; fid < mesh.faces.size(); ++fid){
 		std::string name = mesh.library[mesh.faces[fid].type] + " " + face_variant[fid];
-		assert(name_to_code_idx.count(name));
+		if(!name_to_code_idx.count(name)){
+			std::cout << "Code/Variant missing for face " << fid << std::endl;
+			return false;
+		}
 		uint32_t cid = name_to_code_idx[name];
 		auto const &c = code.faces[cid];
 		for(uint32_t i = 0; i < c.instrs.size(); ++i){
@@ -3222,4 +3231,371 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 	}
 
 	return knitout_string;
+}
+
+
+bool sm::create_out_slack_xfer(uint32_t face_id,  sm::Mesh &mesh, sm::Library &library, sm::Code &code){
+
+	std::cout << "Creating out-slack-xfer face " << std::endl;
+	assert(face_id < mesh.faces.size());
+
+	auto f = mesh.faces[face_id];
+
+	uint32_t yarn_out_edge = -1U;
+	uint32_t loop_out_edge = -1U;
+
+	uint32_t active_loop_edges = 0;
+
+	// this might be > rack-limit, assumes infinite-racking machine
+	int required_shift = 0; 
+
+	std::map<std::string, uint32_t> name_to_idx;
+	for(auto const &l : library.faces){
+		name_to_idx[l.key()] = &l - &library.faces[0];
+	}
+
+	//count active loops after face_id is constructed (not including loop_out)
+	//expects faces to be globally partially ordered.
+	//find edge connections for last yarn-out and last loop-out
+	auto const &fl = library.faces[name_to_idx[mesh.library[mesh.faces[face_id].type]]];
+	for(uint32_t i = 0; i < fl.edges.size(); ++i){
+		auto e1 = fl.edges[i];
+		auto e2 = fl.edges[(i+1)%fl.edges.size()];
+		if(e1.direction != sm::Library::Face::Edge::Out) continue;
+		if(e2.direction != sm::Library::Face::Edge::Out) continue;
+		if(e1.type[0] == 'l' && e2.type[0] == 'y'){
+			yarn_out_edge = (i+1)%fl.edges.size();
+			loop_out_edge = i;
+		}
+		else if(e1.type[0] == 'y' && e2.type[0] == 'l'){
+			loop_out_edge = (i+1)%fl.edges.size();
+			yarn_out_edge = i;
+
+		}
+	}
+
+	assert(loop_out_edge != -1U);
+	assert(yarn_out_edge != -1U);
+	std::cout << "Found active loop-out and yarn-out edges. " << std::endl;
+	std::set<sm::Mesh::FaceEdge> active_set;
+	
+	{
+		sm::Mesh::FaceEdge yfe, lfe;
+		yfe.face = lfe.face = face_id;
+		yfe.edge = yarn_out_edge;
+		lfe.edge = loop_out_edge;
+		active_set.insert(yfe);
+		active_set.insert(lfe);
+	}
+
+	auto find_needle_from_constraint = [&](sm::Mesh::FaceEdge lhs)->int{
+		for(auto const &h : mesh.hints){
+			if(h.type == sm::Mesh::Hint::Resource && h.lhs == lhs){
+				return std::get<sm::BedNeedle>(h.rhs).needle;
+			}
+		}
+		std::cerr << "Hint does not exist for yarn-out edges!" << std::endl;
+		return 0;
+	};
+	//find connections of type 'loop' that have one face < face_id && one > face_id
+	for(auto const &c : mesh.connections){
+		auto la = library.faces[name_to_idx[mesh.library[mesh.faces[c.a.face].type]]];
+		auto lb = library.faces[name_to_idx[mesh.library[mesh.faces[c.b.face].type]]];
+		auto a = c.a;
+		auto b = c.b;
+		if(a.face == face_id && a.edge == yarn_out_edge){
+			// get required slack from c.b
+			required_shift = find_needle_from_constraint(c.b) - find_needle_from_constraint(c.a);
+		}
+		else if(b.face == face_id && b.edge == yarn_out_edge){
+			// get required slack from c.a
+			required_shift = find_needle_from_constraint(c.a) - find_needle_from_constraint(c.b);
+		}
+
+		//if not loop-loop continue
+		{
+			if(la.edges[c.a.edge].type[0] != 'l'){
+				assert(lb.edges[c.b.edge].type[0] != 'l'); // types must match, right?
+				continue;
+			}
+		}
+
+		if(c.b.face <= face_id && c.a.face > face_id){
+			std::swap(a,b);
+			std::swap(la,lb);
+		}
+		// only case we care about
+		if(a.face <= face_id && b.face > face_id){
+			if(a.face == face_id && a.edge == loop_out_edge){
+				// this is already recorded.
+			}
+			else{
+				assert(la.edges[a.edge].direction == sm::Library::Face::Edge::Out);
+				++active_loop_edges;
+				active_set.insert(a);
+			}
+		}
+	}
+	std::cout << "Required shift:  " << required_shift << std::endl;
+	std::cout << "Identified active edges: "; for(auto fe : active_set) std::cout << fe.face << "/" << fe.edge << " "; std::cout << std::endl;
+	std::vector<sm::Mesh::FaceEdge> edge_list;
+	// order edges to form the appropriate connections
+	if(!active_set.empty()){
+		std::cout << "Ordering " << active_set.size() << " active edges. " << std::endl;
+		//TODO prune active_set, remove pieces not connected in the connected components of face_id. 
+		{
+		}
+
+		//order edges based in some reasonable manner
+		//are edges always consistently ordered ?
+		edge_list.emplace_back(*active_set.begin());
+		active_set.erase(edge_list[0]);
+
+		while(!active_set.empty()){
+		//std::cout << "\t(b)Ordered edge-list "; for(auto e : edge_list) std::cout << e.face << "/" << e.edge << " "; std::cout << std::endl;
+			sm::Mesh::FaceEdge next;
+			next.face = -1U;
+			auto prev = edge_list.back();
+			float d = std::numeric_limits<float>::infinity();
+			bool begin = false;
+			for(auto fe : active_set){
+				uint32_t v0 = mesh.faces[prev.face][(prev.edge + 1)%mesh.faces[prev.face].size()];
+				uint32_t v1 = mesh.faces[fe.face][fe.edge];
+				uint32_t v2 = mesh.faces[prev.face][prev.edge];
+				uint32_t v3 = mesh.faces[fe.face][(fe.edge + 1)%mesh.faces[fe.face].size()];
+				if(glm::distance(mesh.vertices[v0], mesh.vertices[v1]) < d){
+					d = glm::distance(mesh.vertices[v0], mesh.vertices[v1]);
+					next = fe;
+					begin  = false;
+				}
+				if(glm::distance(mesh.vertices[v2], mesh.vertices[v3]) < d){
+					d = glm::distance(mesh.vertices[v2], mesh.vertices[v3]);
+					next = fe;
+					begin = true;
+				}
+			}
+			assert(next.face != -1U);
+			if(begin) edge_list.insert(edge_list.begin(), next);
+			else edge_list.emplace_back(next);
+			active_set.erase(next);
+		}
+		
+		//std::cout << "\tOrdered edge-list "; for(auto e : edge_list) std::cout << e.face << "/" << e.edge << " "; std::cout << std::endl;
+	}
+
+	std::cout << "Ordered edge-list "; for(auto e : edge_list) std::cout << e.face << "/" << e.edge << " "; std::cout << std::endl;
+
+	// face has 2*active_out_edges + 2*(1 loop out edge) + 2*(1 yarn out edge) + 2 boundary no-op edges 
+	sm::Mesh::Face mesh_face;
+	sm::Library::Face lib_face;
+	sm::Code::Face code_face;
+	std::string name = "slack_xfer_after_"+std::to_string(face_id);
+	//mesh_face
+	{
+		mesh_face.type = mesh.library.size(); 
+		mesh.library.emplace_back(name); 
+		std::cout << "Added " << name << " to mesh library" << std::endl;
+		// ... add mesh vertices...
+		std::vector<glm::vec3> vertices;
+		for(uint32_t i = 0; i < edge_list.size(); ++i){
+			auto fe = edge_list[i];
+			uint32_t v = mesh.faces[fe.face][fe.edge];
+			vertices.emplace_back(mesh.vertices[v] + glm::vec3(0.f,0.f, 0.5f));
+			if(i+1 ==edge_list.size()){
+				uint32_t w = mesh.faces[fe.face][(fe.edge+1)%mesh.faces[fe.face].size()];
+				vertices.emplace_back(mesh.vertices[w] + glm::vec3(0.f,0.f,0.5f));
+			}
+		}
+		std::cout << "added " << vertices.size() << " vertices.. " << std::endl;
+		int n = vertices.size()-1;
+		if(n > 0){
+			for(int i = n ; i >= 0; i--){
+				//TODO offset these a bit based on face/edge normal
+				//arbitrary offset to avoid NaNs in yarn interpolation
+				vertices.emplace_back(vertices[i]+glm::vec3(0.0f,0.25f,0.25f));
+
+			}
+		}
+		std::cout << "adding " << vertices.size() << " vertices." << std::endl;
+		for(uint32_t i = 0; i < vertices.size(); ++i){
+			mesh_face.emplace_back(i + mesh.vertices.size());
+		}
+		std::cout << "adding indices to face " << mesh_face.size()  << std::endl;
+		for(auto v : vertices) mesh.vertices.emplace_back(v);
+		mesh.faces.emplace_back(mesh_face);
+	
+		std::cout << "Added mesh face. " << std::endl;
+	}
+	//lib_face
+	{
+		lib_face.name = name;
+		// ...edges...
+		glm::vec2 pos(0,0);
+		for(auto fe : edge_list){
+			if(fe.face == face_id && fe.edge == yarn_out_edge){
+				lib_face.edges.emplace_back();
+				lib_face.edges.back().direction = sm::Library::Face::Edge::In;
+				lib_face.edges.back().type = "y";
+				lib_face.edges.back().vertex = pos;
+			}
+			else{
+				lib_face.edges.emplace_back();
+				lib_face.edges.back().direction = sm::Library::Face::Edge::In;
+				lib_face.edges.back().type = "l";
+				lib_face.edges.back().vertex = pos;
+			}
+			pos.x += 1.f;
+		}
+		{
+			lib_face.edges.emplace_back();
+			lib_face.edges.back().direction = sm::Library::Face::Edge::Any;
+			lib_face.edges.back().type = "x";
+			lib_face.edges.back().vertex = pos;
+		}
+		pos.y = 1.f;
+		for(auto it = edge_list.rbegin(); it != edge_list.rend(); ++it){
+			auto fe = *it;
+			if(fe.face == face_id && fe.edge == yarn_out_edge){
+				lib_face.edges.emplace_back();
+				lib_face.edges.back().direction = sm::Library::Face::Edge::Out;
+				lib_face.edges.back().type = "y";
+				lib_face.edges.back().vertex = pos;
+			}
+			else{
+				lib_face.edges.emplace_back();
+				lib_face.edges.back().direction = sm::Library::Face::Edge::Out;
+				lib_face.edges.back().type = "l";
+				lib_face.edges.back().vertex = pos;
+			}
+			pos.x -= 1.f;
+		}
+		{
+			lib_face.edges.emplace_back();
+			lib_face.edges.back().direction = sm::Library::Face::Edge::Any;
+			lib_face.edges.back().type = "x";
+			lib_face.edges.back().vertex = pos;
+		}
+	
+
+		for(int i = 0; i < edge_list.size(); ++i){
+			//fixed values for connections to work sensibly:
+			auto fe = edge_list[i];
+			
+			if(fe.face == face_id && fe.edge == yarn_out_edge){
+				sm::Library::Face::Yarn yarn;
+				yarn.begin.edge = i;
+				yarn.begin.along = 0.25;
+				yarn.end.edge = (edge_list.size() - i +edge_list.size());
+				yarn.end.along = 0.75;
+
+				lib_face.yarns.emplace_back(yarn);
+			}
+			else{
+				sm::Library::Face::Yarn yarn;
+				yarn.begin.edge = i;
+				yarn.begin.along = 0.275;
+				yarn.end.edge = (edge_list.size() - i +edge_list.size());
+				yarn.end.along = 0.725;
+				lib_face.yarns.emplace_back(yarn);
+				yarn.begin.along = 0.725;
+				yarn.end.along = 0.275;
+				lib_face.yarns.emplace_back(yarn);
+			}
+			// for each edge, add yarn segments
+		}
+
+		library.faces.emplace_back(lib_face);
+		
+		std::cout << "Added lib face. " << std::endl;
+	}
+	//code_face
+	{
+		code_face.name = name;
+		code_face.check_bn = false;
+		code_face.variant = "v";
+		for(auto e : lib_face.edges){
+			code_face.edges.emplace_back();
+			if(e.direction == sm::Library::Face::Edge::In) code_face.edges.back().direction = sm::Code::Face::Edge::Out;
+			else if(e.direction == sm::Library::Face::Edge::Out) code_face.edges.back().direction = sm::Code::Face::Edge::Out;
+			code_face.edges.back().type = e.type;
+			//code_face.edges.back().bn = ?? what template value 
+		
+			// add instrs for as many edges
+		}
+		code.faces.emplace_back(code_face);
+		std::cout << "Added code face. " << std::endl;
+	}
+	{
+		assert(lib_face.edges.size() == mesh_face.size());
+	}
+
+	{
+		// update all the connections between involving active_set
+		uint32_t nc = mesh.connections.size();
+		uint32_t fid = mesh.faces.size()-1;
+		//todo flip loop connections?
+		for(uint32_t i = 0; i < nc; ++i){
+			auto &c = mesh.connections[i];
+			auto it_a = std::find(edge_list.begin(), edge_list.end(), c.a);
+			auto it_b = std::find(edge_list.begin(), edge_list.end(), c.b);
+			if(it_a != edge_list.end()){
+				std::cout << "Flip for connection between " << c.a.face << "/" << c.a.edge << " and " << c.b.face << "/" << c.b.edge << " is " << c.flip << std::endl;
+				// c.a->a, b->c.b
+				assert(it_b == edge_list.end());
+				int idx_a = std::distance(edge_list.begin(), it_a);
+				int idx_b = (edge_list.size() - idx_a) + edge_list.size();
+				sm::Mesh::FaceEdge a; a.face = fid; a.edge = idx_a;
+				sm::Mesh::FaceEdge b; b.face = fid; b.edge = idx_b;
+				
+				mesh.connections.emplace_back();
+				mesh.connections.back().a = b;
+				mesh.connections.back().b = c.b;
+				mesh.connections.back().flip = false; // how flip is treated in the ui is a tad confusing, todo revisit
+				c.b = a;
+				c.flip = false;	
+			}
+			else if(it_b != edge_list.end()){
+				//b->a ==> c.b->b,a->c.a
+				std::cout << "Flip for connection between " << c.a.face << "/" << c.a.edge << " and " << c.b.face << "/" << c.b.edge << " is " << c.flip << std::endl;
+				assert(it_a == edge_list.end());
+				int idx_b = std::distance(edge_list.begin(), it_b);
+				int idx_a = (edge_list.size() - idx_b) + edge_list.size();
+				sm::Mesh::FaceEdge a; a.face = fid; a.edge = idx_a;
+				sm::Mesh::FaceEdge b; b.face = fid; b.edge = idx_b;
+				
+				mesh.connections.emplace_back();
+				mesh.connections.back().a = a;
+				mesh.connections.back().b = c.a;
+				mesh.connections.back().flip = false;
+				c.a = b;
+				c.flip = false;
+			}
+		}
+
+	}
+	
+	
+	// add xfer or (mov) instructions based on required_rack using any number of new needles (at added depth).
+
+	// debug print
+	{
+		std::cout << "creating out_slack_xfer face before moving forward from " << face_id  << std::endl;
+		std::cout << "\t required-shift : " << required_shift << std::endl;
+		std::cout << "\t loop-out-edge : " << loop_out_edge << " yarn-out-edge : " << yarn_out_edge << std::endl;
+		std::cout << "\t active loops : ";
+		for( auto fe: active_set){
+			std::cout << fe.face << "/" << fe.edge << ", ";
+		}
+		std::cout << std::endl;
+	}
+
+
+	return true;
+}
+
+bool sm::create_in_slack_xfer(uint32_t face_id,  sm::Mesh &mesh, sm::Library &library, sm::Code &code){
+
+	// similar to previous, but created by the "next" stitch to adjust incoming yarn.
+	// in general, the created stitch calls for adjustment if its outgoing loop doesn't match incoming loop, so this might not be needed.
+	return false;
 }
