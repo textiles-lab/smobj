@@ -2940,7 +2940,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 	};
 
 	// faces are associated with code signatures that exist in the code library
-	{
+	if(is_fully_hinted){
 		for(auto const &f : mesh.faces){
 			std::string signature = face_to_code_key(f);
 			if(!name_to_code_idx.count(signature)){
@@ -2971,6 +2971,8 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 		// 4.
 		for(auto c : mesh.connections){
 			// if there exists a resource hint for c.a and a resource hint for c.b and they are inconsistent
+			// TODO only for loop edges
+
 			auto ha_it = std::find_if(mesh.hints.begin(), mesh.hints.end(),[&](const sm::Mesh::Hint &h)->bool{return (h.type == sm::Mesh::Hint::Resource && h.lhs == c.a);} );
 			auto hb_it = std::find_if(mesh.hints.begin(), mesh.hints.end(),[&](const sm::Mesh::Hint &h)->bool{return (h.type == sm::Mesh::Hint::Resource && h.lhs == c.b);} );
 			if(ha_it != mesh.hints.end() && hb_it != mesh.hints.end()){
