@@ -11,8 +11,89 @@
 #include <unordered_set>
 #include <deque>
 #include <random>
+#include <iterator>
 
 
+//---------------------------------
+//Machine
+
+bool sm::MachineState::make(sm::Instr instr){
+
+	if(instr.op == sm::Instr::Xfer || instr.op == sm::Instr::Split){
+		if(racking != instr.rack()){
+			//rack changed, might need to keep track of pass?
+			racking = instr.rack();
+			passes.emplace_back();
+		}
+	}
+	if(passes.empty()) passes.emplace_back();
+	auto &curr_pass = passes.back();
+
+	// remove the loop(s) from the src
+	// TODO maintain loops and their stacking order
+	if(instr.op == sm::Instr::Xfer || instr.op == sm::Instr::Split){
+		// move src to tgt
+		assert(!instr.src.dontcare());
+		assert(!instr.tgt.dontcare());
+		if(active_needles[instr.src] == 0){
+			std::cerr << "[xfer/split] from empty location. " << std::endl;
+			std::cerr << instr.to_string() << std::endl;
+			return false;
+		}
+		if(instr.face == -1U && active_needles[instr.tgt]){
+			std::cerr << "[xfer*] to non-empty location. " << std::endl;
+			std::cerr << instr.to_string() << std::endl;
+			return false;
+		}
+		active_needles[instr.tgt] += active_needles[instr.src];
+	}
+	else if(!instr.tgt.dontcare()) {
+		std::istringstream stream(instr.yarns);
+		std::vector<std::string> tokens{std::istream_iterator<std::string>{stream},
+                      std::istream_iterator<std::string>{}};
+		int nl = tokens.size();
+		active_needles[instr.tgt] += nl;
+	}
+	if(!instr.src.dontcare()){
+		active_needles[instr.src] = 0;
+	}
+	if(!instr.tgt2.dontcare()){
+		std::istringstream stream(instr.yarns);
+		std::vector<std::string> tokens{std::istream_iterator<std::string>{stream},
+                      std::istream_iterator<std::string>{}};
+		int nl = tokens.size();
+		active_needles[instr.tgt2] += nl;
+
+	}
+	
+	if(instr.face == -1U){
+		// Does xfer* instruction create yarn tangle  (not local)
+		{
+		}
+
+		// Does xfer* instruction create loop tangle (not local)
+		{
+		}
+
+		// Does xfer* violate slack on the bed
+		{
+		}
+	} else {
+		// Does instruction use locations not available to it ? (needs more info smobj+code)
+	}
+
+	curr_pass.emplace_back(instr);
+
+	return true;
+}
+
+// are there any loops left on the machine?
+bool sm::MachineState::empty(){
+	for(auto const &pr : active_needles){
+		if(pr.second != 0) return false;
+	}
+	return true;
+}
 //---------------------------------
 //Mesh
 
@@ -945,7 +1026,7 @@ sm::Code sm::Code::load(std::string const &filename) {
 	sm::Code code_library;
 	std::ifstream in(filename, std::ios::binary);
 	sm::Code::Face *current = nullptr;
-	std::vector< sm::Code::Face::Instr > *current_instrs = nullptr;
+	std::vector< sm::Instr > *current_instrs = nullptr;
 	{
 
 		std::ifstream in(filename, std::ios::binary);
@@ -1028,15 +1109,15 @@ sm::Code sm::Code::load(std::string const &filename) {
 				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
 				current_instrs->emplace_back();
 				auto &ins = current_instrs->back();
-				ins.op = sm::Code::Face::Instr::Knit;
+				ins.op = sm::Instr::Knit;
 				char direction;
 				if(!(str >> direction)){
 					throw std::runtime_error(line_info() + "knit line without direction");
 				}
 				if( direction == '+'){
-					ins.direction = sm::Code::Face::Instr::Right;
+					ins.direction = sm::Instr::Right;
 				} else if( direction == '-'){
-					ins.direction = sm::Code::Face::Instr::Left;
+					ins.direction = sm::Instr::Left;
 				} else{
 					throw std::runtime_error(line_info() + "knit without +/- direction");
 				}
@@ -1060,15 +1141,15 @@ sm::Code sm::Code::load(std::string const &filename) {
 				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
 				current_instrs->emplace_back();
 				auto &ins = current_instrs->back();
-				ins.op = sm::Code::Face::Instr::Tuck;
+				ins.op = sm::Instr::Tuck;
 				char direction;
 				if(!(str >> direction)){
 					throw std::runtime_error(line_info() + "tuck line without direction");
 				}
 				if( direction == '+'){
-					ins.direction = sm::Code::Face::Instr::Right;
+					ins.direction = sm::Instr::Right;
 				} else if( direction == '-'){
-					ins.direction = sm::Code::Face::Instr::Left;
+					ins.direction = sm::Instr::Left;
 				} else{
 					throw std::runtime_error(line_info() + "tuck without +/- direction");
 				}
@@ -1091,15 +1172,15 @@ sm::Code sm::Code::load(std::string const &filename) {
 				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
 				current_instrs->emplace_back();
 				auto &ins = current_instrs->back();
-				ins.op = sm::Code::Face::Instr::Miss;
+				ins.op = sm::Instr::Miss;
 				char direction;
 				if(!(str >> direction)){
 					throw std::runtime_error(line_info() + "miss line without direction");
 				}
 				if( direction == '+'){
-					ins.direction = sm::Code::Face::Instr::Right;
+					ins.direction = sm::Instr::Right;
 				} else if( direction == '-'){
-					ins.direction = sm::Code::Face::Instr::Left;
+					ins.direction = sm::Instr::Left;
 				} else{
 					throw std::runtime_error(line_info() + "miss without +/- direction");
 				}
@@ -1123,13 +1204,13 @@ sm::Code sm::Code::load(std::string const &filename) {
 				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
 				current_instrs->emplace_back();
 				auto &ins = current_instrs->back();
-				ins.op = sm::Code::Face::Instr::Xfer;
+				ins.op = sm::Instr::Xfer;
 				char from_bed;
 				int from_needle;
 				char direction;
 				if(!(str >> direction)) throw std::runtime_error(line_info() + "xfer line without direction or bed");
 				if (direction == '+' || direction == '-'){
-					ins.direction = (direction == '+' ? sm::Code::Face::Instr::Right : sm::Code::Face::Instr::Left);
+					ins.direction = (direction == '+' ? sm::Instr::Right : sm::Instr::Left);
 					if(!(str >> from_bed)){
 						throw std::runtime_error(line_info() + "xfer line without (from)bed");
 					}
@@ -1159,15 +1240,15 @@ sm::Code sm::Code::load(std::string const &filename) {
 				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
 				current_instrs->emplace_back();
 				auto &ins = current_instrs->back();
-				ins.op = sm::Code::Face::Instr::Split;
+				ins.op = sm::Instr::Split;
 				char direction;
 				if(!(str >> direction)){
 					throw std::runtime_error(line_info() + "split line without direction");
 				}
 				if( direction == '+'){
-					ins.direction = sm::Code::Face::Instr::Right;
+					ins.direction = sm::Instr::Right;
 				} else if( direction == '-'){
-					ins.direction = sm::Code::Face::Instr::Left;
+					ins.direction = sm::Instr::Left;
 				} else{
 					throw std::runtime_error(line_info() + "split without +/- direction");
 				}
@@ -1197,7 +1278,7 @@ sm::Code sm::Code::load(std::string const &filename) {
 				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
 				current_instrs->emplace_back();
 				auto &ins = current_instrs->back();
-				ins.op = sm::Code::Face::Instr::Drop;
+				ins.op = sm::Instr::Drop;
 				char bed; int needle;
 
 				if(!(str >> bed)) throw std::runtime_error(line_info() + "drop without bed");
@@ -1210,7 +1291,7 @@ sm::Code sm::Code::load(std::string const &filename) {
 				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
 				current_instrs->emplace_back();
 				auto &ins = current_instrs->back();
-				ins.op = sm::Code::Face::Instr::In;
+				ins.op = sm::Instr::In;
 
 				std::string y;
 				while(str >> y){
@@ -1221,7 +1302,7 @@ sm::Code sm::Code::load(std::string const &filename) {
 				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
 				current_instrs->emplace_back();
 				auto &ins = current_instrs->back();
-				ins.op = sm::Code::Face::Instr::Out;
+				ins.op = sm::Instr::Out;
 
 				std::string y;
 				while(str >> y){
@@ -1330,49 +1411,49 @@ void sm::Code::save(std::string const &filename) const {
 		for(auto const &instr : face.instrs) {
 			out <<"\t\t";
 			switch(instr.op){
-				case sm::Code::Face::Instr::Knit:
+				case sm::Instr::Knit:
 					out <<"knit ";
 					out << (char)instr.direction << ' ';
 					out << instr.tgt.bed << instr.tgt.needle << ' ';
 					out << instr.yarns << '\n';
 					break;
-				case sm::Code::Face::Instr::Tuck:
+				case sm::Instr::Tuck:
 					out <<"tuck ";
 					out << (char)instr.direction << ' ';
 					out << instr.tgt.bed << instr.tgt.needle << ' ';
 					out << instr.yarns << '\n';
 					break;
-				case sm::Code::Face::Instr::Miss:
+				case sm::Instr::Miss:
 					out <<"miss ";
 					out << (char)instr.direction << ' ';
 					out << instr.src.bed << instr.src.needle << ' ';
 					out << instr.yarns << '\n';
 					break;
-				case sm::Code::Face::Instr::Xfer:
+				case sm::Instr::Xfer:
 					out <<"xfer ";
-					if(instr.direction != sm::Code::Face::Instr::None){
+					if(instr.direction != sm::Instr::None){
 						out << (char)instr.direction << ' ';
 					}
 					out << instr.src.bed << instr.src.needle << ' ';
 					out << instr.tgt.bed << instr.tgt.needle << ' ';
 					out << '\n';
 					break;
-				case sm::Code::Face::Instr::Split:
+				case sm::Instr::Split:
 					out <<"split ";
 					out <<(char)instr.direction << ' ';
 					out << instr.src.bed << instr.src.needle << ' ';
 					out << instr.tgt.bed << instr.tgt.needle << ' ';
 					out << instr.yarns << '\n';
 					break;
-				case sm::Code::Face::Instr::Drop:
+				case sm::Instr::Drop:
 					out <<"drop ";
 					out << instr.src.bed << instr.src.needle << '\n';
 					break;
-				case sm::Code::Face::Instr::In:
+				case sm::Instr::In:
 					out <<"in ";
 					out << instr.yarns << '\n';
 					break;
-				case sm::Code::Face::Instr::Out:
+				case sm::Instr::Out:
 					out <<"out ";
 					out << instr.yarns << '\n';
 					break;
@@ -3140,7 +3221,7 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 	}
 	assert(offenders.empty());
 
-
+	// constraints check out, now "run" the machine
 
 	// process all the hints into easy to access formats
 	std::map<std::string, uint32_t> name_to_code_idx;
@@ -3228,6 +3309,10 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 		int t = face_translation[fi.first];
 		knitout_string += l.knitout_string(t, fi.second, true);
 		knitout_string += "\n";
+
+		//check if instruction can be made, make
+		//make_instruction_on_machine()
+		
 	}
 
 	return knitout_string;

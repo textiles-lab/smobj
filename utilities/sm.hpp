@@ -16,42 +16,145 @@
 
 namespace sm {
 
-struct BedNeedle{
-	char bed = 'x'; // todo enum 'f','b'(hooks) 'F','B'(sliders) 'x' (dontcare)
-	int needle = 0;
-	// todo have a convention that nudge is always to the right of the lower needle index
-	// to make it easier to compare without bothering with floats
-	int8_t nudge = 0; // location = needle + 0.5 * nudge
-	uint32_t depth = 0; // maybe a way to hold more needles at the same location without overlap, 0 is the actual needle
-	BedNeedle(){}
-	BedNeedle (char b, int n) {
-		bed = b; needle = n;
-	}
-	BedNeedle (char b, float n) {
-		bed = b; needle = n;
-		nudge = (n - needle)*2;
-	}
-	float location() const{
-		return 0.5f*nudge + needle;
-	}
-	bool operator< (const BedNeedle& rhs) const {
-		float loc = location();
-		float rloc = rhs.location();
-		return std::tie(bed, loc) < std::tie(rhs.bed, rloc);
-	}
-	bool operator== (const BedNeedle& rhs) const {
-		float loc = location();
-		float rloc = rhs.location();
-		return std::tie(bed, loc) == std::tie(rhs.bed, rloc);
-	}
-	std::string to_string() const{
-		int n = location();
-		return bed + std::to_string(n);
-	}
-	bool dontcare() const{
-		return bed == 'x';
-	}
+	struct BedNeedle{
+		char bed = 'x'; // todo enum 'f','b'(hooks) 'F','B'(sliders) 'x' (dontcare)
+		int needle = 0;
+		// todo have a convention that nudge is always to the right of the lower needle index
+		// to make it easier to compare without bothering with floats
+		int8_t nudge = 0; // location = needle + 0.5 * nudge
+		uint32_t depth = 0; // maybe a way to hold more needles at the same location without overlap, 0 is the actual needle
+		BedNeedle(){}
+		BedNeedle (char b, int n) {
+			bed = b; needle = n;
+		}
+		BedNeedle (char b, float n) {
+			bed = b; needle = n;
+			nudge = (n - needle)*2;
+		}
+		float location() const{
+			return 0.5f*nudge + needle;
+		}
+		bool operator< (const BedNeedle& rhs) const {
+			float loc = location();
+			float rloc = rhs.location();
+			return std::tie(bed, loc) < std::tie(rhs.bed, rloc);
+		}
+		bool operator== (const BedNeedle& rhs) const {
+			float loc = location();
+			float rloc = rhs.location();
+			return std::tie(bed, loc) == std::tie(rhs.bed, rloc);
+		}
+		std::string to_string() const{
+			int n = location();
+			return bed + std::to_string(n);
+		}
+		bool dontcare() const{
+			return bed == 'x';
+		}
 	};
+
+
+	struct Instr{
+		enum Operation : char {
+			In = 'i', Out = 'o', Knit = 'k', Split = 's', Xfer = 'x', Miss = 'm',  Tuck = 't', Drop = 'd', Unknown = 'u'
+		} op = Unknown;
+		enum Direction : char {
+			Left = '-', Right = '+', None = '*'
+		} direction = None;
+		BedNeedle src; // location consumed (n/a: tuck)
+		BedNeedle tgt;   // location produced (n/a: drop)
+		BedNeedle tgt2; // aux produced (only for split)
+		std::string yarns;
+		int rack() const {
+			//TODO enum this
+			
+			if(src.bed == 'b' && tgt.bed == 'f'){
+				return src.needle - tgt.needle;
+			}
+			else if(tgt.bed == 'b' && src.bed == 'f'){
+				return tgt.needle - src.needle;
+			}
+			return 0;
+		}
+		uint32_t face = -1U; // which smobj face (not code face) does this instruction come from, (-1U==> xfers for scheduling)
+		std::string to_string(bool include_racking = false) const{
+			std::string ret = "";
+			switch(op){
+				case Instr::In :
+					ret += "in ";
+					ret += yarns;
+					break;
+				case Instr::Out :
+					ret += "out ";
+					ret += yarns;
+					break;
+				case Instr::Knit:
+					ret += "knit ";
+					ret += (char)direction; ret += " ";
+					ret += tgt.to_string() +  " ";
+					ret += yarns;
+					break;
+				case Instr::Tuck:
+					ret += "tuck ";
+					ret += (char)direction; ret += " ";
+					ret += tgt.to_string() + " ";
+					ret += yarns;
+					break;
+				case Instr::Miss:
+					ret += "miss ";
+					ret += (char)direction; ret += " ";
+					ret += tgt.to_string() + " ";
+					ret += yarns;
+					break;
+				case Instr::Xfer:
+					// insert rack, here
+					if(include_racking){
+						ret += "rack " + std::to_string(rack()) + "\n";
+					}
+					ret += "xfer ";
+					ret += src.to_string() + " ";
+					ret += tgt.to_string() + " ";
+					break;
+				case Instr::Split:
+					// insert rack here
+					if(include_racking){
+						ret += "rack " + std::to_string(rack()) + "\n";
+					}
+					ret += "split ";
+					ret += (char)direction; ret += " ";
+					ret += tgt.to_string() + " "; // src, tgt or tgt,tgt2
+					ret += tgt2.to_string() + " ";
+					ret += yarns;
+					break;
+				case Instr::Drop:
+					ret += "drop ";
+					ret += src.to_string();
+					break;
+				default:
+					assert(false && "unknown instruction");
+			}
+			return ret;
+		}
+	};
+
+	struct MachineLoop{
+		std::string yarn = "";
+		uint32_t face = -1U; // src face, -1U woud indicate a non-face xfer op
+
+	};
+
+	struct MachineState{
+		int racking = 0;
+		int tension  = 0; // stitch value maybe
+		// need to know if loop exists or not
+		// need to know yarn location
+		std::map<BedNeedle, uint32_t> active_needles; // number of loops on a particular bed-needle
+		std::vector< std::vector<Instr> > passes;
+		bool make(Instr instr);
+		bool empty();
+	};
+
+
 	struct Library;
 	//The contents of a .smobj can be loaded as a "Mesh":
 struct Mesh {
@@ -246,28 +349,6 @@ struct Code {
 			std::string yarns=""; //string (z-index?)
 		};
 
-		struct Instr{
-			enum Operation : char {
-				In = 'i', Out = 'o', Knit = 'k', Split = 's', Xfer = 'x', Miss = 'm',  Tuck = 't', Drop = 'd', Unknown = 'u'
-			} op = Unknown;
-			enum Direction : char {
-				Left = '-', Right = '+', None = '*'
-			} direction = None;
-			BedNeedle src; // location consumed (n/a: tuck)
-			BedNeedle tgt;   // location produced (n/a: drop)
-			BedNeedle tgt2; // aux produced (only for split)
-			std::string yarns;
-			int rack() const {
-				//TODO enum this
-				if(src.bed == 'b' && tgt.bed == 'f'){
-					return src.needle - tgt.needle;
-				}
-				else if(tgt.bed == 'b' && src.bed == 'f'){
-					return tgt.needle - src.needle;
-				}
-				return 0;
-			}
-		};
 		//face, with vertices in CCW order:
 		std::vector< Edge > edges;
 		//Instructions
@@ -310,61 +391,8 @@ struct Code {
 				i.src.needle += translate_to;
 				i.tgt.needle += translate_to;
 				i.tgt2.needle += translate_to;
-				switch(i.op){
-					case Instr::In :
-						ret += "in ";
-						ret += i.yarns;
-					break;
-					case Instr::Out :
-						ret += "out ";
-						ret += i.yarns;
-					break;
-					case Instr::Knit:
-						ret += "knit ";
-						ret += (char)i.direction; ret += " ";
-						ret += i.tgt.to_string() +  " ";
-						ret += i.yarns;
-					break;
-					case Instr::Tuck:
-						ret += "tuck ";
-						ret += (char)i.direction; ret += " ";
-						ret += i.tgt.to_string() + " ";
-						ret += i.yarns;
-						break;
-					case Instr::Miss:
-						ret += "miss ";
-						ret += (char)i.direction; ret += " ";
-						ret += i.tgt.to_string() + " ";
-						ret += i.yarns;
-						break;
-					case Instr::Xfer:
-						// insert rack, here
-						if(verbose){
-							ret += "rack " + std::to_string(i.rack()) + "\n";
-						}
-						ret += "xfer ";
-						ret += i.src.to_string() + " ";
-						ret += i.tgt.to_string() + " ";
-						break;
-					case Instr::Split:
-						// insert rack here
-						if(verbose){
-							ret += "rack " + std::to_string(i.rack()) + "\n";
-						}
-						ret += "split ";
-						ret += (char)i.direction; ret += " ";
-						ret += i.tgt.to_string() + " "; // src, tgt or tgt,tgt2
-						ret += i.tgt2.to_string() + " ";
-						ret += i.yarns;
-						break;
-					case Instr::Drop:
-						ret += "drop ";
-						ret += i.src.to_string();
-						break;
-					default:
-						assert(false && "unknown instruction");
-
-				}
+				ret += i.to_string(verbose);
+				
 				if(index < 0){
 					ret += "\n";
 				}
