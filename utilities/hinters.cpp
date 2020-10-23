@@ -292,7 +292,19 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
                 edge_constraint.second = eidx;
                 // offset between e.bn and bn should be the same for all edges in this face
                 if(found_resource && offset != (e.bn.location() - bn.location())){
-					std::cerr << "Inconsistent resource allocation for face " << face_id << " edge " << eidx << ", old offset = " << offset << " current = " << e.bn.location() - bn.location() << std::endl; 
+					std::cerr << "Inconsistent resource allocation for face " << face_id <<
+                        " edge " << eidx << ", old offset = " << offset << " current = " <<
+                        e.bn.location() - bn.location() << std::endl; 
+
+                    // Mark this resource hint as "inValid"
+                    for(auto &h : mesh.hints) {
+                        if (h.type == sm::Mesh::Hint::Resource && h.lhs.face == face_id &&
+                                h.lhs.edge == eidx) {
+                            h.isValid = false;
+                            break;
+                        }
+                    }
+
 					return false;
 				}
 
@@ -325,6 +337,15 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
                     // Resource conflict!!
                     std::cerr << "Resource conflict while running verifier." << std::endl;
                     std::cerr << "Check resource constraint of edge " << eidx << " in face " << face_id << std::endl;;
+
+                    // Mark this resource hint as "inValid"
+                    for(auto &h : mesh.hints) {
+                        if (h.type == sm::Mesh::Hint::Resource && h.lhs.face == face_id &&
+                                h.lhs.edge == eidx) {
+                            h.isValid = false;
+                            break;
+                        }
+                    }
 
                     return false;
                 }
@@ -559,7 +580,7 @@ bool sm::constraint_face_instruction_order(sm::Mesh &mesh, sm::Code const &code_
     // Maybe from a known database ? From instruction ordering
 }
 
-// TODO-hinter: To make test cases for infer_constraints
+// To make test cases for infer_constraints
 // Add some example smobj, 3x3 and test following
 // 1. No valid variant exists for a particular resource assignment
 //    -> Code does not try to assign random variant
@@ -578,8 +599,7 @@ bool sm::constraint_face_instruction_order(sm::Mesh &mesh, sm::Code const &code_
 // Have selected_faces like infrastructure in EditMesh.cpp
 // Add problematic faces/edges to that whenever we call infer_constraints
 // Highlight it with red?
-
-// TODO-hinter: Also Error reporting
+//
 // If constraint 0 and 1 are incompatible, then 1 is incompatibe with 0
 
 
