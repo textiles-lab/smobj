@@ -2921,9 +2921,15 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 			if(face_variant.count(h.lhs.face) && face_variant[h.lhs.face] != std::get<std::string>(h.rhs)){
 				std::cerr << "[Variant] Hints for face " << h.lhs.face << " are inconsistent: " << face_variant[h.lhs.face] << ", " << std::get<std::string>(h.rhs) << std::endl;
 				offenders.emplace_back(h);
-				return false;
 			}
-			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
+			std::string signature = mesh.library[mesh.faces[h.lhs.face].type] + ' ' + std::get<std::string>(h.rhs);
+			if(!name_to_code_idx.count(signature)){
+				std::cerr << "Variant hint for face does not exist in code library. " << std::endl;
+				offenders.emplace_back(h);
+			}
+			else{
+				face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
+			}
 		}
 	}
 
@@ -2978,9 +2984,13 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 			if(ha_it != mesh.hints.end() && hb_it != mesh.hints.end()){
 				sm::BedNeedle rhs_a = std::get<sm::BedNeedle>(ha_it->rhs);
 				sm::BedNeedle rhs_b = std::get<sm::BedNeedle>(hb_it->rhs);
+				// if loop
 				if(!(rhs_a == rhs_b)){
 					offenders.emplace_back(*ha_it);
 					offenders.emplace_back(*hb_it);
+				}
+				// if yarn, test for slack only
+				{
 				}
 			}
 		}
@@ -3018,7 +3028,6 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 
 				offenders.emplace_back(h);
 
-				return false;
 			}
 			face_translation[h.lhs.face] = offset;
 		}
@@ -3056,7 +3065,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 				if(d2 < d1){
 					// maybe this should be a wrong variant offence TODO
 					std::cerr << "Local face carrier order not consistent with global order. " << std::endl;
-					return false;
+					//return false;
 				}
 			}
 		}
@@ -3106,7 +3115,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 			if(total_order.size() < N){
 				std::cerr << "Order hints are inconsistent. " << std::endl;
 				//TODO order hints are inconsistent, need to figure out which one and add to offending list
-				return false;
+				//return false;
 			}
 		}
 		// respect total order, as long as total order is consistent, this should be consistent
@@ -3123,7 +3132,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 				if(std::distance(order.begin(), a_it) < std::distance(order.begin(), b_it)){
 					std::cerr << "Order hint inconsistent with total order " << std::endl;
 					offenders.emplace_back(h);
-					return false;
+					//return false;
 				}
 			}
 		}
@@ -3143,7 +3152,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 			// connection does not respect slack/loop constraint
 			std::cerr << "Slack is not respected at connection between " << c.a.face << "/" << c.a.edge << " and " << c.b.face << "/" << c.b.edge << " offsets: " << a << ", " << b  << std::endl;
 			//TODO find the resource hints for these connections and add them to offending
-			return false;
+			//return false;
 		}
 	}
 	// sanity of total order
@@ -3155,7 +3164,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 			auto it = std::unique(order.begin(), order.end());
 			if(it != order.end()){
 				std::cerr << "Total order has duplicate entries!"  << std::endl;
-				return false;
+				//return false;
 			}
 		}
 		// all face instructions covered
