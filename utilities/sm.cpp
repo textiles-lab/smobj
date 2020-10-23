@@ -19,14 +19,22 @@
 
 bool sm::MachineState::make(sm::Instr instr){
 
+	bool new_pass = false;
 	if(instr.op == sm::Instr::Xfer || instr.op == sm::Instr::Split){
 		if(racking != instr.rack()){
 			//rack changed, might need to keep track of pass?
 			racking = instr.rack();
-			passes.emplace_back();
+			new_pass = true;
 		}
 	}
-	if(passes.empty()) passes.emplace_back();
+	if(!passes.empty() && !passes.back().empty()){
+		auto last = passes.back().back();
+		if(last.direction != instr.direction) new_pass = true; // direction changed
+		if(last.yarns != instr.yarns) new_pass = true; // yarn setup changed
+		// todo loop vs mov instruction
+		// f->b, b->f 
+	}
+	if(passes.empty() || new_pass) passes.emplace_back();
 	auto &curr_pass = passes.back();
 
 	// remove the loop(s) from the src
@@ -82,6 +90,7 @@ bool sm::MachineState::make(sm::Instr instr){
 		// Does instruction use locations not available to it ? (needs more info smobj+code)
 	}
 
+	// maybe tracking passes is not necessary, but why not..
 	curr_pass.emplace_back(instr);
 
 	return true;
@@ -3138,7 +3147,8 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 		}
 	}
 
-	// Slack is respected
+	// Slack is respected, done earlier
+	/*
 	for(auto const &c : mesh.connections){
 		int32_t a_offset  = face_translation[c.a.face];
 		int32_t b_offset  = face_translation[c.b.face];
@@ -3150,11 +3160,11 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 		float b = eb.bn.location() + b_offset;
 		if(std::abs(a-b) > 0.5){
 			// connection does not respect slack/loop constraint
-			std::cerr << "Slack is not respected at connection between " << c.a.face << "/" << c.a.edge << " and " << c.b.face << "/" << c.b.edge << " offsets: " << a << ", " << b  << std::endl;
+			//std::cerr << "Slack is not respected at connection between " << c.a.face << "/" << c.a.edge << " and " << c.b.face << "/" << c.b.edge << " offsets: " << a << ", " << b  << std::endl;
 			//TODO find the resource hints for these connections and add them to offending
 			//return false;
 		}
-	}
+	}*/
 	// sanity of total order
 	{
 
@@ -3182,6 +3192,35 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 		}
 		// if total order exists and covers all face/instructions without repetition then it must be acyclic
 	}
+
+	
+	if(is_fully_hinted && offenders.empty()){
+		MachineState machine;
+		// we reached here, test that machine sim is okay
+		// go by order, plug translate by and hint index to get knitout instruction
+		for(auto const &fi : mesh.total_order){
+			assert(face_translation.count(fi.first));
+			std::string signature = mesh.library[mesh.faces[fi.first].type] +  ' ' + (face_variant.count(fi.first) ? face_variant[fi.first] : "");
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			if(fi.second >= l.instrs.size()){
+				assert(false && "Invalid instruction index for face."); // should be verified earlier.
+			}
+			int t = face_translation[fi.first];
+			sm::Instr ins = l.instrs[fi.second];
+			ins.translate(t);
+			ins.face  = fi.first; 
+			if(!machine.make(ins)){
+				std::cerr << "Machine could not create instruction " << ins.to_string() << " without violating constraints!" << std::endl;
+				return false;
+			}
+		}
+		if(!machine.empty()){
+			std::cerr << "Loops leftover at the very end. " << std::endl;
+			//return false; // maybe this is an error
+		}
+		std::cout << "Total passes recorded:  " << machine.passes.size() << std::endl;
+	}
+
 	// --------------End of hint verification -------------
 
 	// if !is_fully_hinted, then true only indicates that no inconsistency exists
@@ -3315,6 +3354,7 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 		}
 	}
 	// --------------Code Generation------------------------
+
 	std::string knitout_string = "";
 	// knitout header
 	knitout_string += ";!knitout-2\n";
@@ -3335,14 +3375,15 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 		if(!face_translation.count(fi.first)) {
 		std::cerr << "Mesh is not sufficiently hinted, total order missing " << std::endl; break;
 		}
+		
 		std::string signature = mesh.library[mesh.faces[fi.first].type] +  ' ' + (face_variant.count(fi.first) ? face_variant[fi.first] : "");
 		auto const &l = code.faces[name_to_code_idx[signature]];
+		if(fi.second >= l.instrs.size()){
+			assert(false && "Invalid instruction index for face."); // should be verified earlier.
+		}
 		int t = face_translation[fi.first];
 		knitout_string += l.knitout_string(t, fi.second, true);
 		knitout_string += "\n";
-
-		//check if instruction can be made, make
-		//make_instruction_on_machine()
 
 	}
 

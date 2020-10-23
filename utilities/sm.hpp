@@ -53,7 +53,7 @@ namespace sm {
 		}
 	};
 
-
+	// awkward that sm.hpp seems to have more and more knitout specific information, but well...
 	struct Instr{
 		enum Operation : char {
 			In = 'i', Out = 'o', Knit = 'k', Split = 's', Xfer = 'x', Miss = 'm',  Tuck = 't', Drop = 'd', Unknown = 'u'
@@ -77,6 +77,7 @@ namespace sm {
 			return 0;
 		}
 		uint32_t face = -1U; // which smobj face (not code face) does this instruction come from, (-1U==> xfers for scheduling)
+		
 		std::string to_string(bool include_racking = false) const{
 			std::string ret = "";
 			switch(op){
@@ -135,13 +136,14 @@ namespace sm {
 			}
 			return ret;
 		}
+
+		void translate(int offset){
+			if(!src.dontcare()) src.needle += offset;
+			if(!tgt.dontcare()) tgt.needle += offset;
+			if(!tgt2.dontcare()) tgt2.needle += offset;
+		}
 	};
 
-	struct MachineLoop{
-		std::string yarn = "";
-		uint32_t face = -1U; // src face, -1U woud indicate a non-face xfer op
-
-	};
 
 	struct MachineState{
 		int racking = 0;
