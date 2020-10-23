@@ -182,7 +182,7 @@ sm::Mesh sm::hint_shortrow_only_patch(sm::Mesh const &mesh, sm::Code const &code
             std::string code_name = lib_name + " " + variant;
             auto l = code_library.faces[name_to_code_idx[code_name]];
             for(uint32_t j = 0; j < l.instrs.size(); ++j){
-                if(l.instrs[j].op == sm::Code::Face::Instr::Operation::Xfer){
+                if(l.instrs[j].op == sm::Instr::Operation::Xfer){
                     std::cerr << "This constraint generator should not be used with code that introduces transfers." << std::endl;
                     // todo throw
                 }
