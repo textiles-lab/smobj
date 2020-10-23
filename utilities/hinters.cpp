@@ -296,15 +296,6 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
                         " edge " << eidx << ", old offset = " << offset << " current = " <<
                         e.bn.location() - bn.location() << std::endl; 
 
-                    // Mark this resource hint as "inValid"
-                    for(auto &h : mesh.hints) {
-                        if (h.type == sm::Mesh::Hint::Resource && h.lhs.face == face_id &&
-                                h.lhs.edge == eidx) {
-                            h.isValid = false;
-                            break;
-                        }
-                    }
-
 					return false;
 				}
 
@@ -337,15 +328,6 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
                     // Resource conflict!!
                     std::cerr << "Resource conflict while running verifier." << std::endl;
                     std::cerr << "Check resource constraint of edge " << eidx << " in face " << face_id << std::endl;;
-
-                    // Mark this resource hint as "inValid"
-                    for(auto &h : mesh.hints) {
-                        if (h.type == sm::Mesh::Hint::Resource && h.lhs.face == face_id &&
-                                h.lhs.edge == eidx) {
-                            h.isValid = false;
-                            break;
-                        }
-                    }
 
                     return false;
                 }
