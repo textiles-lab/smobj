@@ -200,6 +200,7 @@ struct Mesh {
 			Inferred = 'i',
 			Heuristic = 'h',
 		} src;
+        bool isValid = true;
 		FaceEdge lhs;;
 		std::variant<BedNeedle,  FaceEdge, std::string> rhs;
 		uint32_t inferred_from = -1U; // optional index to maintain what constraint this was inferred from if at all
