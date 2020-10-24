@@ -31,7 +31,9 @@ bool sm::MachineState::make(sm::Instr instr){
 		auto last = passes.back().back();
 		if(last.direction != instr.direction) new_pass = true; // direction changed
 		if(last.yarns != instr.yarns) new_pass = true; // yarn setup changed
-		// todo loop vs mov instruction
+		if(last.is_move() && instr.is_loop()) new_pass  = true;
+		if(last.is_loop() && instr.is_move()) new_pass = true;
+		// todo loop vs mov instructios
 		// f->b, b->f 
 	}
 	if(passes.empty() || new_pass) passes.emplace_back();
@@ -2942,9 +2944,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 		}
 	}
 
-	{
-		// hints don't currently specify yarn carriers, but should
-	}
+	
 	auto face_to_code_key = [&](const sm::Mesh::Face &f)->std::string{
 		std::string variant = "";
 		if(face_variant.count(&f- &mesh.faces[0])){
@@ -2967,11 +2967,11 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 	}
 
 	// Types of offences:
-	// 1. Variant: Face has a variant name that does not exists (done)
-	// 2. Variant: Face has a variant name that is inconsistent with resource hints. (done)
-	// 3. Resource: Edge has a resource hint that is inconsistent with other edge resource hints (done)
+	// 1. Variant: Face has a variant name that does not exists
+	// 2. Variant: Face has a variant name that is inconsistent with resource hints. 
+	// 3. Resource: Edge has a resource hint that is inconsistent with other edge resource hints 
 	// 4. Resource: Edge has a resource hint that is inconsistent with connections.
-
+	
 	{
 		// 1.
 		for(auto const &h : mesh.hints){
@@ -2984,7 +2984,9 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 			}
 		}
 		// 4.
-		for(auto c : mesh.connections){
+
+		for(auto const &c : mesh.connections){
+			uint32_t c_id = &c - &mesh.connections[0];
 			// if there exists a resource hint for c.a and a resource hint for c.b and they are inconsistent
 			// TODO only for loop edges
 
@@ -2993,6 +2995,31 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 			if(ha_it != mesh.hints.end() && hb_it != mesh.hints.end()){
 				sm::BedNeedle rhs_a = std::get<sm::BedNeedle>(ha_it->rhs);
 				sm::BedNeedle rhs_b = std::get<sm::BedNeedle>(hb_it->rhs);
+			
+				// flip if a is out, b is in. needs library also
+				{
+					
+				}
+
+				{
+					// A) go over all the move_instructions with the correct instruction order
+					// does that take things to the right location? else offence
+					// Assumes move_instructions within the same connection are in the right order
+					// else need to reorder based on face/instruction order hints
+					for(auto const &m : mesh.move_instructions){
+						if(m.connection == c){ // m.c_idx == c_id
+							assert(m.c_idx == c_id); // why
+							sm::Instr op = m.op;
+							if(!(rhs_b == op.src)){
+								break;
+							}
+							else{
+								rhs_b = op.tgt;
+							}
+						}
+					}
+				}
+
 				// if loop
 				if(!(rhs_a == rhs_b)){
 					offenders.emplace_back(*ha_it);
@@ -3147,24 +3174,6 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 		}
 	}
 
-	// Slack is respected, done earlier
-	/*
-	for(auto const &c : mesh.connections){
-		int32_t a_offset  = face_translation[c.a.face];
-		int32_t b_offset  = face_translation[c.b.face];
-		auto const &ca = code.faces[name_to_code_idx[face_to_code_key(mesh.faces[c.a.face])]];
-		auto const &cb = code.faces[name_to_code_idx[face_to_code_key(mesh.faces[c.b.face])]];
-		auto const &ea = ca.edges[c.a.edge];
-		auto const &eb = cb.edges[c.b.edge];
-		float a = ea.bn.location() + a_offset;
-		float b = eb.bn.location() + b_offset;
-		if(std::abs(a-b) > 0.5){
-			// connection does not respect slack/loop constraint
-			//std::cerr << "Slack is not respected at connection between " << c.a.face << "/" << c.a.edge << " and " << c.b.face << "/" << c.b.edge << " offsets: " << a << ", " << b  << std::endl;
-			//TODO find the resource hints for these connections and add them to offending
-			//return false;
-		}
-	}*/
 	// sanity of total order
 	{
 
@@ -3199,16 +3208,25 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 		// we reached here, test that machine sim is okay
 		// go by order, plug translate by and hint index to get knitout instruction
 		for(auto const &fi : mesh.total_order){
-			assert(face_translation.count(fi.first));
-			std::string signature = mesh.library[mesh.faces[fi.first].type] +  ' ' + (face_variant.count(fi.first) ? face_variant[fi.first] : "");
-			auto const &l = code.faces[name_to_code_idx[signature]];
-			if(fi.second >= l.instrs.size()){
-				assert(false && "Invalid instruction index for face."); // should be verified earlier.
+			sm::Instr ins;
+			if(fi.first == -1U){
+				ins.face = -1U;
+				ins = mesh.move_instructions[fi.second].op;
 			}
-			int t = face_translation[fi.first];
-			sm::Instr ins = l.instrs[fi.second];
-			ins.translate(t);
-			ins.face  = fi.first; 
+			else{
+
+				assert(face_translation.count(fi.first));
+				std::string signature = mesh.library[mesh.faces[fi.first].type] +  ' ' + (face_variant.count(fi.first) ? face_variant[fi.first] : "");
+				auto const &l = code.faces[name_to_code_idx[signature]];
+				if(fi.second >= l.instrs.size()){
+					assert(false && "Invalid instruction index for face."); // should be verified earlier.
+				}
+				int t = face_translation[fi.first];
+				sm::Instr ins = l.instrs[fi.second];
+				ins.translate(t);
+				ins.face  = fi.first; 
+
+			}
 			if(!machine.make(ins)){
 				std::cerr << "Machine could not create instruction " << ins.to_string() << " without violating constraints!" << std::endl;
 				return false;
@@ -3372,18 +3390,27 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 
 	// go by order, plug translate by and hint index to get knitout instruction
 	for(auto const &fi : mesh.total_order){
-		if(!face_translation.count(fi.first)) {
-		std::cerr << "Mesh is not sufficiently hinted, total order missing " << std::endl; break;
+	
+		if(fi.first == -1U){ // pick from instruction stream
+			assert(fi.second < mesh.move_instructions.size());
+			auto xfer_op = mesh.move_instructions[fi.second].op;
+			assert(xfer_op.op == sm::Instr::Xfer);
+			knitout_string += xfer_op.to_string(true);
 		}
-		
-		std::string signature = mesh.library[mesh.faces[fi.first].type] +  ' ' + (face_variant.count(fi.first) ? face_variant[fi.first] : "");
-		auto const &l = code.faces[name_to_code_idx[signature]];
-		if(fi.second >= l.instrs.size()){
-			assert(false && "Invalid instruction index for face."); // should be verified earlier.
+		else{
+			if(!face_translation.count(fi.first)) {
+				std::cerr << "Mesh is not sufficiently hinted, total order missing " << std::endl; break;
+			}
+
+			std::string signature = mesh.library[mesh.faces[fi.first].type] +  ' ' + (face_variant.count(fi.first) ? face_variant[fi.first] : "");
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			if(fi.second >= l.instrs.size()){
+				assert(false && "Invalid instruction index for face."); // should be verified earlier.
+			}
+			int t = face_translation[fi.first];
+			knitout_string += l.knitout_string(t, fi.second, true);
+			knitout_string += "\n";
 		}
-		int t = face_translation[fi.first];
-		knitout_string += l.knitout_string(t, fi.second, true);
-		knitout_string += "\n";
 
 	}
 

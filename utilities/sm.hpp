@@ -142,14 +142,23 @@ namespace sm {
 			if(!tgt.dontcare()) tgt.needle += offset;
 			if(!tgt2.dontcare()) tgt2.needle += offset;
 		}
+		bool is_move(){
+			return (op == Knit || op == Tuck || op == Split);
+		}
+		bool is_loop(){
+			return (op == Xfer);
+		}
 	};
 
+
+	
 
 	struct MachineState{
 		int racking = 0;
 		int tension  = 0; // stitch value maybe
 		// need to know if loop exists or not
 		// need to know yarn location
+		// TODO maintain connectivity
 		std::map<BedNeedle, uint32_t> active_needles; // number of loops on a particular bed-needle
 		std::vector< std::vector<Instr> > passes;
 		bool make(Instr instr);
@@ -188,8 +197,18 @@ struct Mesh {
 		bool flip = false;
 		//!flip:  a[0] glued to b[0], a[1] glued to b[1]
 		// flip: a[0] glued to b[1], a[1] glued to b[0]
+		bool operator==(Connection const &o) const { return (a == o.a && b == o.b && flip == o.flip); }
 	};
 	std::vector< Connection > connections;
+	
+	// is maintaining this inside smobj the best idea?
+	struct MoveInstr {
+		uint32_t c_idx = -1U;
+		Connection connection; // keep a copy for sanity checking, for now
+		Instr op;
+	};
+	std::vector< MoveInstr > move_instructions; //the rest of the "stream"
+
 	std::vector< std::pair<uint32_t, uint32_t> > total_order; // face-id/instruction-id
 	struct Hint {
 		enum HintType : char{
