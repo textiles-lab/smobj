@@ -36,7 +36,10 @@ bool sm::MachineState::make(sm::Instr instr){
 		// todo loop vs mov instructios
 		// f->b, b->f 
 	}
-	if(passes.empty() || new_pass) passes.emplace_back();
+	if(passes.empty() || new_pass) {
+		std::cout << "new pass! total passes so far:" << passes.size() << std::endl;
+		passes.emplace_back();
+	}
 	auto &curr_pass = passes.back();
 
 	// remove the loop(s) from the src
@@ -2816,10 +2819,12 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 // maybe should return a reordered Mesh..
 // else false
 
-sm::Mesh sm::order_faces(sm::Mesh const &mesh, sm::Library const &library){
+bool sm::can_order_faces(sm::Mesh const &mesh, sm::Library const &library, std::vector<uint32_t> *_order){
+	assert(_order);
+	std::vector<uint32_t> &order = *_order;
+	order.clear();
 	sm::Mesh out = mesh;
 	std::map<std::string, uint32_t> name_to_lib_idx;
-	std::vector<uint32_t> order;
 	for(auto const &l : library.faces){
 		name_to_lib_idx[l.key()] = &l-&library.faces[0];
 	}
@@ -2861,15 +2866,7 @@ sm::Mesh sm::order_faces(sm::Mesh const &mesh, sm::Library const &library){
 		++iterations;
 		if(iterations > mesh.faces.size()) break;
 	}
-	//DEBUG
-	if(0){
-		std::cout << "ORDER:"; for(auto o : order) std::cout << o << " "; std::cout << std::endl; // DEBUG just print this out
-		if(mesh.faces.size() == completed_faces.size()){
-		}
-		else{
-			std::cout <<"WARNING: faces could NOT be ordered!" << std::endl;
-		}
-	}
+
 	if(completed_faces.size() == mesh.faces.size()){
 		for(uint32_t i = 0; i < mesh.faces.size(); ++i){
 			out.faces[i] = mesh.faces[order[i]];
@@ -2885,9 +2882,12 @@ sm::Mesh sm::order_faces(sm::Mesh const &mesh, sm::Library const &library){
 			if(c.face != -1U)
 				c.face = std::distance(order.begin(), std::find(order.begin(), order.end(), c.face));
 		}
+	} else{
+		
+		return false;
 	}
 	// A mesh where faces are correctly ordered if ordering was possible, else original..
-	return out;
+	return true;
 }
 bool sm::add_hint(sm::Mesh::Hint const h, sm::Mesh *_mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> * _offenders){
 	assert(_mesh);
@@ -2902,6 +2902,41 @@ bool sm::add_hint(sm::Mesh::Hint const h, sm::Mesh *_mesh, sm::Library const &li
 	}
 
 	return false;
+}
+
+// returns false if not a partial order, else returns a sequence of instructions that respects the order
+bool sm::partial_order_to_sequence(std::set<std::pair<uint32_t, uint32_t>> partial, std::vector<uint32_t> *_sequence){
+	assert(_sequence);
+	auto &sequence = *_sequence;
+	std::set<uint32_t> instructions;
+	for(auto &pr: partial) {
+		instructions.insert(pr.first);
+		instructions.insert(pr.second);
+	}
+	std::set<uint32_t> done;
+	while(!instructions.empty()){
+		uint32_t old = sequence.size();
+		for(auto x : instructions){
+			if(done.count(x)) continue;
+			bool valid = true;
+			for(auto &pr : partial){
+				if(pr.second == x && !done.count(pr.first)){
+					valid = false;
+				}
+			}
+			if(valid){
+				done.insert(x);
+				sequence.emplace_back(x);
+				instructions.erase(x);
+				break;
+			}
+		}
+		if(sequence.size() == old){
+			// could not make progress, must be a cycle
+			return false;
+		}
+	}
+	return true;
 }
 
 // if is_fully_hinted is true, checks also if mesh is fully hinted
@@ -2996,22 +3031,48 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 				sm::BedNeedle rhs_a = std::get<sm::BedNeedle>(ha_it->rhs);
 				sm::BedNeedle rhs_b = std::get<sm::BedNeedle>(hb_it->rhs);
 			
-				// flip if a is out, b is in. needs library also
+				// 0) flip if a is out, b is in. needs library also
 				{
 					
 				}
 
 				{
-					// A) go over all the move_instructions with the correct instruction order
+					// go over all the move_instructions with the correct instruction order
 					// does that take things to the right location? else offence
 					// Assumes move_instructions within the same connection are in the right order
 					// else need to reorder based on face/instruction order hints
-					for(auto const &m : mesh.move_instructions){
-						if(m.connection == c){ // m.c_idx == c_id
-							assert(m.c_idx == c_id); // why
-							sm::Instr op = m.op;
+					std::set<uint32_t> potential_instructions;
+					std::set<std::pair<uint32_t, uint32_t>> partial_orders;
+					std::vector<uint32_t> sequence, offending_instructions;
+					// 1) Collect all instructions that are associated with this connection.
+					for(auto mc : mesh.move_connections){
+						if(mc.c_idx == c_id || mc.connection == c){
+							potential_instructions.insert(mc.i_idx);
+						}
+					}
+					// 2) Collect all hints that are associated with any of the collected instructions
+					for(auto hh : mesh.hints){
+						if(hh.type == sm::Mesh::Hint::Order && hh.lhs.face == -1U){
+							auto rhs = std::get<sm::Mesh::FaceEdge>(hh.rhs);
+							if(potential_instructions.count(hh.lhs.edge) || (potential_instructions.count(rhs.edge) && rhs.face == -1U)){
+								partial_orders.insert(std::make_pair(rhs.face, rhs.edge));
+							}
+						}
+					}
+					//3) turn partial order  into sequence
+					if(!partial_order_to_sequence(partial_orders, &sequence)){
+						// TODO hints have a cycle somewhere, mark offenders
+						
+					}
+					else{
+					//4) move the loops in sequence order, do they now reach the target?
+						for(auto const &idx : sequence){
+							if(!potential_instructions.count(idx))  continue; 
+							assert(idx >= 0 && idx < mesh.move_instructions.size()); 
+							sm::Instr op = mesh.move_instructions[idx];
 							if(!(rhs_b == op.src)){
-								break;
+								offending_instructions.emplace_back(idx);
+								break; // cannot apply this sequence, TODO all hints with this instruction should be offending
 							}
 							else{
 								rhs_b = op.tgt;
@@ -3112,63 +3173,65 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 
 		//check for consistency independent of total order for verification purposes
 		{
-			uint32_t N = 0;
-			std::map<sm::Mesh::FaceEdge, std::set<sm::Mesh::FaceEdge>> depends_on, inverse_depends_on;
-			for(auto const &f : mesh.faces){
-				std::string signature = face_to_code_key(f);
-				auto const &l = code.faces[name_to_code_idx[signature]];
-				N += l.instrs.size();
-				for(uint32_t i = 0; i < l.instrs.size(); ++i){
-					sm::Mesh::FaceEdge fe; fe.face = &f - &mesh.faces[0];
-					fe.edge = i;
-					depends_on[fe] = std::set<sm::Mesh::FaceEdge>();
-					inverse_depends_on[fe] = std::set<sm::Mesh::FaceEdge>();
-				}
-			}
-			std::vector<sm::Mesh::FaceEdge> total_order;
-			std::set<sm::Mesh::FaceEdge> done;
-			for(auto const &h: mesh.hints){
+			std::map<sm::Mesh::FaceEdge, uint32_t> face_instr_idx;
+			for(auto const &h : mesh.hints){
 				if(h.type == sm::Mesh::Hint::Order){
-					depends_on[h.lhs].insert(std::get<sm::Mesh::FaceEdge>(h.rhs));
-					inverse_depends_on[std::get<sm::Mesh::FaceEdge>(h.rhs)].insert(h.lhs);
-				}
-			}
-			bool did_update = true;
-			while(did_update){ //lazy-version
-				did_update = false;
-				for(auto ba : depends_on){
-					if(ba.second.empty() && !done.count(ba.first)){
-						total_order.emplace_back(ba.first);
-						done.insert(ba.first);
-						for(auto x: inverse_depends_on[ba.first]){
-							assert(depends_on[x].count(ba.first));
-							depends_on[x].erase(ba.first);
-						}
-						did_update = true;
+					auto rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
+					if(face_instr_idx.count(h.lhs)){
+					}
+					else{
+						face_instr_idx[h.lhs] = face_instr_idx.size();
+					}
+					if(face_instr_idx.count(rhs)){
+					}
+					else{
+						face_instr_idx[rhs] = face_instr_idx.size();
 					}
 				}
 			}
-			if(total_order.size() < N){
-				std::cerr << "Order hints are inconsistent. " << std::endl;
-				//TODO order hints are inconsistent, need to figure out which one and add to offending list
-				//return false;
+			std::set<std::pair<uint32_t, uint32_t>> partials;
+			for(auto const &h : mesh.hints){
+				if(h.type == sm::Mesh::Hint::Order){
+					auto rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
+					partials.insert(std::make_pair(face_instr_idx[h.lhs], face_instr_idx[rhs]));
+				}
 			}
+			std::vector<uint32_t> sequence;
+			if(!partial_order_to_sequence(partials, &sequence)){
+				//TODO find offending hints
+				std::cerr << "Instruction hints have a cycle. " << std::endl;
+				return false;
+			}
+			
 		}
 		// respect total order, as long as total order is consistent, this should be consistent
 		auto order = mesh.total_order;
-		for(auto const &h: mesh.hints){
-			if(h.type == sm::Mesh::Hint::Order){
-				std::pair<uint32_t, uint32_t> before, after;
-				before.first = h.lhs.face;
-				before.second = h.lhs.edge;
-				after.first = (std::get<sm::Mesh::FaceEdge>(h.rhs)).face;
-				after.second = (std::get<sm::Mesh::FaceEdge>(h.rhs)).edge;
-				auto a_it = std::find(order.begin(), order.end(), after);
-				auto b_it = std::find(order.begin(), order.end(), before);
-				if(std::distance(order.begin(), a_it) < std::distance(order.begin(), b_it)){
-					std::cerr << "Order hint inconsistent with total order " << std::endl;
-					offenders.emplace_back(h);
-					//return false;
+		if(order.size()){
+			for(auto const &h: mesh.hints){
+				if(h.type == sm::Mesh::Hint::Order){
+					std::pair<uint32_t, uint32_t> before, after;
+					before.first = h.lhs.face;
+					before.second = h.lhs.edge;
+					after.first = (std::get<sm::Mesh::FaceEdge>(h.rhs)).face;
+					after.second = (std::get<sm::Mesh::FaceEdge>(h.rhs)).edge;
+					auto a_it = std::find(order.begin(), order.end(), after);
+					auto b_it = std::find(order.begin(), order.end(), before);
+					if(a_it == order.end()){
+						std::cerr <<"Instruction (after) " << after.first << "/" << after.second << " is not in total order." << std::endl;
+						std::cerr << "Hint: " << h.to_string() << std::endl;
+						offenders.emplace_back(h);
+					}
+					if(b_it == order.end()){
+						std::cerr << "Instruction (before) " << before.first << "/" << before.second << " is not in total order." << std::endl;
+						offenders.emplace_back(h);
+					}
+					if(std::distance(order.begin(), a_it) < std::distance(order.begin(), b_it)){
+						std::cerr << "Order hint inconsistent with total order " << std::endl;
+						std::cout << "\tbefore: " << before.first << "/" << before.second << " after: " << after.first << "/" << after.second << std::endl;
+						std::cout << "\tbefore-dist: " << std::distance(order.begin(), b_it) << " after-dist: " << std::distance(order.begin(), a_it) << std::endl;
+						offenders.emplace_back(h);
+						//return false;
+					}
 				}
 			}
 		}
@@ -3211,7 +3274,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 			sm::Instr ins;
 			if(fi.first == -1U){
 				ins.face = -1U;
-				ins = mesh.move_instructions[fi.second].op;
+				ins = mesh.move_instructions[fi.second];
 			}
 			else{
 
@@ -3249,7 +3312,12 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code){
 
 	mesh.total_order.clear();
-
+	std::vector<uint32_t> sequence;
+	std::map<sm::Mesh::FaceEdge, uint32_t> face_instr_idx;
+	std::map<uint32_t, sm::Mesh::FaceEdge> instr_face_map;
+	std::set<std::pair<uint32_t, uint32_t>> partials;
+	//check for consistency independent of total order for verification purposes
+	
 	// go through all the faces and just add them as-is
 	// process all the hints into easy to access formats
 	std::map<std::string, uint32_t> name_to_code_idx;
@@ -3259,7 +3327,6 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code){
 		name_to_code_idx[c.key()] = &c - &code.faces[0];
 	}
 	for(auto h : mesh.hints){
-		// TODO check that variant hints are consistent
 		if(h.type == sm::Mesh::Hint::Variant){
 			if(face_variant.count(h.lhs.face) && face_variant[h.lhs.face] != std::get<std::string>(h.rhs)){
 				std::cerr << "[Variant] Hints for face " << h.lhs.face << " are inconsistent: " << face_variant[h.lhs.face] << ", " << std::get<std::string>(h.rhs) << std::endl;
@@ -3284,13 +3351,67 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code){
 		}
 		uint32_t cid = name_to_code_idx[name];
 		auto const &c = code.faces[cid];
-		for(uint32_t i = 0; i < c.instrs.size(); ++i){
-			std::pair<uint32_t, uint32_t> fi;
-			fi.first = fid;
-			fi.second = i;
-			mesh.total_order.emplace_back(fi);
+		if(!c.instrs.empty()){
+			for(uint32_t k  = 0; k < c.instrs.size(); ++k){
+				sm::Mesh::FaceEdge fe; fe.face = fid; fe.edge = k;
+				uint32_t idx = face_instr_idx.size();
+				face_instr_idx[fe] = idx;
+				instr_face_map[idx] = fe;
+			}
 		}
 	}
+	// add instructions from the xfer stream
+	for(uint32_t i = 0; i < mesh.move_instructions.size(); ++i){
+		sm::Mesh::FaceEdge fe; fe.face = -1U; fe.edge = i;
+		uint32_t idx = face_instr_idx.size();
+		face_instr_idx[fe] = idx; 
+		instr_face_map[idx] = fe;
+	}
+	
+	{
+		for(auto const &h : mesh.hints){
+			if(h.type == sm::Mesh::Hint::Order){
+				auto rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
+				if(face_instr_idx.count(h.lhs)){
+				}
+				else{
+					std::cerr << "hint includes face instruction that does not exist. " << h.to_string() << std::endl;
+					return false;
+				}
+				if(face_instr_idx.count(rhs)){
+				}
+				else{
+					std::cerr << "hint includes face instruction that does not exist. " << h.to_string() << std::endl;
+				}
+		
+			}
+		}
+		for(auto const &h : mesh.hints){
+			if(h.type == sm::Mesh::Hint::Order){
+				auto rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
+				partials.insert(std::make_pair(face_instr_idx[h.lhs], face_instr_idx[rhs]));
+			}
+		}
+		if(!partial_order_to_sequence(partials, &sequence)){
+			//TODO find offending hints
+			std::cerr << "Instruction hints have a cycle. " << std::endl;
+			return false;
+		}
+		else{
+			// seqeunce is incomplete
+			if(sequence.size() != face_instr_idx.size()){
+				return false;
+			}
+			// create total order from instructions
+			for(auto const &x : sequence){
+				std::pair<uint32_t, uint32_t> o; 
+				auto fe = instr_face_map[x]; o.first = fe.face; o.second = fe.edge;
+				mesh.total_order.emplace_back(o);
+			}
+		}
+
+	}
+
 	return true;
 }
 
@@ -3331,7 +3452,6 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 		name_to_code_idx[c.key()] = &c - &code.faces[0];
 	}
 	for(auto h : mesh.hints){
-		// TODO check that variant hints are consistent
 		if(h.type == sm::Mesh::Hint::Variant){
 			if(face_variant.count(h.lhs.face) && face_variant[h.lhs.face] != std::get<std::string>(h.rhs)){
 				std::cerr << "[Variant] Hints for face " << h.lhs.face << " are inconsistent: " << face_variant[h.lhs.face] << ", " << std::get<std::string>(h.rhs) << std::endl;
@@ -3393,7 +3513,7 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
 	
 		if(fi.first == -1U){ // pick from instruction stream
 			assert(fi.second < mesh.move_instructions.size());
-			auto xfer_op = mesh.move_instructions[fi.second].op;
+			auto xfer_op = mesh.move_instructions[fi.second];
 			assert(xfer_op.op == sm::Instr::Xfer);
 			knitout_string += xfer_op.to_string(true);
 		}

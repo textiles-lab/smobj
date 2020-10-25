@@ -1,12 +1,13 @@
 #pragma once
 
 #include <glm/glm.hpp>
-
+#include <set>
 #include <map>
 #include <string>
 #include <vector>
 #include <optional>
 #include <variant>
+
 /*
  * Data structures for dealing with common smobj-related tasks:
  * sm::Mesh represents the contents of '.smobj' files
@@ -200,16 +201,21 @@ struct Mesh {
 		bool operator==(Connection const &o) const { return (a == o.a && b == o.b && flip == o.flip); }
 	};
 	std::vector< Connection > connections;
+
+	// Structures for maintianing a xfer-only instruction stream + associating it with connections:
+	
+	std::vector< Instr > move_instructions; //the rest of the "stream" Is maintaining this within smobj the best idea?
 	
 	// is maintaining this inside smobj the best idea?
-	struct MoveInstr {
+	struct MoveConnection {
 		uint32_t c_idx = -1U;
+		uint32_t i_idx = -1U;
 		Connection connection; // keep a copy for sanity checking, for now
-		Instr op;
 	};
-	std::vector< MoveInstr > move_instructions; //the rest of the "stream"
+	// slightly awkward but need to maintain 2 connections-> 1 instruction 
+	std::vector< MoveConnection > move_connections; // a mapping of connections associated with move_instructions, the same instruction can have multiple connections
 
-	std::vector< std::pair<uint32_t, uint32_t> > total_order; // face-id/instruction-id
+	std::vector< std::pair<uint32_t, uint32_t> > total_order; // face-id/instruction-id face_id = -1U, order from move_instructions
 	struct Hint {
 		enum HintType : char{
 			Resource = 'r', // needle
@@ -467,7 +473,7 @@ struct Yarns {
 bool compute_total_order(sm::Mesh &mesh, sm::Code const &code);
 
 // order the mesh faces in a partial order that follows dependencies using the face library
-sm::Mesh order_faces(sm::Mesh const  &mesh,  sm::Library const  &library);
+bool can_order_faces(sm::Mesh const  &mesh,  sm::Library const  &library, std::vector<uint32_t> *_order);
 
 // generate knitout code from an ordered set of faces using the code library
 std::string knitout(sm::Mesh const &mesh, sm::Code const &code);
@@ -517,5 +523,9 @@ void yarns_to_tristrip(Yarns const &yarns, std::vector< YarnAttribs > *attribs, 
 //face construction helper: derive one face from another by mirroring/reversing:
 // note: contents of 'target' (except for name) will be over-written
 void derive_face(sm::Library::Face const &source, uint8_t by_bits, sm::Library::Face *target);
+
+// helper
+// todo maybe this should be templated
+bool  partial_order_to_sequence(std::set<std::pair<uint32_t, uint32_t>> partial, std::vector<uint32_t> *_sequence);
 
 } //namespace sm
