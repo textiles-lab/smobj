@@ -37,7 +37,6 @@ bool sm::MachineState::make(sm::Instr instr){
 		// f->b, b->f 
 	}
 	if(passes.empty() || new_pass) {
-		std::cout << "new pass! total passes so far:" << passes.size() << std::endl;
 		passes.emplace_back();
 	}
 	auto &curr_pass = passes.back();
@@ -3285,7 +3284,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh
 					assert(false && "Invalid instruction index for face."); // should be verified earlier.
 				}
 				int t = face_translation[fi.first];
-				sm::Instr ins = l.instrs[fi.second];
+				ins = l.instrs[fi.second];
 				ins.translate(t);
 				ins.face  = fi.first; 
 
