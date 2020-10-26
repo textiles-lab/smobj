@@ -1,5 +1,6 @@
 #include "sm.hpp"
 #include "hinters.hpp"
+#include <algorithm>
 #include <iostream>
 
 // generate hints assuming:
