@@ -19,17 +19,29 @@ int main(int argc, char *argv[]){
 	sm::Library lib = sm::Library::load(argv[2]);
 	sm::Mesh mesh = sm::Mesh::load(argv[3]);
 
+	std::cout << "mesh xfer instructions:" << mesh.move_instructions.size() << std::endl;
+	for(auto op : mesh.move_instructions){
+		std::cout << "\t" << op.to_string() << std::endl;
+	}
+	std::cout << "move connections: " << mesh.move_connections.size()  << std::endl;
+	for(auto ci : mesh.move_connections){
+		std::cout << "\t Instruction " << ci.i_idx << " is associated with connection " << ci.c_idx << std::endl;
+	}
 	// Todo load library (.sf) and mesh (.smobj)
 	// verify mesh is hinted
 	//bool res = sm::verify_hinted_schedule(mesh, lib, code);
 	//std::cout << "verifier result " << res << std::endl;
 
-	sm::Mesh out = sm::order_faces(mesh, lib);
+	sm::Instr xop; xop.op = sm::Instr::Xfer; xop.src.bed = 'f'; xop.src.needle = 1000; xop.tgt.bed = 'b'; xop.tgt.needle = 1000;
+	sm::Mesh out = mesh;
+	out.move_instructions.emplace_back(xop);
 
-	out = sm::hint_shortrow_only_patch(out, code); // <-- add hints 
+	out.move_connections.emplace_back();
+	out.move_connections.back().i_idx = out.move_instructions.size()-1;
+	out.move_connections.back().c_idx = out.connections.size()-1;
+	out.move_connections.back().connection = out.connections.back();
 
-	
-	out.save("hinted.smobj");
+	out.save("out.smobj");
 	std::cout << "Saved hinted smobj as ./hinted.smobj" << std::endl; 
 
 	std::string knitout = sm::knitout(out, code);

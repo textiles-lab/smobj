@@ -367,6 +367,30 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			}
 			mesh.total_order.emplace_back(std::make_pair(f-1, i-1));
 		}
+		else if(cmd == "xfer"){
+			char src_bed, tgt_bed;
+			int src_needle, tgt_needle;
+			if(!(str >> src_bed >> src_needle >> tgt_bed >> tgt_needle)){
+			throw std::runtime_error("xfer* instruction is not in expected format xfer src_bed_needle tgt_bed_needle");
+			}
+			sm::Instr xop;
+			xop.op = sm::Instr::Xfer;
+			xop.src.bed = src_bed; xop.src.needle = src_needle;
+			xop.tgt.bed = tgt_bed; xop.tgt.needle = tgt_needle;
+			xop.src.nudge = xop.tgt.nudge = 0;
+			mesh.move_instructions.emplace_back(xop);
+		}
+		else if(cmd == "ci"){
+			uint32_t c, i;
+			char slash;
+			if(!(str >> c >> slash >> i) || slash != '/'){
+				throw std::runtime_error("Instruction order is not in expected format face/instruction");
+			}
+			MoveConnection mc;
+			mc.c_idx = c-1;
+			mc.i_idx = i-1;
+			mesh.move_connections.emplace_back(mc);
+		}
 		else if(cmd == "vn"){
 			//ignore
 		}
@@ -391,6 +415,15 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 		}
 		if (!connected.insert(glm::uvec2(c.b.face, c.b.edge)).second) {
 			throw std::runtime_error("Multiple connection to edge " + std::to_string(c.b.face+1) + "/" + std::to_string(c.b.edge+1) + ".");
+		}
+	}
+	for(auto &mc: mesh.move_connections){
+		
+		if(mc.c_idx < mesh.connections.size()){
+			mc.connection = mesh.connections[mc.c_idx];
+		}
+		else{
+			throw std::runtime_error("Move connection associated with invalid connection index.");
 		}
 	}
 
@@ -580,6 +613,21 @@ void sm::Mesh::save(std::string const &filename) const {
 		out <<"\n";
 		}
 	}
+
+	// xfer instruction in the "stream"
+	for(auto const &ins: move_instructions){
+		out << "xfer " << (char)ins.src.bed << ins.src.needle << " " << (char)ins.tgt.bed << ins.tgt.needle << "\n";
+	}
+
+	// association of instruction (1-based) with connections (1-based)
+	for(auto const &mc : move_connections){
+		out <<"ci " << (mc.c_idx + 1) << "/" << (mc.i_idx + 1) << "\n";
+	}
+
+	for(auto const &ins : total_order){
+		out << "I " << (ins.first == -1U ? 0 : ins.first+1) <<"/" << ins.second << "\n";
+	}
+
 	for (auto const &u : units) {
 		out << "U " << u.name << " " << u.length << "\n";
 	}
