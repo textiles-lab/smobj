@@ -3146,6 +3146,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 		if(h.type == sm::Mesh::Hint::Resource){
 			const sm::Mesh::Face &f = mesh.faces[h.lhs.face];
 			std::string signature = face_to_code_key(f);
+			if(!name_to_code_idx.count(signature)) continue; // resource exists, variant doesn't exist
 			auto const &l = code.faces[name_to_code_idx[signature]];
 			if(l.edges.size() != f.size()){
 				// resource hint is not offending, code and face don't match -- must be caught much earlier than this...
