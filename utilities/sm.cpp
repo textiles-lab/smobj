@@ -1117,8 +1117,8 @@ sm::Code sm::Code::load(std::string const &filename) {
 				current_instrs = nullptr;
 			} else if (tok == "variant") {
 				if (!current) throw std::runtime_error(line_info() + "variant line without face line");
-				std::string ver;
-				if(!(str >> ver)) throw std::runtime_error(line_info() + "Failed to read name in variant line");
+				std::string ver = "";
+				if(!(str >> ver) || ver == "") throw std::runtime_error(line_info() + "Failed to read name in variant line");
 				current->variant = ver;
 			} else if (tok == "edge") {
 				if (!current) throw std::runtime_error(line_info() + "edge line without face line");
@@ -1381,8 +1381,8 @@ sm::Code sm::Code::load(std::string const &filename) {
 		for (auto &face : code_library.faces) {
 			auto ret = keys.emplace(face.key(), &face);
 			if (!ret.second) throw std::runtime_error("Duplicate face signature in code library: '" + ret.first->first + "'");
+			if (face.variant == "") throw std::runtime_error("Variant missing for face: " + face.key());
 		}
-
 		// verify that instructions are valid (does this need to ssa?)
 		// todo: also verify yarn positions
 		for (auto const &face : code_library.faces){

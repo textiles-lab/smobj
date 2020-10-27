@@ -1,59 +1,29 @@
 # convention
 # face face-name[yarn-dir]
+###Note: yarn-dir convention when looking at the face from the outside on the front i.e., knit+ uses knit + f./knit - b.
 # 	edge [consume/produce+type]edge-label needle-resource yarn-resoure (for each edge in face)
+# 	variant name
 # 	code
-# 		knitout code
-# 		op resourceFrom resourceTo
-# 			(resourceFrom must be bound to consume edges -yX -lX)
-# 			(resourceTo must be bound to produce edges +yX +lX OR temporaries)
-# 			(every produce edge must be produced!)
-# 			(any temporary must be freed)
-# todo:
-# 1. add missing faces (also in .sf)
-#    - begin>, begin< (bigger chunk including tuck dance)
-#    - few complex faces (cable2x2f+, seed2x2)
-#    - missing directional variants? bed variants (auto?)
-#
-#
-#Code variant hints (variant name / face)
-#Ordering hints (“happens-after” / instruction)
-#Resource assignment hints (needle locations / edge)
-#Hints have different sources
-#User hints -- directly user specified
-#Conservative Inferred hints -- consequence of user hint or inferred hint (without any arbitrary decisions)
-#Heuristic hints -- consequence of existing hints under a heuristic/arbitrary/optimization rule
-#From the hints, total instruction ordering can be computed
-#A “scheduled smobj” contains all the hints + the total instruction order
-#Hint types are remembered in the file, since when editing probably the program wants to recompute the non-user hints.
-#Also we need a carrier order in the file (or carriers are alphabetical front-to-back)
-#And probably in the face programs for multi-carrier faces
-#E.g. `;;Carriers: ` header in face code
+# 		##knitout code
+# 		;;Carriers: 
+# 		op bedneedle(s) yarn-carriers(s)
+# 			#(consume loops from bedneedle(s)  bound to incoming edges -yX -lX)
+# 			#(produce loops on bedneedle(s)  bound to outgoing edges +yX +lX)
+# 			#(every out edge must be produced!)
+# 			#(every in edge must be utilized!)
 
-#helper faces
-#face yarn-in+
-#	edge -lX f0
-#	edge +yX f0.5 A
-#	edge +lX f0
-#	edge -yX f-0.5 A
-#	code
-#		;;Carriers: A
-#		inhook A
-#		#do some tuck dance...
-#		tuck + f0 A
-#		tuck - f0 A
-#		releasehook A
 
-#face yarn-out+
-#
-#
-# out A
+#TODO
+#1. Yarn in and yarn out faces 
 
+#### front-bed variants #####
 face make-left-tuck+
 	edge  -lX f0
 	edge  +yX f0.5 A
 	edge  +lX f0
 	edge  +lX f-1
 	edge  -yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		tuck + f-1 A
@@ -65,6 +35,7 @@ face make-right-tuck+
 	edge  +lX f1
 	edge  +lX f0
 	edge  -yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		knit + f0 A
@@ -76,6 +47,7 @@ face make-left-tuck-twist+
 	edge +lX f0
 	edge +lX f-1
 	edge -yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		tuck - f-1 A
@@ -87,6 +59,7 @@ face make-left-tuck-twist-
 	edge  +lX f0
 	edge  +lX f-1
 	edge  +yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		knit - f0 A
@@ -98,6 +71,7 @@ face make-right-tuck-twist+
 	edge +lX f0
 	edge +lX f1
 	edge -yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		knit + f0 A
@@ -109,6 +83,7 @@ face make-right-tuck-twist-
 	edge +lX f0
 	edge +lX f1
 	edge +yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		tuck + f1 A
@@ -138,6 +113,7 @@ face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
 	edge +yX f1.5 A
 	edge +lX f1
 	edge -yX f0.5 A
+	variant front
 	code
 		;;Carriers: A
 		xfer - f0 b0 #+/- direction are hints on the src, + = everything to the right of f0
@@ -151,6 +127,7 @@ face decrease-left-
 	edge -yX f1.5 A
 	edge +lX f0
 	edge +yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		xfer f1 b1
@@ -163,6 +140,7 @@ face decrease-left+
 	edge +yX f0.5 A
 	edge +lX f0
 	edge -yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		xfer f1 b1
@@ -175,6 +153,7 @@ face decrease-right-
 	edge -yX f-0.5 A
 	edge +lX f1
 	edge +yX f+0.5 A
+	variant front
 	code
 		;;Carriers: A
 		xfer f0 b0
@@ -188,6 +167,7 @@ face turn-tuck)((    #NOTE: tuck is in the direction of the lower course
 	edge +lX f0
 	edge +yX f-0.5 A
 	edge -yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		tuck + f0 A
@@ -198,6 +178,7 @@ face turn-tuck))(
 	edge -yX f0.5 A
 	edge +yX f0.5 A
 	edge +lX f0
+	variant front
 	code
 		;;Carriers: A
 		tuck - f0 A
@@ -208,7 +189,7 @@ face turn)((
 	edge +lX f0
 	edge +yX f-0.5 A
 	edge -yX f-0.5 A
-    variant ff
+    variant front
 	code
 		;;Carriers: A
 		miss - f0 A
@@ -218,7 +199,7 @@ face turn))(
 	edge -yX f0.5 A
 	edge +yX f0.5 A
 	edge +lX f0
-    variant ff
+    variant front
 	code
 		;;Carriers: A
 		miss + f0 A
@@ -229,8 +210,10 @@ face edge(
 	edge +y1 f0.5 A
 	edge x
 	edge x
+	variant front
 	code
 		#pass #misses, maybe nothing to do other than get ready for going the other way
+		;;Carriers: A
 
 face edge)
 	edge x
@@ -238,13 +221,16 @@ face edge)
 	edge x
 	edge +y1 f-0.5 A
 	edge -y1 f-0.5 A
+	variant front
 	code
 		#pass #misses? nothing to do other than get ready for going the other way
+		;;Carriers: A
 
 face end<  #NOTE: needs another type for "in" which is also the more complex type (inhook or tuck from  gripper/release)
 	edge -lX f0
 	edge -yX f+0.5 A
 	edge +lX f0
+	variant front
 	code
 		;;Carriers: A
 		knit - f0 A
@@ -254,6 +240,7 @@ face end>
 	edge -lX f0
 	edge +lX f0
 	edge -yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		knit + f0 A
@@ -264,6 +251,7 @@ face start<
 	edge -lX f0
 	edge +lX f0
 	edge +yX f0.5 A
+	variant front
 	code
 		;;Carriers: A
 		in A
@@ -273,6 +261,7 @@ face start>
 	edge -lX f0
 	edge +yX f-0.5 A
 	edge +lX f0
+	variant front
 	code
 		;;Carriers: A
 		in A
@@ -283,7 +272,7 @@ face knit+
 	edge +yX f0.5 A
 	edge +lX f0
 	edge -yX f-0.5 A
-    variant ff
+    variant front
 	code
 		;;Carriers: A
 		knit + f0 A
@@ -293,60 +282,17 @@ face knit-
 	edge -yX f+0.5 A
 	edge +lX f0
 	edge +yX f-0.5 A
-	variant ff
+	variant front
 	code
 		;;Carriers: A
 		knit - f0 A
-
-face knit+
-	edge -lX b0
-	edge +yX b0.5 A
-	edge +lX b0
-	edge -yX b-0.5 A
-	variant bb
-	code
-		;;Carriers: A
-		knit + b0 A
-
-# TODO-hinter: example of b and f combnation
-face knit+
-	edge -lX b0
-	edge +yX b0.5 A
-	edge +lX f0
-	edge -yX b-0.5 A
-	variant bf
-	code
-		;;Carriers: A
-		knit + b0 A
-        xfer b0 f0
-
-face knit+
-	edge -lX f0
-	edge +yX f0.5 A
-	edge +lX b0
-	edge -yX f-0.5 A
-	variant fb
-	code
-		;;Carriers: A
-		knit + f0 A
-        xfer f0 b0
-
-face knit-
-	edge -lX b0
-	edge -yX b+0.5 A
-	edge +lX b0
-	edge +yX b-0.5 A
-	variant bb
-	code
-		;;Carriers: A
-		knit - b0 A
-
 
 face knit-fair-isle-2+ #slightly awkward in terms of using all resources
 	edge -lX f0
 	edge +yX f0.5 A B
 	edge +lX f0
 	edge -yX f-0.5 A B
+	variant frontB
 	code
 		;;Carriers: A B
 		knit + f0 B
@@ -356,6 +302,7 @@ face knit-fair-isle-1+
 	edge +yX f0.5 A B
 	edge +lX f0
 	edge -yX f-0.5 A B
+	variant frontA
 	code
 		;;Carriers: A B
 		knit + f0 A
@@ -365,6 +312,7 @@ face knit-plating-1+
 	edge +yX f0.5 A B
 	edge +lX f0
 	edge -yX f-0.5 A B
+	variant frontAB
 	code
 		;;Carriers: A B
 		knit + f0 A B
@@ -374,6 +322,7 @@ face knit-plating-2+
 	edge +yX f0.5 A B
 	edge +lX f0
 	edge -yX f-0.5 A B
+	variant frontBA
 	code
 		;;Carriers: A B
 		knit + f0 B A
@@ -383,100 +332,58 @@ face knit+.2111 #What face is this ??
 	edge +yX f-0.5 A
 	edge +lX f0
 	edge -yX f0.5 A
+	variant front
 	code
 		;;Carriers: A
 		knit + f0 A
 
 face drop+
-	variant ff
 	edge -l1 f0
 	edge +y0 f0.5
 	edge +l0 x
 	edge -y0 f-0.5
+	variant front
 	code
 		;;Carriers: A
 		drop f0
 
 face drop-
-	variant ff
 	edge -l1 f0
 	edge -y0 f0.5
 	edge +l0 x
 	edge +y0 f-0.5
+	variant front
 	code
 		;;Carriers: A
 		drop f0
 
-face drop+
-	variant bb
-	edge -l1 b0
-	edge +y0 b0.5
-	edge +l0 x
-	edge -y0 b-0.5
-	code
-		;;Carriers: A
-		drop b0
-
-face drop-
-	variant bb
-	edge -l1 b0
-	edge -y0 b0.5
-	edge +l0 x
-	edge +y0 b-0.5
-	code
-		;;Carriers: A
-		drop b0
-
-
 face tuck-twist+
-	variant ff
 	edge -lX f0
 	edge +yX f0.5 A
 	edge +lX f0
 	edge -yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		tuck - f0 A
 
 face tuck-twist-
-	variant ff
 	edge -lX f0
 	edge -yX f+0.5 A
 	edge +lX f0
 	edge +yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		tuck + f0 A
 
-#back-bed
-face tuck-twist+
-	variant bb
-	edge -lX b0
-	edge +yX b0.5 A
-	edge +lX b0
-	edge -yX b-0.5 A
-	code
-		;;Carriers: A
-		tuck - b0 A
-
-face tuck-twist-
-	variant bb
-	edge -lX b0
-	edge -yX b+0.5 A
-	edge +lX b0
-	edge +yX b-0.5 A
-	code
-		;;Carriers: A
-		tuck + b0 A
-
-
 
 face purl+
-	variant ff
 	edge -lX f0
 	edge +yX f0.5 A
 	edge +lX f0
 	edge -yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		xfer f0 b0
@@ -484,42 +391,422 @@ face purl+
 		xfer b0 f0
 
 face purl-
-	variant ff
 	edge -lX f0
 	edge -yX f0.5 A
 	edge +lX f0
 	edge +yX f-0.5 A
+	variant front
 	code
 		;;Carriers: A
 		xfer f0 b0
 		knit - b0 A
 		xfer b0 f0
 
-face purl+
-	variant bb
+#### back-bed variants #####
+face make-left-tuck+
+	edge  -lX b0
+	edge  +yX b0.5 A
+	edge  +lX b0
+	edge  +lX b-1
+	edge  -yX b-0.5 A
+	variant back
+	code
+		;;Carriers: A
+		knit - b0 A
+		tuck - b-1 A
+
+face make-right-tuck+
+	edge  -lX b0
+	edge  +yX b0.5 A
+	edge  +lX b1
+	edge  +lX b0
+	edge  -yX b-0.5 A
+	variant back
+	code
+		;;Carriers: A
+		tuck - b1 A
+		knit - b0 A
+
+face make-left-tuck-twist+
+	edge -lX b0
+	edge +yX b0.5 A
+	edge +lX b0
+	edge +lX b-1
+	edge -yX b-0.5 A
+	variant bacl
+	code
+		;;Carriers: A
+		knit + b0 A
+		tuck - b-1 A
+
+face make-left-tuck-twist-
+	edge  -lX b0
+	edge  -yX b0.5 A
+	edge  +lX b0
+	edge  +lX b-1
+	edge  +yX b-0.5 A
+	variant back
+	code
+		;;Carriers: A
+		knit - b0 A
+		tuck + b-1 A
+
+face make-right-tuck-twist+
+	edge -lX b0
+	edge +yX b0.5 A
+	edge +lX b0
+	edge +lX b1
+	edge -yX b-0.5 A
+	variant back
+	code
+		;;Carriers: A
+		tuck - b1 A
+		knit + b0 A
+
+face make-right-tuck-twist-
+	edge -lX b0
+	edge -yX b+0.5 A
+	edge +lX b0
+	edge +lX b1
+	edge +yX b-0.5 A
+	variant back
+	code
+		;;Carriers: A
+		knit - b0 A
+		tuck + b1 A
+
+#face make-left-split+
+#	edge -lX f0
+#	edge +yX f-0.5 A
+#	edge +lX f1
+#	edge +lX f0
+#	edge -yX f0.5 A
+#	code
+#		pass #TODO placeholder
+#
+#face make-right-split+
+#	edge -lX f0
+#	edge +yX f0.5 A
+#	edge +lX f1
+#	edge +lX f0
+#	edge -yX f-0.5 A
+#	code
+#		pass #TODO placeholder
+#
+face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
+	edge -lX b1
+	edge -lX b0
+	edge +yX b1.5 A
+	edge +lX b0
+	edge -yX b0.5 A
+	variant back
+	code
+		;;Carriers: A
+		xfer  b1 f0 #+/- direction are hints on the src, + = everything to the right of f0
+		#rack 1, implicit racking should be fine right?
+		xfer  f0 b0
+		knit + b0 A
+
+face decrease-left-
+	edge -lX b1
+	edge -lX b0
+	edge -yX b1.5 A
+	edge +lX b1
+	edge +yX b-0.5 A
+	variant back
+	code
+		;;Carriers: A
+		xfer b0 f1
+		xfer f1 b1
+		knit + b1 A
+
+face decrease-left+
+	edge -lX b1
+	edge -lX b0
+	edge +yX b0.5 A
+	edge +lX b1
+	edge -yX b-0.5 A
+	variant back
+	code
+		;;Carriers: A
+		xfer b0 f1
+		xfer f1 b1
+		knit - b1 A
+
+face decrease-right-
+	edge -lX b1
+	edge -lX b0
+	edge -yX b-0.5 A
+	edge +lX b0
+	edge +yX b+0.5 A
+	variant back
+	code
+		;;Carriers: A
+		xfer b1 f0
+		xfer f0 b0
+		knit - b0 A
+
+
+
+face turn-tuck)((    #NOTE: tuck is in the direction of the lower course
+	edge -lX b0
+	edge +lX b0
+	edge +yX b-0.5 A
+	edge -yX b-0.5 A
+	variant back
+	code
+		;;Carriers: A
+		miss + b0 A
+		tuck - b0 A
+
+face turn-tuck))(
+	edge -lX b0
+	edge -yX b0.5 A
+	edge +yX b0.5 A
+	edge +lX b0
+	variant back
+	code
+		;;Carriers: A
+		tuck + b0 A
+		miss - b0 A
+
+face turn)((
+	edge -lX b0
+	edge +lX b0
+	edge +yX b+0.5 A
+	edge -yX b+0.5 A
+    variant back
+	code
+		;;Carriers: A
+		miss + b0 A
+
+face turn))(
+	edge -lX b0
+	edge -yX b-0.5 A
+	edge +yX b-0.5 A
+	edge +lX b0
+    variant back
+	code
+		;;Carriers: A
+		miss - b0 A
+
+face edge(
+	edge x
+	edge -y1 b-0.5 A
+	edge +y1 b-0.5 A
+	edge x
+	edge x
+	variant back
+	code
+		#pass #misses, maybe nothing to do other than get ready for going the other way
+		;;Carriers: A
+
+face edge)
+	edge x
+	edge x
+	edge x
+	edge +y1 b0.5 A
+	edge -y1 b0.5 A
+	variant back
+	code
+		#pass #misses? nothing to do other than get ready for going the other way
+		;;Carriers: A
+
+face end<  #NOTE: needs another type for "in" which is also the more complex type (inhook or tuck from  gripper/release)
+	edge -lX b0
+	edge -yX b-0.5 A
+	edge +lX b0
+	variant back
+	code
+		;;Carriers: A
+		knit + b0 A
+		out A
+
+face end>
+	edge -lX b0
+	edge +lX b0
+	edge -yX b+0.5 A
+	variant back
+	code
+		;;Carriers: A
+		knit - b0 A
+		out A
+
+
+face start<
+	edge -lX b0
+	edge +lX b0
+	edge +yX b-0.5 A
+	variant back
+	code
+		;;Carriers: A
+		in A
+		knit + b0 A
+
+face start>
+	edge -lX b0
+	edge +yX b0.5 A
+	edge +lX b0
+	variant back
+	code
+		;;Carriers: A
+		in A
+		knit - b0 A
+
+face knit+
+	edge -lX b0
+	edge +yX b-0.5 A
+	edge +lX b0
+	edge -yX b+0.5 A
+    variant back
+	code
+		;;Carriers: A
+		knit - b0 A
+
+face knit-
+	edge -lX b0
+	edge -yX b-0.5 A
+	edge +lX b0
+	edge +yX b+0.5 A
+	variant back
+	code
+		;;Carriers: A
+		knit + b0 A
+
+face knit-fair-isle-2+ #slightly awkward in terms of using all resources
+	edge -lX b0
+	edge +yX b-0.5 A B
+	edge +lX b0
+	edge -yX b+0.5 A B
+	variant backB
+	code
+		;;Carriers: A B
+		knit - b0 B
+
+face knit-fair-isle-1+
+	edge -lX b0
+	edge +yX b-0.5 A B
+	edge +lX b0
+	edge -yX b+0.5 A B
+	variant backA
+	code
+		;;Carriers: A B
+		knit - b0 A
+
+face knit-plating-1+
+	edge -lX b0
+	edge +yX b-0.5 A B
+	edge +lX b0
+	edge -yX b0.5 A B
+	variant backAB
+	code
+		;;Carriers: A B
+		knit - b0 A B
+
+face knit-plating-2+
+	edge -lX b0
+	edge +yX b-0.5 A B
+	edge +lX b0
+	edge -yX b0.5 A B
+	variant backBA
+	code
+		;;Carriers: A B
+		knit - b0 B A
+
+face knit+.2111 #What face is this ??
 	edge -lX b0
 	edge +yX b0.5 A
 	edge +lX b0
 	edge -yX b-0.5 A
+	variant back
 	code
 		;;Carriers: A
-		xfer b0 f0
-		knit + f0 A
-		xfer f0 b0
+		knit - b0 A
 
-face purl-
-	variant bb
+face drop+
+	edge -l1 b0
+	edge +y0 b-0.5
+	edge +l0 x
+	edge -y0 b+0.5
+	variant back
+	code
+		;;Carriers: A
+		drop b0
+
+face drop-
+	edge -l1 b0
+	edge -y0 b-0.5
+	edge +l0 x
+	edge +y0 b0.5
+	variant back
+	code
+		;;Carriers: A
+		drop b0
+
+face tuck-twist+
 	edge -lX b0
-	edge -yX b0.5 A
-	edge +lX b0
 	edge +yX b-0.5 A
+	edge +lX b0
+	edge -yX b0.5 A
+	variant back
+	code
+		;;Carriers: A
+		tuck + b0 A
+
+face tuck-twist-
+	edge -lX b0
+	edge -yX b-0.5 A
+	edge +lX b0
+	edge +yX b0.5 A
+	variant back
+	code
+		;;Carriers: A
+		tuck - b0 A
+
+
+face purl+
+	edge -lX b0
+	edge +yX b-0.5 A
+	edge +lX b0
+	edge -yX b0.5 A
+	variant back
 	code
 		;;Carriers: A
 		xfer b0 f0
 		knit - f0 A
 		xfer f0 b0
 
+face purl-
+	edge -lX b0
+	edge -yX b-0.5 A
+	edge +lX b0
+	edge +yX b0.5 A
+	variant back
+	code
+		;;Carriers: A
+		xfer b0 f0
+		knit + f0 A
+		xfer f0 b0
 
+
+
+
+
+
+#### front-back variants ####
+
+#TODO
+
+
+
+#### back-front variants #### 
+
+#TODO
+
+
+
+#complex faces
+#todo 
 face seed-stitch+
 	edge -l1 f0
 	edge -l1 f1
@@ -529,6 +816,7 @@ face seed-stitch+
 	edge +l1 f0
 	edge -y1 f0.5 B
 	edge +y1 f0.5 A
+	variant fb
 	code
 		;;Carriers: A B
 		#block1
@@ -542,13 +830,3 @@ face seed-stitch+
 		knit + b1 B
 		xfer b1 f1
 
-
-#-- transfer helpers
-face xfer+1
-	edge  -lX f0
-	edge  x
-	edge  +lX f1
-	edge  x
-	code
-		xfer f0 b0
-		xfer b0 f1
