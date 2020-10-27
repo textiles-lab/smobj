@@ -44,11 +44,13 @@ int main(int argc, char *argv[]){
 	out.save("out.smobj");
 	std::cout << "Saved hinted smobj as ./hinted.smobj" << std::endl; 
 
-	std::string knitout = sm::knitout(out, code);
-	std::ofstream kw("out.knitout");
-	kw << knitout;
-	kw.close();
-	std::cout << knitout << std::endl;
-
+	std::vector<sm::Mesh::Hint> offenders;
+	if(sm::verify(out, lib, code, &offenders)){
+		std::string knitout = sm::knitout(out, lib, code);
+		std::ofstream kw("out.knitout");
+		kw << knitout;
+		kw.close();
+		std::cout << knitout << std::endl;
+	}
 	return 0;
 } 

@@ -2943,7 +2943,7 @@ bool sm::add_hint(sm::Mesh::Hint const h, sm::Mesh *_mesh, sm::Library const &li
 	sm::Mesh temp = *_mesh;
 	//std::vector<sm::Mesh::Hint> &offenders = *_offenders;
 	temp.hints.emplace_back(h);
-	if(verify(temp, code, _offenders)){
+	if(verify(temp, library,  code, _offenders)){
 		mesh.hints.emplace_back(h);
 		return true;
 	}
@@ -2988,7 +2988,7 @@ bool sm::partial_order_to_sequence(std::set<std::pair<uint32_t, uint32_t>> parti
 
 // if is_fully_hinted is true, checks also if mesh is fully hinted
 // else only checks if hints are consistent
-bool sm::verify(sm::Mesh const &mesh, sm::Code const &code, std::vector<sm::Mesh::Hint> *_offenders,  bool is_fully_hinted){
+bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> *_offenders,  bool is_fully_hinted){
 
 	assert(_offenders);
 	std::vector<sm::Mesh::Hint> &offenders = *_offenders;
@@ -3464,12 +3464,12 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code){
 
 // knitout from faces
 // assumes hinting is complete and valid
-std::string sm::knitout(sm::Mesh const &mesh, sm::Code const &code){
+std::string sm::knitout(sm::Mesh const &mesh, sm::Library const &library, sm::Code const &code){
 
 
 	std::vector<Mesh::Hint> offenders;
 	bool strict = true;
-	bool verified = verify(mesh, code, &offenders, strict);
+	bool verified = verify(mesh, library, code, &offenders, strict);
 
 	if(!verified){
 		std::cout << "Constraints are not complete; #offending constraints = " << offenders.size() << std::endl;

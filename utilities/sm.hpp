@@ -476,13 +476,13 @@ bool compute_total_order(sm::Mesh &mesh, sm::Code const &code);
 bool can_order_faces(sm::Mesh const  &mesh,  sm::Library const  &library, std::vector<uint32_t> *_order);
 
 // generate knitout code from an ordered set of faces using the code library
-std::string knitout(sm::Mesh const &mesh, sm::Code const &code);
+std::string knitout(sm::Mesh const &mesh, sm::Library const &library,  sm::Code const &code);
 
 // can Hint h be added to mesh m without offending any existing hints?
 bool add_hint(sm::Mesh::Hint h, sm::Mesh *mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> *offenders);
 
 // verify existing hints
-bool verify(sm::Mesh const &mesh,  Code const &code, std::vector<Mesh::Hint> *_offenders, bool strict=false);
+bool verify(sm::Mesh const &mesh, sm::Library const &library,  Code const &code, std::vector<Mesh::Hint> *_offenders, bool strict=false);
 
 
 // transfer and slack helpers
