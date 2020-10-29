@@ -153,17 +153,28 @@ namespace sm {
 
 
 	
-
+	struct Loop{
+		uint32_t id = -1U;
+		uint32_t prev = -1U;
+		std::vector<BedNeedle> sequence; // maybe this should be a vector of locations
+		BedNeedle bn; // location at which this loop was produced (initially bn == produced_bn)
+		uint32_t step = -1U; // step at which this loop was produced (might be moved subsequently)
+		std::string yarn = ""; // using yarn maybe yarn_id
+		std::pair<uint32_t, uint32_t> face_instr; // face_instr that made the loop
+	};
 	struct MachineState{
 		int racking = 0;
 		int tension  = 0; // stitch value maybe
-		// need to know if loop exists or not
-		// need to know yarn location
-		// TODO maintain connectivity
-		std::map<BedNeedle, uint32_t> active_needles; // number of loops on a particular bed-needle
+		std::vector<Loop> loops; // holds all the loops created
+		
+		std::map<BedNeedle, std::vector<uint32_t>> bn_loops; // maintain loop + order
 		std::vector< std::vector<Instr> > passes;
 		bool make(Instr instr);
 		bool empty();
+	
+		bool find_loop_at_location(BedNeedle const &bn, Loop* loop); // false if no loop was created, else return the latest loop at location
+		bool find_last_loop_for_yarn(std::string yarn, Loop* loop); // the last loop made with this yarn
+		bool is_loop_active(Loop loop, sm::BedNeedle *bn); // if active return the location at which exists
 	};
 
 

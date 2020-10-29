@@ -33,6 +33,8 @@ bool sm::MachineState::make(sm::Instr instr){
 		if(last.yarns != instr.yarns) new_pass = true; // yarn setup changed
 		if(last.is_move() && instr.is_loop()) new_pass  = true;
 		if(last.is_loop() && instr.is_move()) new_pass = true;
+		// going rightwards but lower needle than previous instruction
+		// going leftwards but higher needle than previous instruction
 		// todo loop vs mov instructios
 		// f->b, b->f 
 	}
@@ -41,43 +43,81 @@ bool sm::MachineState::make(sm::Instr instr){
 	}
 	auto &curr_pass = passes.back();
 
-	// remove the loop(s) from the src
-	// TODO maintain loops and their stacking order
-	if(instr.op == sm::Instr::Xfer || instr.op == sm::Instr::Split){
-		// move src to tgt
-		assert(!instr.src.dontcare());
-		assert(!instr.tgt.dontcare());
-		if(active_needles[instr.src] == 0){
-			std::cerr << "[xfer/split] from empty location. " << std::endl;
-			std::cerr << instr.to_string() << std::endl;
-			return false;
+	auto clear_location = [&](sm::BedNeedle bn){
+		assert(!bn.dontcare());
+		assert(bn.nudge == 0);
+		bn_loops[bn].clear();
+	};
+	auto add_to_location = [&](sm::BedNeedle bn, uint32_t loop_idx){
+		assert(bn.nudge == 0);
+		assert(!bn.dontcare());
+		bn_loops[bn].emplace_back(loop_idx);
+	};
+	auto make_loop = [&](std::string yarn, sm::BedNeedle bn)->uint32_t{
+		assert(!bn.dontcare());
+		loops.emplace_back();
+		auto &loop = loops.back();
+		loop.id = loops.size()-1;
+		sm::Loop prev;
+		if(find_last_loop_for_yarn(yarn, &prev)){
+			loop.prev = prev.id;
 		}
-		if(instr.face == -1U && active_needles[instr.tgt]){
-			std::cerr << "[xfer*] to non-empty location. " << std::endl;
-			std::cerr << instr.to_string() << std::endl;
-			return false;
-		}
-		active_needles[instr.tgt] += active_needles[instr.src];
-	}
-	else if(!instr.tgt.dontcare()) {
-		std::istringstream stream(instr.yarns);
-		std::vector<std::string> tokens{std::istream_iterator<std::string>{stream},
+		loop.bn = bn;
+		loop.yarn = yarn;
+		loop.step = passes.size()-1;
+		//loop.face = instr.face;
+		assert(loop.bn.nudge == 0);
+		return loop.id;
+	};
+	std::istringstream stream(instr.yarns);
+	std::vector<std::string> tokens{std::istream_iterator<std::string>{stream},
                       std::istream_iterator<std::string>{}};
-		int nl = tokens.size();
-		active_needles[instr.tgt] += nl;
+		
+	switch( instr.op ){
+		case sm::Instr::Xfer:
+			for(auto it = bn_loops[instr.src].rbegin(); it != bn_loops[instr.src].rend(); ++it){
+				add_to_location(instr.tgt, *it);
+			}
+			clear_location(instr.src);
+			break;
+		case sm::Instr::Drop:
+			assert(instr.tgt.dontcare());
+			clear_location(instr.src);
+			break;
+		case sm::Instr::Tuck:
+			for(auto yarn : tokens){
+				auto l = make_loop(yarn, instr.tgt);
+				add_to_location(instr.tgt, l);
+			}
+			break;
+		case sm::Instr::Knit:
+			clear_location(instr.src);
+			for(auto yarn : tokens){
+				auto l = make_loop(yarn, instr.tgt);
+				add_to_location(instr.tgt, l);
+			}
+			assert(instr.src == instr.tgt);
+			break;
+		case sm::Instr::Miss:
+			break;
+		case sm::Instr::Split:
+			for(auto it = bn_loops[instr.src].rbegin(); it != bn_loops[instr.src].rend(); ++it){
+				add_to_location(instr.tgt2, *it);
+			}
+			clear_location(instr.src);
+			for(auto yarn : tokens){
+				auto l = make_loop(instr.yarns, instr.tgt);
+				add_to_location(instr.tgt, l);
+			}
+			assert(instr.src == instr.tgt);
+			break;
+		case sm::Instr::In:
+		case sm::Instr::Out:
+			break;
+		case sm::Instr::Unknown:
+		default:
+			assert(false && "unknown instruction should never be constructed.");
 	}
-	if(!instr.src.dontcare()){
-		active_needles[instr.src] = 0;
-	}
-	if(!instr.tgt2.dontcare()){
-		std::istringstream stream(instr.yarns);
-		std::vector<std::string> tokens{std::istream_iterator<std::string>{stream},
-                      std::istream_iterator<std::string>{}};
-		int nl = tokens.size();
-		active_needles[instr.tgt2] += nl;
-
-	}
-
 	if(instr.face == -1U){
 		// Does xfer* instruction create yarn tangle  (not local)
 		{
@@ -102,10 +142,42 @@ bool sm::MachineState::make(sm::Instr instr){
 
 // are there any loops left on the machine?
 bool sm::MachineState::empty(){
-	for(auto const &pr : active_needles){
-		if(pr.second != 0) return false;
+	for(auto const &pr : bn_loops){
+		if(!pr.second.empty()) return false;
 	}
 	return true;
+}
+bool sm::MachineState::find_loop_at_location(sm::BedNeedle const &bn, sm::Loop *loop){
+	assert(loop);
+	for(auto l_it  = loops.rbegin(); l_it != loops.rend(); ++l_it){
+		if(l_it->bn == bn){
+			*loop = *l_it;
+			return true;
+		}
+	}
+	return false;
+}
+bool sm::MachineState::find_last_loop_for_yarn(std::string yarn, Loop *loop){
+	assert(loop);
+	for(auto l_it  = loops.rbegin(); l_it != loops.rend(); ++l_it){
+		if(l_it->yarn == yarn){
+			*loop = *l_it;
+			return true;
+		}
+	}
+	return false;
+}
+bool sm::MachineState::is_loop_active(sm::Loop loop, sm::BedNeedle *bn){
+	assert(bn);
+	for(auto const &bn_loop : bn_loops){
+		for(auto const &lp : bn_loop.second){
+			if(loop.id == lp){
+				*bn = bn_loop.first;
+				return true;
+			}
+		}
+	}
+	return false;
 }
 //---------------------------------
 //Mesh
@@ -2998,10 +3070,14 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 
 	// process all the hints into easy to access formats
 	std::map<std::string, uint32_t> name_to_code_idx;
+	std::map<std::string, uint32_t> name_to_lib_idx;
 	std::map<uint32_t, std::string> face_variant;
 	std::map<int32_t, int32_t> face_translation;
 	for(auto const &c : code.faces){
 		name_to_code_idx[c.key()] = &c - &code.faces[0];
+	}
+	for(auto const &f : library.faces){
+		name_to_lib_idx[f.key()] = &f - &library.faces[0];
 	}
 
 
@@ -3070,7 +3146,6 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 		for(auto const &c : mesh.connections){
 			uint32_t c_id = &c - &mesh.connections[0];
 			// if there exists a resource hint for c.a and a resource hint for c.b and they are inconsistent
-			// TODO only for loop edges
 
 			auto ha_it = std::find_if(mesh.hints.begin(), mesh.hints.end(),[&](const sm::Mesh::Hint &h)->bool{return (h.type == sm::Mesh::Hint::Resource && h.lhs == c.a);} );
 			auto hb_it = std::find_if(mesh.hints.begin(), mesh.hints.end(),[&](const sm::Mesh::Hint &h)->bool{return (h.type == sm::Mesh::Hint::Resource && h.lhs == c.b);} );
@@ -3078,8 +3153,23 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 				sm::BedNeedle rhs_a = std::get<sm::BedNeedle>(ha_it->rhs);
 				sm::BedNeedle rhs_b = std::get<sm::BedNeedle>(hb_it->rhs);
 			
-				// 0) flip if a is out, b is in. needs library also
+				// 0) flip if a is out, b is in (maybe should always maintain connections this way)
+				bool is_yarn_connection = false;
 				{
+					std::string aname = mesh.library[mesh.faces[c.a.face].type];
+					std::string bname = mesh.library[mesh.faces[c.b.face].type];
+					assert(name_to_lib_idx.count(aname));
+					assert(name_to_lib_idx.count(bname));
+					auto &fa = library.faces[name_to_lib_idx[aname]];
+					auto &fb = library.faces[name_to_lib_idx[bname]];
+					if(fa.edges[c.a.edge].direction == sm::Library::Face::Edge::Out &&
+							fb.edges[c.b.edge].direction == sm::Library::Face::Edge::In){
+						std::swap(rhs_a, rhs_b);
+					}
+					if(fa.edges[c.a.edge].type[0] == 'y'){
+						assert(fb.edges[c.b.edge].type[0] == 'y');
+						is_yarn_connection = true;
+					}
 					
 				}
 
@@ -3117,24 +3207,29 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 							if(!potential_instructions.count(idx))  continue; 
 							assert(idx >= 0 && idx < mesh.move_instructions.size()); 
 							sm::Instr op = mesh.move_instructions[idx];
-							if(!(rhs_b == op.src)){
+							float loc = std::abs(rhs_b.location() - op.src.location());
+							
+							if(!(loc <= 0.5f && (is_yarn_connection || op.src.bed == rhs_b.bed) )){
+								//std::cout << "starting bed-needles don't match. " << rhs_b.to_string() << " and " << op.to_string() << std::endl;
+								//std::cout << "starting locations don't match. " << rhs_b.location() << " and " << op.src.location() << std::endl;
 								offending_instructions.emplace_back(idx);
 								break; // cannot apply this sequence, TODO all hints with this instruction should be offending
 							}
 							else{
+								std::cout << "Applying " << op.to_string() << std::endl;
 								rhs_b = op.tgt;
 							}
 						}
 					}
 				}
 
-				// if loop
-				if(!(rhs_a == rhs_b)){
+				if(is_yarn_connection && std::abs(rhs_a.location() - rhs_b.location()) > 0.5f){
 					offenders.emplace_back(*ha_it);
 					offenders.emplace_back(*hb_it);
 				}
-				// if yarn, test for slack only
-				{
+				else if(!is_yarn_connection && (std::abs(rhs_a.location() - rhs_b.location()) > 0.5f || rhs_a.bed != rhs_b.bed)){
+					offenders.emplace_back(*ha_it);
+					offenders.emplace_back(*hb_it);
 				}
 			}
 		}
