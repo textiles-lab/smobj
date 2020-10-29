@@ -561,8 +561,9 @@ bool sm::constraint_assign_order_from_face_order(sm::Mesh &mesh, sm::Code const 
 		if(h.type == sm::Mesh::Hint::Variant){
 			// TODO deal with multiple possible constraints
 			std::string variant = std::get<std::string>(h.rhs);
-			face_variants[h.lhs.face] = std::make_pair(variant, (h.src != sm::Mesh::Hint::User ?  h.src : sm::Mesh::Hint::Inferred));
-		} 
+			face_variants[h.lhs.face] = std::make_pair(variant,
+                    (h.src != sm::Mesh::Hint::User ?  h.src : sm::Mesh::Hint::Inferred));
+		}
 		else if(h.type == sm::Mesh::Hint::Order){
 			auto rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
 			if(face_instr_idx.count(h.lhs)){
@@ -720,7 +721,7 @@ bool sm::constraint_face_instruction_order(sm::Mesh &mesh, sm::Code const &code_
 //    bottom loop will have f0, top will have b0
 //
 
-// TODO-hinter: Error reporting
+// Error reporting
 // We want to tell users which constraints doesn't make sense to users
 // Get a list of incompatible constraints, and somehow report it to users
 // Maybe implement a better API which can be called from EditMesh.cpp??
@@ -739,6 +740,17 @@ bool sm::constraint_face_instruction_order(sm::Mesh &mesh, sm::Code const &code_
 //
 
 sm::Mesh sm::infer_constraints(sm::Mesh &mesh, sm::Code const &code_library, sm::Library const &face_library) {
+    // Delete all constraints except user constraints when infer_constraints is called
+    for(int i = 0;; ) {
+        if (i == (int) mesh.hints.size()) break;
+        sm::Mesh::Hint h = mesh.hints[i];
+        if (h.src != sm::Mesh::Hint::User) {
+            mesh.hints.erase(mesh.hints.begin() + i);
+        } else {
+            i++;
+        }
+    }
+
 	bool flag = true;
 	while (flag) {
 		flag = false;
