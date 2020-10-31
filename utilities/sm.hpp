@@ -17,6 +17,7 @@
 
 namespace sm {
 
+	struct Mesh; //forward declaration
 	struct BedNeedle{
 		char bed = 'x'; // todo enum 'f','b'(hooks) 'F','B'(sliders) 'x' (dontcare)
 		int needle = 0;
@@ -77,7 +78,7 @@ namespace sm {
 			}
 			return 0;
 		}
-		uint32_t face = -1U; // which smobj face (not code face) does this instruction come from, (-1U==> xfers for scheduling)
+		std::pair<uint32_t, uint32_t> face_instr = std::make_pair(-1U,-1U);
 		
 		std::string to_string(bool include_racking = false) const{
 			std::string ret = "";
@@ -161,6 +162,8 @@ namespace sm {
 		uint32_t step = -1U; // step at which this loop was produced (might be moved subsequently)
 		std::string yarn = ""; // using yarn maybe yarn_id
 		std::pair<uint32_t, uint32_t> face_instr; // face_instr that made the loop
+		uint32_t prev_slack = -1U; // (maximum) distance between this loop and its (yarn-wise)previous loop during construction
+		uint32_t post_slack = -1U; // (maximum) distance between this loop and the (yarn-wise) next loop during construction
 	};
 	struct MachineState{
 		int racking = 0;
@@ -169,12 +172,14 @@ namespace sm {
 		
 		std::map<BedNeedle, std::vector<uint32_t>> bn_loops; // maintain loop + order
 		std::vector< std::vector<Instr> > passes;
-		bool make(Instr instr);
+		bool make(Instr instr, sm::Mesh const &mesh);
 		bool empty();
 	
 		bool find_loop_at_location(BedNeedle const &bn, Loop* loop); // false if no loop was created, else return the latest loop at location
 		bool find_last_loop_for_yarn(std::string yarn, Loop* loop); // the last loop made with this yarn
 		bool is_loop_active(Loop loop, sm::BedNeedle *bn); // if active return the location at which exists
+	
+		void print();
 	};
 
 

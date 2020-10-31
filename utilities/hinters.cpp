@@ -602,6 +602,8 @@ bool sm::constraint_assign_order_from_face_order(sm::Mesh &mesh, sm::Code const 
 			
 		}
 	}
+
+	
 	uint32_t fj = order[0];
 	uint32_t fi_ = 1;
 	for(uint32_t i = 0; i < order.size(); ++i){

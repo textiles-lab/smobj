@@ -27,30 +27,20 @@ int main(int argc, char *argv[]){
 	for(auto ci : mesh.move_connections){
 		std::cout << "\t Instruction " << ci.i_idx << " is associated with connection " << ci.c_idx << std::endl;
 	}
-	// Todo load library (.sf) and mesh (.smobj)
-	// verify mesh is hinted
-	//bool res = sm::verify_hinted_schedule(mesh, lib, code);
-	//std::cout << "verifier result " << res << std::endl;
-
-	sm::Instr xop; xop.op = sm::Instr::Xfer; xop.src.bed = 'f'; xop.src.needle = 1000; xop.tgt.bed = 'b'; xop.tgt.needle = 1000;
-	sm::Mesh out = mesh;
-	out.move_instructions.emplace_back(xop);
-
-	out.move_connections.emplace_back();
-	out.move_connections.back().i_idx = out.move_instructions.size()-1;
-	out.move_connections.back().c_idx = out.connections.size()-1;
-	out.move_connections.back().connection = out.connections.back();
-
-	out.save("out.smobj");
-	std::cout << "Saved hinted smobj as ./hinted.smobj" << std::endl; 
-
+	
 	std::vector<sm::Mesh::Hint> offenders;
-	if(sm::verify(out, lib, code, &offenders)){
-		std::string knitout = sm::knitout(out, lib, code);
+	//if(sm::verify(mesh, lib, code, &offenders) && sm::compute_total_order(mesh, code)){
+	if( sm::compute_total_order(mesh, code)  && sm::verify(mesh, lib, code, &offenders, true)){
+		std::string knitout = sm::knitout(mesh, lib, code);
 		std::ofstream kw("out.knitout");
 		kw << knitout;
 		kw.close();
+		
 		std::cout << knitout << std::endl;
+		std::cout << "Successfully generated knitout instructions. Total order: " << std::endl;
+		for(auto const &fi : mesh.total_order){
+			std::cout << fi.first << "/" << fi.second << std::endl; 
+		}
 	}
 	return 0;
 } 
