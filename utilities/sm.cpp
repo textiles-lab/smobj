@@ -17,8 +17,12 @@
 //---------------------------------
 //Machine
 
-bool sm::MachineState::make(sm::Instr instr){
+bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh){
 
+	//DEBUG
+	{
+		std::cout << "Making: " << instr.to_string() << " generated from " << instr.face_instr.first << "," << instr.face_instr.second << std::endl;
+	}
 	bool new_pass = false;
 	if(instr.op == sm::Instr::Xfer || instr.op == sm::Instr::Split){
 		if(racking != instr.rack()){
@@ -52,6 +56,7 @@ bool sm::MachineState::make(sm::Instr instr){
 		assert(bn.nudge == 0);
 		assert(!bn.dontcare());
 		bn_loops[bn].emplace_back(loop_idx);
+		loops[loop_idx].sequence.emplace_back(bn);
 	};
 	auto make_loop = [&](std::string yarn, sm::BedNeedle bn)->uint32_t{
 		assert(!bn.dontcare());
@@ -61,22 +66,65 @@ bool sm::MachineState::make(sm::Instr instr){
 		sm::Loop prev;
 		if(find_last_loop_for_yarn(yarn, &prev)){
 			loop.prev = prev.id;
+			loop.prev_slack = std::abs(bn.needle - loops[prev.id].bn.needle);
+			if(bn.bed != loops[prev.id].bn.bed) loop.prev_slack++;
+			loops[prev.id].post_slack = loop.prev_slack;
 		}
 		loop.bn = bn;
 		loop.yarn = yarn;
 		loop.step = passes.size()-1;
-		//loop.face = instr.face;
+		loop.face_instr = instr.face_instr;
 		assert(loop.bn.nudge == 0);
 		return loop.id;
 	};
 	std::istringstream stream(instr.yarns);
 	std::vector<std::string> tokens{std::istream_iterator<std::string>{stream},
                       std::istream_iterator<std::string>{}};
-		
+	
+	// track all yarns being inserted and taken out
+	
+	{
+		// is there a loop at the src, and if so who created it 
+		if(!bn_loops.count(instr.src)){
+			// empty location: warn if operation is not a tuck
+			if(instr.op != sm::Instr::Tuck){
+				std::cerr << "[Warning]Operation " << instr.to_string() << " on empty location is not a tuck. " << std::endl;
+			}
+		}
+		else{
+
+			for(auto loop_id : bn_loops[instr.src]){
+				assert(loops[loop_id].sequence.back() == instr.src);
+				auto fi = loops[loop_id].face_instr;
+				if(fi.first != -1U && instr.face_instr.first != -1U){
+					if(fi.first == instr.face_instr.first){
+						// instruction from the same face..
+					}
+					else{
+						// must have a connection
+						std::cout << "Testing for connections between " << fi.first << " and " << instr.face_instr.first << std::endl; // debug
+						auto it = std::find_if(mesh.connections.begin(), mesh.connections.end(),[&](sm::Mesh::Connection const &c)->bool{
+									// is connection loop type or yarn type
+									if(c.a.face == fi.first && c.b.face == instr.face_instr.first) return true;
+									if(c.a.face == instr.face_instr.first && c.b.face == fi.first) return true;
+									return false;
+								});
+						if( it == mesh.connections.end()){
+							std::cerr << "[Verifer-Error]Loop being used by instruction was not created by expected face. " << std::endl;
+							std::cerr << "\tsrc: " << instr.src.to_string() << " loop created by " << fi.first << " used by " << instr.face_instr.first << std::endl;
+							return false;
+						} 
+					}
+				}
+			}
+		}
+	}
+	
 	switch( instr.op ){
 		case sm::Instr::Xfer:
 			for(auto it = bn_loops[instr.src].rbegin(); it != bn_loops[instr.src].rend(); ++it){
 				add_to_location(instr.tgt, *it);
+				// make sure instr.src loop id's bn-sequence is updated
 			}
 			clear_location(instr.src);
 			break;
@@ -118,7 +166,27 @@ bool sm::MachineState::make(sm::Instr instr){
 		default:
 			assert(false && "unknown instruction should never be constructed.");
 	}
-	if(instr.face == -1U){
+	
+	// is slack okay for all active loops
+	{
+		for(auto const &bn_ls : bn_loops){
+			for(auto l_id : bn_ls.second){
+				assert(loops[l_id].sequence.back() == bn_ls.first);
+				if(loops[l_id].prev == -1U) continue;
+				sm::BedNeedle bnc = loops[l_id].sequence.back();
+				sm::BedNeedle bnp = loops[loops[l_id].prev].sequence.back();
+				int slack = std::abs(bnc.needle - bnp.needle);
+				if(bnc.bed != bnp.bed) slack++;
+				if(slack > loops[l_id].prev_slack){
+					std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
+					print();
+					return false;
+				}
+			}
+		}
+	}
+
+	if(instr.face_instr.first == -1U){
 		// Does xfer* instruction create yarn tangle  (not local)
 		{
 		}
@@ -137,6 +205,8 @@ bool sm::MachineState::make(sm::Instr instr){
 	// maybe tracking passes is not necessary, but why not..
 	curr_pass.emplace_back(instr);
 
+	//debug
+	//print();
 	return true;
 }
 
@@ -179,6 +249,35 @@ bool sm::MachineState::is_loop_active(sm::Loop loop, sm::BedNeedle *bn){
 	}
 	return false;
 }
+
+void sm::MachineState::print(){
+
+	std::cout <<"--------------------------------------" << std::endl;
+	std::cout << "front:";
+	for(auto const &bn_l : bn_loops){
+		auto const &bn = bn_l.first;
+		auto const &l_ids = bn_l.second;
+		if(bn.bed == 'f'){
+			std::cout << "[" << bn.needle << ":";
+			for(auto x : l_ids) std::cout << x <<",";
+			std::cout <<"]_" ;
+		}
+	}
+	std::cout << std::endl;
+	std::cout <<" back:";
+	for(auto const &bn_l : bn_loops){
+		auto const &bn = bn_l.first;
+		auto const &l_ids = bn_l.second;
+		if(bn.bed == 'b'){
+			std::cout << "[" << bn.needle << ":";
+			for(auto x : l_ids) std::cout << x <<",";
+			std::cout <<"]_" ;
+		}
+	}
+	std::cout << std::endl;
+	std::cout <<"--------------------------------------" << std::endl;
+}
+
 //---------------------------------
 //Mesh
 
@@ -3416,7 +3515,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 		for(auto const &fi : mesh.total_order){
 			sm::Instr ins;
 			if(fi.first == -1U){
-				ins.face = -1U;
+				ins.face_instr = fi;
 				ins = mesh.move_instructions[fi.second];
 			}
 			else{
@@ -3430,10 +3529,10 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 				int t = face_translation[fi.first];
 				ins = l.instrs[fi.second];
 				ins.translate(t);
-				ins.face  = fi.first; 
+				ins.face_instr  = fi; 
 
 			}
-			if(!machine.make(ins)){
+			if(!machine.make(ins, mesh)){
 				std::cerr << "Machine could not create instruction " << ins.to_string() << " without violating constraints!" << std::endl;
 				return false;
 			}
