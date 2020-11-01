@@ -110,6 +110,7 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh){
 									return false;
 								});
 						if( it == mesh.connections.end()){
+							// TODO figure out the offending order hint and pass it on to the offending list
 							std::cerr << "[Verifer-Error]Loop being used by instruction was not created by expected face. " << std::endl;
 							std::cerr << "\tsrc: " << instr.src.to_string() << " loop created by " << fi.first << " used by " << instr.face_instr.first << std::endl;
 							return false;
@@ -175,7 +176,7 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh){
 				if(loops[l_id].prev == -1U) continue;
 				sm::BedNeedle bnc = loops[l_id].sequence.back();
 				sm::BedNeedle bnp = loops[loops[l_id].prev].sequence.back();
-				int slack = std::abs(bnc.needle - bnp.needle);
+				uint32_t slack = std::abs(bnc.needle - bnp.needle);
 				if(bnc.bed != bnp.bed) slack++;
 				if(slack > loops[l_id].prev_slack){
 					std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
