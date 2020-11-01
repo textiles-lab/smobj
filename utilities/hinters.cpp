@@ -355,16 +355,22 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
 		auto const &lib_str = mesh.library[mesh.faces[c.a.face].type];
 		auto const &l = name_to_code_idx[lib_str].front();
 		auto const &edge_type = code_library.faces[l].edges[c.a.edge].type;
+		
+		sm::Mesh::Hint::HintSource src = sm::Mesh::Hint::Inferred;
+
 		if(edge_type[0] == 'y'){ // todo maybe maintian 'l' vs 'y' as an actual enum type.
 			// don't propagate over yarn edges since they can go across beds.
-			// todo: perhaps check if variant exists and match, in which case okay to prop.
-			continue; 
+			// so always heuristic
+			src = sm::Mesh::Hint::Heuristic;
 		}
 
+		// TODO apply any xfers associated with this connections in the "out" direction edge to "in" direction edge
 		if(constraints.count(c.a) && !constraints.count(c.b)){
 			constraints[c.b] = constraints[c.a];
+			if(src == sm::Mesh::Hint::Heuristic) constraints[c.b].second = src;
 		} else if (constraints.count(c.b) && !constraints.count(c.a)) {
 			constraints[c.a] = constraints[c.b];
+			if(src == sm::Mesh::Hint::Heuristic) constraints[c.a].second = src;
 		}
 	}
 
