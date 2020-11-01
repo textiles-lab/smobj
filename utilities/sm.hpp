@@ -80,6 +80,8 @@ namespace sm {
 		}
 		std::pair<uint32_t, uint32_t> face_instr = std::make_pair(-1U,-1U);
 		
+		
+
 		std::string to_string(bool include_racking = false) const{
 			std::string ret = "";
 			switch(op){
@@ -336,6 +338,7 @@ struct Library {
 			std::string type;
 		};
 
+
 		//face, with vertices in CCW order on the xy plane:
 		std::vector< Edge > edges;
 
@@ -397,8 +400,15 @@ struct Code {
 		//Instructions
 		std::vector< Instr > instrs;
 
+		// for local instruction graph:
+		std::set<std::pair<uint32_t, uint32_t>> edge_to_edge_connections;
+		std::set<std::pair<uint32_t, uint32_t>> edge_to_instruction_connections;
+		std::set<std::pair<uint32_t, uint32_t>> instruction_to_edge_connections;
+		std::set<std::pair<uint32_t, uint32_t>> instruction_to_instruction_connections;
+
 		//TODO: derive face code for opposite bed variant, opp direction variant
-		//key() produces the corresponding .smobj library ('L' line) signature for the face:
+		//key_library() produces the corresponding .smobj library ('L' line) signature for the face:
+		//key() produces the corresponding key_library() + variant:
 		std::string key() const {
 			std::string ret = name;
 			for (auto const &e : edges) {
@@ -483,6 +493,8 @@ struct Yarns {
 };
 
 //------ helper functions ------
+
+bool compute_code_graph(sm::Code &code, sm::Library const &library);
 
 // order face instructions to generate a total order (base order, may be reordered for efficiency)
 
