@@ -121,19 +121,19 @@ face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
 		xfer - b0 f1
 		knit + f1 A
 
-face decrease-left-
-	edge -lX f0
-	edge -lX f1
-	edge -yX f1.5 A
-	edge +lX f0
-	edge +yX f-0.5 A
-	variant front
-	code
-		;;Carriers: A
-		xfer f1 b1
-		xfer b1 f0
-		knit - f0 A
-
+#face decrease-left-
+#	edge -lX f0
+#	edge -lX f1
+#	edge -yX f1.5 A
+#	edge +lX f0
+#	edge +yX f-0.5 A
+#	variant front
+#	code
+#		;;Carriers: A
+#		xfer f1 b1
+#		xfer b1 f0
+#		knit - f0 A
+#
 face decrease-left+
 	edge -lX f0
 	edge -lX f1
@@ -507,18 +507,18 @@ face decrease-right+ #decrease onto the rightwards vs decrease the rightmost
 		xfer  f0 b0
 		knit + b0 A
 
-face decrease-left-
-	edge -lX b1
-	edge -lX b0
-	edge -yX b1.5 A
-	edge +lX b1
-	edge +yX b-0.5 A
-	variant back
-	code
-		;;Carriers: A
-		xfer b0 f1
-		xfer f1 b1
-		knit + b1 A
+#face decrease-left-
+#	edge -lX b1
+#	edge -lX b0
+#	edge -yX b1.5 A
+#	edge +lX b1
+#	edge +yX b-0.5 A
+#	variant back
+#	code
+#		;;Carriers: A
+#		xfer b0 f1
+#		xfer f1 b1
+#		knit + b1 A
 
 face decrease-left+
 	edge -lX b1
@@ -807,26 +807,26 @@ face purl-
 
 #complex faces
 #todo 
-face seed-stitch+
-	edge -l1 f0
-	edge -l1 f1
-	edge -y1 f1.5 A
-	edge +y1 f1.5 B
-	edge +l1 f1
-	edge +l1 f0
-	edge -y1 f0.5 B
-	edge +y1 f0.5 A
-	variant fb
-	code
-		;;Carriers: A B
-		#block1
-		xfer f0 b0
-		knit - f1 A
-		knit - b0 A
-		xfer b0 f0
-		#block2
-		xfer f1 b1
-		knit + f0 B
-		knit + b1 B
-		xfer b1 f1
+#face seed-stitch+
+#	edge -l1 f0
+#	edge -l1 f1
+#	edge -y1 f1.5 A
+#	edge +y1 f1.5 B
+#	edge +l1 f1
+#	edge +l1 f0
+#	edge -y1 f0.5 B
+#	edge +y1 f0.5 A
+#	variant fb
+#	code
+#		;;Carriers: A B
+#		#block1
+#		xfer f0 b0
+#		knit - f1 A
+#		knit - b0 A
+#		xfer b0 f0
+#		#block2
+#		xfer f1 b1
+#		knit + f0 B
+#		knit + b1 B
+#		xfer b1 f1
 
