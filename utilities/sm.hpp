@@ -148,10 +148,10 @@ namespace sm {
 			if(!tgt2.dontcare()) tgt2.needle += offset;
 		}
 		bool is_move() const{
-			return (op == Knit || op == Tuck || op == Split || op == Drop);
+			return (op == Xfer);
 		}
 		bool is_loop() const{
-			return (op == Xfer);
+			return (op == Knit || op == Tuck || op == Split || op == Drop);
 		}
 	};
 
