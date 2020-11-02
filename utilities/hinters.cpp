@@ -320,7 +320,7 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
             sm::BedNeedle bn = find_edge_resource(mesh, face_id, eidx).first;
             float eps = 1e-3f;
             // If there is already a resource assigned to this edge, make sure that it's not conflicting
-            if (bn.bed != 'x') {
+            if (!bn.dontcare()  && !e.bn.dontcare()) {
                 // needle 1, nudge -1 and needle 0, nudge 1 --> compatible since location is 0.5, location returns a float
                 // needle check: std::abs(bn.location()- other.location()) < eps)
                 float e_location = e.bn.location() - offset; 
@@ -380,7 +380,7 @@ bool sm::constraint_extend_resource_from_resource(sm::Mesh &mesh, sm::Code const
         // TODO: Need more reasonable fix for infinite loop
         bool flag = true;
         for (auto &hint : mesh.hints) {
-            if (hint.lhs == h.first && std::get<sm::BedNeedle>(hint.rhs) == h.second.first)
+            if (hint.type == sm::Mesh::Hint::Resource && hint.lhs == h.first && std::get<sm::BedNeedle>(hint.rhs) == h.second.first)
                 flag = false;
         }
         if (!flag) continue;
