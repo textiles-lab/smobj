@@ -18,6 +18,7 @@
 namespace sm {
 
 	struct Mesh; //forward declaration
+	struct Code; //forward declaration
 	struct BedNeedle{
 		char bed = 'x'; // todo enum 'f','b'(hooks) 'F','B'(sliders) 'x' (dontcare)
 		int needle = 0;
@@ -174,7 +175,7 @@ namespace sm {
 		
 		std::map<BedNeedle, std::vector<uint32_t>> bn_loops; // maintain loop + order
 		std::vector< std::vector<Instr> > passes;
-		bool make(Instr instr, sm::Mesh const &mesh);
+		bool make(Instr instr, sm::Mesh const &mesh, sm::Code const &code);
 		bool empty();
 	
 		bool find_loop_at_location(BedNeedle const &bn, Loop* loop); // false if no loop was created, else return the latest loop at location

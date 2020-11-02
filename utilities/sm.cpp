@@ -17,7 +17,7 @@
 //---------------------------------
 //Machine
 
-bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh){
+bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code const &code){
 
 	//DEBUG
 	{
@@ -67,7 +67,7 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh){
 		if(find_last_loop_for_yarn(yarn, &prev)){
 			loop.prev = prev.id;
 			loop.prev_slack = std::abs(bn.needle - loops[prev.id].bn.needle);
-			if(bn.bed != loops[prev.id].bn.bed) loop.prev_slack++;
+			if(bn.needle == loops[prev.id].bn.needle && bn.bed != loops[prev.id].bn.bed) loop.prev_slack++;
 			loops[prev.id].post_slack = loop.prev_slack;
 		}
 		loop.bn = bn;
@@ -77,6 +77,124 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh){
 		assert(loop.bn.nudge == 0);
 		return loop.id;
 	};
+
+	auto get_code_for_face = [&](uint32_t fid)->uint32_t{
+		std::string variant = "";
+		for(auto const &h : mesh.hints){
+			if(h.type == sm::Mesh::Hint::Variant && h.lhs.face == fid){
+				variant = std::get<std::string>(h.rhs);
+			}
+		}
+		if(variant != ""){
+			for(uint32_t i = 0; i < code.faces.size(); ++i){
+				auto &c = code.faces[i];
+				if(c.variant == variant && c.key_library() == mesh.library[mesh.faces[fid].type]){
+					return i;
+				}
+			}
+		}
+		return -1U;
+	};
+	auto path_exists_between = [&](std::pair<uint32_t, uint32_t> ins1, std::pair<uint32_t, uint32_t> ins2)->bool{
+		// is there a path between the instruction that created ins 1 and ins 2
+		assert(ins1.first != -1U); assert(ins2.first != -1U);
+		
+		if(ins1.first == ins2.first){
+			uint32_t cid = get_code_for_face(ins1.first);
+			if(cid == -1U) return false;
+			auto const &l  = code.faces[cid];
+			std::set<uint32_t> candidates;
+			for(auto x : l.instruction_to_instruction_connections){
+				if(x.first == ins1.second) candidates.insert(x.second);
+			}
+			while(!candidates.empty()){
+				auto next = *candidates.begin();
+				if(next == ins2.second) return true;
+				candidates.erase(next);
+				// add next 
+				for(auto x : l.instruction_to_instruction_connections){
+				if(x.first == next) candidates.insert(x.second);
+				}
+			}
+			return false;
+			
+		} else {
+			
+			uint32_t cid = get_code_for_face(ins1.first);
+			if(cid == -1U) return false;
+			auto const &l  = code.faces[cid];
+			std::set<std::pair<uint32_t, uint32_t>> candidates, up_candidates;
+			for(auto x : l.instruction_to_instruction_connections){
+				if(x.first == ins1.second) candidates.insert(std::make_pair(ins1.first, x.second));
+			}
+			{
+				for(auto x : l.instruction_to_edge_connections){
+					// find the connection for ins1.face, x.second
+					if(x.first == ins1.second){
+						for(auto const &c : mesh.connections){
+							if(c.a.face == ins1.first && c.a.edge == x.second){
+								up_candidates.insert(std::make_pair(c.b.face, c.b.edge));
+							}
+							if(c.b.face == ins1.first && c.b.edge == x.second){
+								up_candidates.insert(std::make_pair(c.a.face, c.a.edge));
+							}
+						}
+					}
+				}
+			}
+			int max_iters = mesh.faces.size()*10; // heuristic
+			while(true){
+				while(!up_candidates.empty()){
+					auto next = *up_candidates.begin();
+					//cue the next candidates from the next upward face 
+					uint32_t cid = get_code_for_face(next.first);
+					up_candidates.erase(next);
+					if(cid == -1U) continue;
+
+					auto nc = code.faces[cid];
+					for(auto x : nc.edge_to_instruction_connections){
+						if(x.first == next.second){
+							candidates.insert(std::make_pair(next.first, x.second));
+						}
+					}
+				}
+				
+				while(!candidates.empty()){
+					auto next = *candidates.begin();
+					if(next == ins2) return true;
+					candidates.erase(next);
+					uint32_t cid = get_code_for_face(next.first);
+					if(cid == -1U) continue;
+					auto nc = code.faces[cid];
+					// add next 
+					for(auto x : nc.instruction_to_instruction_connections){
+						if(x.first == next.second) candidates.insert(std::make_pair(next.first, x.second));
+					}
+					// add next up
+					for(auto x : nc.instruction_to_edge_connections){
+						// find the connection for ins1.face, x.second
+						if(x.first == next.second){
+							// find the correspondence for next.first, x.second
+							for(auto const &c : mesh.connections){
+								if(c.a.face == next.first && c.a.edge == x.second){
+									up_candidates.insert(std::make_pair(c.b.face, c.b.edge));
+								}
+								if(c.b.face == next.first && c.b.edge == x.second){
+									up_candidates.insert(std::make_pair(c.a.face, c.a.edge));
+								}
+							}
+						}
+					}
+				}
+				max_iters--;
+				if(max_iters < 0) return false;
+			} // big-while
+
+		}
+
+		return false;
+	};
+
 	std::istringstream stream(instr.yarns);
 	std::vector<std::string> tokens{std::istream_iterator<std::string>{stream},
                       std::istream_iterator<std::string>{}};
@@ -92,38 +210,18 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh){
 			}
 		}
 		else{
+
 			for(auto loop_id : bn_loops[instr.src]){
 				assert(loops[loop_id].sequence.back() == instr.src);
 				auto fi = loops[loop_id].face_instr;
 				if(fi.first != -1U && instr.face_instr.first != -1U){
-					if(fi.first == instr.face_instr.first){
-						// instruction from the same face..
+					// the loop at src location was constructed by fi 
+					// is this the correct creator as expected by the knit graph 
+					if(!path_exists_between(fi, instr.face_instr)){
+						std::cerr << "Loop consumed by " << instr.face_instr.first << "," << instr.face_instr.second << " at " << instr.src.to_string() << " " << " was not meant to be constructed by " << fi.first << "," << fi.second << std::endl;
+						print();
+						return false;
 					}
-					else {
-						// there mu
-					}
-					/*
-					else{
-						// must have a connection
-						//std::cout << "Testing for connections between " << fi.first << " and " << instr.face_instr.first << std::endl; // debug
-						auto it = std::find_if(mesh.connections.begin(), mesh.connections.end(),[&](sm::Mesh::Connection const &c)->bool{
-									// is connection loop type or yarn type
-									if(c.a.face == fi.first && c.b.face == instr.face_instr.first) return true;
-									if(c.a.face == instr.face_instr.first && c.b.face == fi.first) return true;
-									return false;
-								});
-						int sanity = mesh.connections.size();
-						while( it == mesh.connections.end()){
-							// TODO figure out the offending order hint and pass it on to the offending list
-							// TODO this is incorrect because loops might be passed upward 
-							std::cerr << "[Verifer-Error]Loop being used by instruction was not created by expected face. " << std::endl;
-							std::cerr << "\tsrc: " << instr.src.to_string() << " loop created by " << fi.first << " used by " << instr.face_instr.first << std::endl;
-							sanity--;
-							if(sanity < 0){
-								assert(false && "connections have a cycle? should be already checked.");
-							}
-						} 
-					}*/
 				}
 			}
 		}
@@ -182,12 +280,16 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh){
 			for(auto l_id : bn_ls.second){
 				assert(loops[l_id].sequence.back() == bn_ls.first);
 				if(loops[l_id].prev == -1U) continue;
+				sm::BedNeedle bn2;
+				if(!is_loop_active(loops[loops[l_id].prev], &bn2)) continue;
 				sm::BedNeedle bnc = loops[l_id].sequence.back();
 				sm::BedNeedle bnp = loops[loops[l_id].prev].sequence.back();
 				uint32_t slack = std::abs(bnc.needle - bnp.needle);
-				if(bnc.bed != bnp.bed) slack++;
+				if(bnc.bed != bnp.bed && bnc.needle == bnp.needle) slack++;
 				if(slack > loops[l_id].prev_slack){
 					std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
+					std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
+					std::cerr << "required slack: " << loops[l_id].prev_slack << " has slack " << slack<< std::endl; 
 					print();
 					return false;
 				}
@@ -3400,7 +3502,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 		if(!face_translation.count(&f - &mesh.faces[0]) && is_fully_hinted){
 			// no offenders, missing hints
 			std::cerr << "All faces have not been hinted. "<< &f - &mesh.faces[0] << std::endl;
-			return false;
+			//return false;
 		}
 	}
 
@@ -3556,7 +3658,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 				ins.face_instr  = fi; 
 
 			}
-			if(!machine.make(ins, mesh)){
+			if(!machine.make(ins, mesh, code)){
 				std::cerr << "Machine could not create instruction " << ins.to_string() << " without violating constraints!" << std::endl;
 				return false;
 			}
@@ -4183,7 +4285,7 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 	//std::cout << "...loaded library faces. " << std::endl;
 
 	for (auto &face : code.faces){
-
+		
 		if(!name_to_lib_idx.count(face.key_library())){
 			std::cout << "No face library entry for " << face.key_library() << std::endl;
 			return false;
@@ -4265,7 +4367,7 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 				}
 				edge_to_instructions_connections.insert(std::make_pair(e_id, &ins - &face.instrs[0]));
 			}
-			else if(temporaries.count(ins.src)){
+			if(temporaries.count(ins.src)){
 				// 3.instruction to instruction (but which one)
 				// track back from the last instruction, pick the one whose tgt/tgt2 is ins.src
 				uint32_t i_id = &ins - &face.instrs[0];
