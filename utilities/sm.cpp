@@ -3785,8 +3785,9 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code){
 
 // knitout from faces
 // assumes hinting is complete and valid
-std::string sm::knitout(sm::Mesh const &mesh, sm::Library const &library, sm::Code const &code){
+std::string sm::knitout(sm::Mesh &mesh, sm::Library const &library, sm::Code const &code){
 
+	mesh.total_instructions.clear();
 
 	std::vector<Mesh::Hint> offenders;
 	bool strict = true;
@@ -3860,7 +3861,7 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Library const &library, sm::Co
 		}
 	}
 	// --------------Code Generation------------------------
-
+	// todo run machine here? verifier already did..
 	std::string knitout_string = "";
 	// knitout header
 	knitout_string += ";!knitout-2\n";
@@ -3876,6 +3877,7 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Library const &library, sm::Co
 	knitout_string += ";auto-generated from smobj, see sm.cpp,  sm::knitout()\n";
 
 
+	mesh.total_instructions.clear();
 	// go by order, plug translate by and hint index to get knitout instruction
 	for(auto const &fi : mesh.total_order){
 	
@@ -3884,6 +3886,8 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Library const &library, sm::Co
 			auto xfer_op = mesh.move_instructions[fi.second];
 			assert(xfer_op.op == sm::Instr::Xfer);
 			knitout_string += xfer_op.to_string(true);
+			xfer_op.face_instr = fi;
+			mesh.total_instructions.emplace_back(xfer_op);
 		}
 		else{
 			if(!face_translation.count(fi.first)) {
@@ -3898,6 +3902,10 @@ std::string sm::knitout(sm::Mesh const &mesh, sm::Library const &library, sm::Co
 			int t = face_translation[fi.first];
 			knitout_string += l.knitout_string(t, fi.second, true);
 			knitout_string += "\n";
+			auto ins = l.instrs[fi.second];
+			ins.face_instr = fi;
+			ins.translate(t);
+			mesh.total_instructions.emplace_back(ins);
 		}
 
 	}
@@ -4274,6 +4282,7 @@ bool sm::create_in_slack_xfer(uint32_t face_id,  sm::Mesh &mesh, sm::Library &li
 
 
 bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
+// doesn't really need library but maybe should be tested against both
 // verify that instructions are valid (does this need to ssa?)
 // todo: also verify yarn positions
 	

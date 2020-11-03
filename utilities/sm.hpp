@@ -7,7 +7,6 @@
 #include <vector>
 #include <optional>
 #include <variant>
-
 /*
  * Data structures for dealing with common smobj-related tasks:
  * sm::Mesh represents the contents of '.smobj' files
@@ -235,6 +234,7 @@ struct Mesh {
 	std::vector< MoveConnection > move_connections; // a mapping of connections associated with move_instructions, the same instruction can have multiple connections
 
 	std::vector< std::pair<uint32_t, uint32_t> > total_order; // face-id/instruction-id face_id = -1U, order from move_instructions
+	std::vector< Instr > total_instructions;
 	struct Hint {
 		enum HintType : char{
 			Resource = 'r', // needle
@@ -505,7 +505,7 @@ bool compute_total_order(sm::Mesh &mesh, sm::Code const &code);
 bool can_order_faces(sm::Mesh const  &mesh,  sm::Library const  &library, std::vector<uint32_t> *_order);
 
 // generate knitout code from an ordered set of faces using the code library
-std::string knitout(sm::Mesh const &mesh, sm::Library const &library,  sm::Code const &code);
+std::string knitout(sm::Mesh &mesh, sm::Library const &library,  sm::Code const &code);
 
 // can Hint h be added to mesh m without offending any existing hints?
 bool add_hint(sm::Mesh::Hint h, sm::Mesh *mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> *offenders);
