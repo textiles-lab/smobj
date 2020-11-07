@@ -4337,25 +4337,18 @@ bool sm::create_in_slack_xfer(uint32_t face_id,  sm::Mesh &mesh, sm::Library &li
 }
 
 
-bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
+bool sm::compute_library_graph(sm::Library &library){
+	// TODO
+	return false;
+}
+bool sm::compute_code_graph(sm::Code &code){
 	// doesn't really need library but maybe should be tested against both
 	// verify that instructions are valid (does this need to ssa?)
 	// todo: also verify yarn positions
 
-	std::unordered_map<std::string, uint32_t> name_to_lib_idx;
-	for(auto const &f : library.faces){
-		name_to_lib_idx[f.key()] = &f - &library.faces[0];
-		//std::cout << f.key() << std::endl;
-	}
-	//std::cout << "...loaded library faces. " << std::endl;
 
 	for (auto &face : code.faces){
 
-		if(!name_to_lib_idx.count(face.key_library())){
-			std::cout << "No face library entry for " << face.key_library() << std::endl;
-			return false;
-		}
-		auto const &l = library.faces[name_to_lib_idx[face.key_library()]];
 
 		// TODO check that split correctly produces two entries
 		std::set< std::pair<uint32_t, uint32_t> > edge_to_edge_connections;
@@ -4369,46 +4362,7 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 		std::set< std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_instructions_to_instructions_connections;
 
 
-
-
-		for(auto const &y : l.yarns){
-			if(y.begin.edge == y.end.edge) continue;
-			// only loop edges, TODO separate yarn edge connections
-			if(l.edges[y.begin.edge].type[0] != l.edges[y.end.edge].type[0]) continue;
-
-
-			if(l.edges[y.begin.edge].type[0] == 'l'){
-				if(y.begin.edge >= l.edges.size()){
-					throw std::runtime_error("number of edges don't match between yarn and face library");
-				}
-				if(y.end.edge >= l.edges.size()){
-					throw std::runtime_error("number of edges don't match between yarn and face library");
-				}
-				// 1. edge to edge connections
-				if(l.edges[y.begin.edge].direction == sm::Library::Face::Edge::In && l.edges[y.end.edge].direction == sm::Library::Face::Edge::Out){
-					edge_to_edge_connections.insert(std::make_pair(y.begin.edge, y.end.edge));
-				}
-				else if(l.edges[y.begin.edge].direction == sm::Library::Face::Edge::Out && l.edges[y.end.edge].direction == sm::Library::Face::Edge::In){
-					edge_to_edge_connections.insert(std::make_pair(y.end.edge, y.begin.edge));
-				}
-			} else {
-				if(y.begin.edge >= l.edges.size()){
-					throw std::runtime_error("number of edges don't match between yarn and face library");
-				}
-				if(y.end.edge >= l.edges.size()){
-					throw std::runtime_error("number of edges don't match between yarn and face library");
-				}
-				// 1.yarn edge to edge connections
-				/*
-				if(l.edges[y.begin.edge].direction == sm::Library::Face::Edge::In && l.edges[y.end.edge].direction == sm::Library::Face::Edge::Out){
-					yarn_edge_to_edge_connections.insert(std::make_pair(y.begin.edge, y.end.edge));
-				}
-				else if(l.edges[y.begin.edge].direction == sm::Library::Face::Edge::Out && l.edges[y.end.edge].direction == sm::Library::Face::Edge::In){
-					yarn_edge_to_edge_connections.insert(std::make_pair(y.end.edge, y.begin.edge));
-				}*/
-			}
-		}
-
+	
 		std::set<sm::BedNeedle> temporaries, incoming, outgoing;
 		std::set<std::string>  yarn_incoming, yarn_used,  yarn_outgoing;
 		std::map<std::string, sm::BedNeedle> yarn_locations;
@@ -4503,15 +4457,6 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 				if(!ins.src.dontcare() && !(incoming.count(ins.src) || temporaries.count(ins.src))){
 					throw std::runtime_error("src bed-needle " + ins.src.to_string() + " is not an input resource:" + face.key());
 				}
-				std::set<std::string> ins_yarns;
-				{
-					std::istringstream str(ins.yarns);
-					std::string yarn;
-					while(str >> yarn) {
-						ins_yarns.insert(yarn);
-					}
-
-				}
 				if(incoming.count(ins.src)){
 					// 2.edge to instruction 
 					{
@@ -4522,10 +4467,9 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 						}
 						edge_to_instructions_connections.insert(std::make_pair(e_id, &ins - &face.instrs[0]));
 					}
-
+					
+					incoming.erase(ins.src);
 				}
-				
-
 				if(temporaries.count(ins.src)){
 					// 3.instruction to instruction (but which one)
 					// track back from the last instruction, pick the one whose tgt/tgt2 is ins.src
@@ -4547,9 +4491,8 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 						assert(i_id2 != -1U && "some instruction should have created this temporary");
 						instructions_to_instructions_connections.insert(std::make_pair(i_id2, i_id));
 					}
+					temporaries.erase(ins.src);
 				}
-				incoming.erase(ins.src);
-				temporaries.erase(ins.src);
 				if(!ins.tgt.dontcare()) {
 					temporaries.insert(ins.tgt);
 				}
@@ -4560,7 +4503,7 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 			for(auto bn : outgoing){
 				if(!temporaries.count(bn) && !incoming.count(bn))
 					throw std::runtime_error("tgt bed-needle [" + bn.to_string() + "] is not produced by code:" + face.key());
-				{
+				if(temporaries.count(bn)){
 					// 4.instruction to edge
 					uint32_t e_id = get_loop_out_edge_id(bn);
 					uint32_t i_id = -1U;
@@ -4575,13 +4518,14 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 							}
 						}
 					}
-					//assert(i_id != -1U && "some instruction must produce this outgoing edge");
-					if(i_id != -1U){
+					assert(i_id != -1U && "some instruction must produce this outgoing edge");
 					instructions_to_edge_connections.insert(std::make_pair( i_id, e_id));
-					}
-					else{
-						// this is an edge to edge connection
-					}
+				}
+				if(incoming.count(bn)){// this is an edge to edge connection
+					uint32_t e_id = get_loop_out_edge_id(bn);
+					uint32_t e_id_in = get_loop_in_edge_id(bn);
+					edge_to_edge_connections.insert(std::make_pair(e_id_in, e_id));
+
 				}
 
 				incoming.erase(bn);
@@ -4749,6 +4693,6 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 
 	}
 
-	std::cout << "Computed code graph using code faces " << code.faces.size() << " library faces " << library.faces.size() <<  std::endl;
+	std::cout << "Computed code graph using code faces " << code.faces.size()  <<  std::endl;
 	return true;
 }

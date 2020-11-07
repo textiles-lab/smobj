@@ -502,8 +502,8 @@ struct Yarns {
 
 //------ helper functions ------
 
-bool compute_code_graph(sm::Code &code, sm::Library const &library);
-
+bool compute_code_graph(sm::Code &code);
+bool compute_library_graph(sm::Library &library);
 // order face instructions to generate a total order (base order, may be reordered for efficiency)
 
 bool compute_total_order(sm::Mesh &mesh, sm::Code const &code);
