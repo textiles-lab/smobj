@@ -366,6 +366,7 @@ face tuck-twist+
 	code
 		;;Carriers: A
 		tuck - f0 A
+		miss + f0 A
 
 face tuck-twist-
 	edge -lX f0
@@ -376,6 +377,7 @@ face tuck-twist-
 	code
 		;;Carriers: A
 		tuck + f0 A
+		miss - f0 A
 
 
 face purl+
