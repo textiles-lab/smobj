@@ -76,18 +76,23 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 			// use yarn positions to also track if found where expected
 			// TODO this will penalize not having misses inside a face as well, but that is okay for now
 			sm::BedNeedle ypn = yarn_positions[yarn];
-			float yslack = ypn.location() - bn.location();
+			float yslack = std::abs(ypn.location() - bn.location());
 			if(direction == sm::Instr::Left){
-				if(!(yslack > 0.f && yslack < 1.f)){
-					std::cerr << "Yarn location is too far away from where it should be used. " << std::endl;
+				if(!(yslack >= 0.f && yslack < 1.f)){
+					std::cerr << "(A)Yarn location is too far away from where it should be used. Yslack: " << yslack  << std::endl;
+					std::cerr << "ypn: " << ypn.to_string() << " bn: " << bn.to_string() << std::endl;
+					std::cerr << "ypn: " << ypn.bed << ypn.location() << " bn: " << bn.bed << bn.location() << std::endl;
 					//return false;
+					return -1U;
 				}
 				
 			} else if (direction == sm::Instr::Right){
-				yslack = -yslack;
 				if(!(yslack > 0.f && yslack < 1.f)){
-					std::cerr << "Yarn location is too far away from where it should be used. " << std::endl;
+					std::cerr << "(B)Yarn location is too far away from where it should be used. Yslack: " << yslack << std::endl;
+					std::cerr << "ypn: " << ypn.to_string() << " bn: " << bn.to_string() << std::endl;
+					std::cerr << "ypn: " << ypn.bed << ypn.location() << " bn: " << bn.bed << bn.location() << std::endl;
 					//return false;
+					return -1U;
 				}
 			}
 		}
@@ -263,6 +268,7 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 		case sm::Instr::Tuck:
 			for(auto yarn : tokens){
 				auto l = make_loop(yarn, instr.tgt, instr.direction);
+				if(l == -1U) return false;
 				add_to_location(instr.tgt, l);
 				yarn_positions[yarn] = instr.tgt;
 				if(instr.direction == sm::Instr::Left) yarn_positions[yarn].nudge = -1;
@@ -273,7 +279,9 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 			clear_location(instr.src);
 			for(auto yarn : tokens){
 				auto l = make_loop(yarn, instr.tgt, instr.direction);
+				if(l == -1U) return false;
 				add_to_location(instr.tgt, l);
+				yarn_positions[yarn] = instr.tgt;
 				if(instr.direction == sm::Instr::Left) yarn_positions[yarn].nudge = -1;
 				else if(instr.direction == sm::Instr::Right) yarn_positions[yarn].nudge = 1;
 			}
@@ -281,6 +289,7 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 			break;
 		case sm::Instr::Miss:
 			for(auto yarn: tokens){
+				yarn_positions[yarn] = instr.tgt;
 				if(instr.direction == sm::Instr::Left) yarn_positions[yarn].nudge = -1;
 				else if(instr.direction == sm::Instr::Right) yarn_positions[yarn].nudge = 1;
 			}
@@ -292,7 +301,9 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 			clear_location(instr.src);
 			for(auto yarn : tokens){
 				auto l = make_loop(instr.yarns, instr.tgt, instr.direction);
+				if(l == -1U) return false;
 				add_to_location(instr.tgt, l);
+				yarn_positions[yarn] = instr.tgt;
 				if(instr.direction == sm::Instr::Left) yarn_positions[yarn].nudge = -1;
 				else if(instr.direction == sm::Instr::Right) yarn_positions[yarn].nudge = 1;
 			}
@@ -1744,10 +1755,8 @@ sm::Code sm::Code::load(std::string const &filename) {
 					throw std::runtime_error("src bed-needle " + ins.src.to_string() + " is not an input resource:" + face.key());
 				}
 				if(incoming.count(ins.src)){
-					// edge to instruction 
 				}
 				else if(temporaries.count(ins.src)){
-					// instruction to instruction (but which one)
 				}
 				incoming.erase(ins.src);
 				temporaries.erase(ins.src);
@@ -1768,16 +1777,12 @@ sm::Code sm::Code::load(std::string const &filename) {
 			}
 
 			for(auto bn : outgoing){
-				if(!temporaries.count(bn))
+				if(!temporaries.count(bn) && !incoming.count(bn))
 					throw std::runtime_error("tgt bed-needle [" + bn.to_string() + "] is not produced by code:" + face.key());
 				{
-					// instruction to edge
 				}
 				temporaries.erase(bn);
-			}
-
-			{
-				// edge to edge --> must come from geometry face
+				incoming.erase(bn);
 			}
 
 
@@ -4553,7 +4558,7 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 				}
 			}
 			for(auto bn : outgoing){
-				if(!temporaries.count(bn))
+				if(!temporaries.count(bn) && !incoming.count(bn))
 					throw std::runtime_error("tgt bed-needle [" + bn.to_string() + "] is not produced by code:" + face.key());
 				{
 					// 4.instruction to edge
@@ -4570,11 +4575,16 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 							}
 						}
 					}
-					assert(i_id != -1U && "some instruction must produce this outgoing edge");
+					//assert(i_id != -1U && "some instruction must produce this outgoing edge");
+					if(i_id != -1U){
 					instructions_to_edge_connections.insert(std::make_pair( i_id, e_id));
+					}
+					else{
+						// this is an edge to edge connection
+					}
 				}
 
-
+				incoming.erase(bn);
 				temporaries.erase(bn);
 			}
 		} // end of loops
