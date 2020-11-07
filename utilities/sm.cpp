@@ -104,7 +104,7 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 			if(cid == -1U) return false;
 			auto const &l  = code.faces[cid];
 			std::set<uint32_t> candidates;
-			for(auto x : l.instruction_to_instruction_connections){
+			for(auto x : l.loop_instruction_to_instruction_connections){
 				if(x.first == ins1.second) candidates.insert(x.second);
 			}
 			while(!candidates.empty()){
@@ -112,7 +112,7 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 				if(next == ins2.second) return true;
 				candidates.erase(next);
 				// add next 
-				for(auto x : l.instruction_to_instruction_connections){
+				for(auto x : l.loop_instruction_to_instruction_connections){
 				if(x.first == next) candidates.insert(x.second);
 				}
 			}
@@ -124,11 +124,11 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 			if(cid == -1U) return false;
 			auto const &l  = code.faces[cid];
 			std::set<std::pair<uint32_t, uint32_t>> candidates, up_candidates;
-			for(auto x : l.instruction_to_instruction_connections){
+			for(auto x : l.loop_instruction_to_instruction_connections){
 				if(x.first == ins1.second) candidates.insert(std::make_pair(ins1.first, x.second));
 			}
 			{
-				for(auto x : l.instruction_to_edge_connections){
+				for(auto x : l.loop_instruction_to_edge_connections){
 					// find the connection for ins1.face, x.second
 					if(x.first == ins1.second){
 						for(auto const &c : mesh.connections){
@@ -152,7 +152,7 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 					if(cid == -1U) continue;
 
 					auto nc = code.faces[cid];
-					for(auto x : nc.edge_to_instruction_connections){
+					for(auto x : nc.loop_edge_to_instruction_connections){
 						if(x.first == next.second){
 							candidates.insert(std::make_pair(next.first, x.second));
 						}
@@ -167,11 +167,11 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 					if(cid == -1U) continue;
 					auto nc = code.faces[cid];
 					// add next 
-					for(auto x : nc.instruction_to_instruction_connections){
+					for(auto x : nc.loop_instruction_to_instruction_connections){
 						if(x.first == next.second) candidates.insert(std::make_pair(next.first, x.second));
 					}
 					// add next up
-					for(auto x : nc.instruction_to_edge_connections){
+					for(auto x : nc.loop_instruction_to_edge_connections){
 						// find the connection for ins1.face, x.second
 						if(x.first == next.second){
 							// find the correspondence for next.first, x.second
@@ -4282,10 +4282,10 @@ bool sm::create_in_slack_xfer(uint32_t face_id,  sm::Mesh &mesh, sm::Library &li
 
 
 bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
-// doesn't really need library but maybe should be tested against both
-// verify that instructions are valid (does this need to ssa?)
-// todo: also verify yarn positions
-	
+	// doesn't really need library but maybe should be tested against both
+	// verify that instructions are valid (does this need to ssa?)
+	// todo: also verify yarn positions
+
 	std::unordered_map<std::string, uint32_t> name_to_lib_idx;
 	for(auto const &f : library.faces){
 		name_to_lib_idx[f.key()] = &f - &library.faces[0];
@@ -4294,7 +4294,7 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 	//std::cout << "...loaded library faces. " << std::endl;
 
 	for (auto &face : code.faces){
-		
+
 		if(!name_to_lib_idx.count(face.key_library())){
 			std::cout << "No face library entry for " << face.key_library() << std::endl;
 			return false;
@@ -4307,28 +4307,55 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 		std::set< std::pair<uint32_t, uint32_t> > instructions_to_edge_connections;
 		std::set< std::pair<uint32_t, uint32_t> > instructions_to_instructions_connections;
 
+		std::set< std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_edge_to_edge_connections;
+		std::set< std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_edge_to_instructions_connections;
+		std::set< std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_instructions_to_edge_connections;
+		std::set< std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_instructions_to_instructions_connections;
+
+
+
 
 		for(auto const &y : l.yarns){
 			if(y.begin.edge == y.end.edge) continue;
 			// only loop edges, TODO separate yarn edge connections
-			if(l.edges[y.begin.edge].type[0] != 'l') continue;
-			if(l.edges[y.end.edge].type[0] != 'l') continue;
-			if(y.begin.edge >= l.edges.size()){
-				throw std::runtime_error("number of edges don't match between yarn and face library");
-			}
-			if(y.end.edge >= l.edges.size()){
-				throw std::runtime_error("number of edges don't match between yarn and face library");
-			}
-			// 1. edge to edge connections
-			if(l.edges[y.begin.edge].direction == sm::Library::Face::Edge::In && l.edges[y.end.edge].direction == sm::Library::Face::Edge::Out){
-				edge_to_edge_connections.insert(std::make_pair(y.begin.edge, y.end.edge));
-			}
-			else if(l.edges[y.begin.edge].direction == sm::Library::Face::Edge::Out && l.edges[y.end.edge].direction == sm::Library::Face::Edge::In){
-				edge_to_edge_connections.insert(std::make_pair(y.end.edge, y.begin.edge));
+			if(l.edges[y.begin.edge].type[0] != l.edges[y.end.edge].type[0]) continue;
+
+
+			if(l.edges[y.begin.edge].type[0] == 'l'){
+				if(y.begin.edge >= l.edges.size()){
+					throw std::runtime_error("number of edges don't match between yarn and face library");
+				}
+				if(y.end.edge >= l.edges.size()){
+					throw std::runtime_error("number of edges don't match between yarn and face library");
+				}
+				// 1. edge to edge connections
+				if(l.edges[y.begin.edge].direction == sm::Library::Face::Edge::In && l.edges[y.end.edge].direction == sm::Library::Face::Edge::Out){
+					edge_to_edge_connections.insert(std::make_pair(y.begin.edge, y.end.edge));
+				}
+				else if(l.edges[y.begin.edge].direction == sm::Library::Face::Edge::Out && l.edges[y.end.edge].direction == sm::Library::Face::Edge::In){
+					edge_to_edge_connections.insert(std::make_pair(y.end.edge, y.begin.edge));
+				}
+			} else {
+				if(y.begin.edge >= l.edges.size()){
+					throw std::runtime_error("number of edges don't match between yarn and face library");
+				}
+				if(y.end.edge >= l.edges.size()){
+					throw std::runtime_error("number of edges don't match between yarn and face library");
+				}
+				// 1.yarn edge to edge connections
+				/*
+				if(l.edges[y.begin.edge].direction == sm::Library::Face::Edge::In && l.edges[y.end.edge].direction == sm::Library::Face::Edge::Out){
+					yarn_edge_to_edge_connections.insert(std::make_pair(y.begin.edge, y.end.edge));
+				}
+				else if(l.edges[y.begin.edge].direction == sm::Library::Face::Edge::Out && l.edges[y.end.edge].direction == sm::Library::Face::Edge::In){
+					yarn_edge_to_edge_connections.insert(std::make_pair(y.end.edge, y.begin.edge));
+				}*/
 			}
 		}
 
 		std::set<sm::BedNeedle> temporaries, incoming, outgoing;
+		std::set<std::string>  yarn_incoming, yarn_used,  yarn_outgoing;
+		std::map<std::string, sm::BedNeedle> yarn_locations;
 		std::set<std::string> carriers; // todo split into incoming and outgoing carriers
 		for (auto const &edge : face.edges){
 			if(edge.direction == Code::Face::Edge::In && edge.type[0] == 'l' && !edge.bn.dontcare()){
@@ -4337,6 +4364,22 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 			else if(edge.direction == Code::Face::Edge::Out &&  edge.type[0] == 'l' && !edge.bn.dontcare()){
 				outgoing.insert(edge.bn);
 			}
+			else if(edge.direction == Code::Face::Edge::In && edge.type[0] == 'y' && !edge.bn.dontcare()){
+				std::istringstream str(edge.yarns);
+				std::string yarn;
+				while(str >> yarn){
+					yarn_incoming.insert(yarn);
+					yarn_locations[yarn] = edge.bn;
+				}
+			}
+			else if(edge.direction == Code::Face::Edge::Out &&  edge.type[0] == 'y' && !edge.bn.dontcare()){
+				std::istringstream str(edge.yarns);
+				std::string yarn;
+				while(str >> yarn){
+					yarn_outgoing.insert(yarn);
+				}
+			}
+
 			if(!edge.yarns.empty()) {
 				carriers.insert(edge.yarns);
 				// also include split up carriers
@@ -4347,7 +4390,7 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 				}
 			}
 		}
-		auto get_in_edge_id = [&face](sm::BedNeedle bn)->uint32_t{
+		auto get_loop_in_edge_id = [&face](sm::BedNeedle bn)->uint32_t{
 			for(auto const &edge : face.edges){
 				if(edge.type[0] == 'y') continue;
 				if(edge.direction != sm::Code::Face::Edge::In) continue;
@@ -4355,7 +4398,7 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 			}
 			return -1U;
 		};
-		auto get_out_edge_id = [&face](sm::BedNeedle bn)->uint32_t{
+		auto get_loop_out_edge_id = [&face](sm::BedNeedle bn)->uint32_t{
 			for(auto const &edge : face.edges){
 				if(edge.type[0] == 'y') continue;
 				if(edge.direction != sm::Code::Face::Edge::Out) continue;
@@ -4363,87 +4406,276 @@ bool sm::compute_code_graph(sm::Code &code, sm::Library const &library){
 			}
 			return -1U;
 		};
-		for(auto const &ins : face.instrs){
-			if(!ins.src.dontcare() && !(incoming.count(ins.src) || temporaries.count(ins.src))){
-				throw std::runtime_error("src bed-needle " + ins.src.to_string() + " is not an input resource:" + face.key());
-			}
-			if(incoming.count(ins.src)){
-				// 2.edge to instruction 
-				uint32_t e_id = get_in_edge_id(ins.src);
-				if(e_id == -1U){
-					// input resource has already been tested
-					std::cerr << "Input resource missing?" << std::endl;
-				}
-				edge_to_instructions_connections.insert(std::make_pair(e_id, &ins - &face.instrs[0]));
-			}
-			if(temporaries.count(ins.src)){
-				// 3.instruction to instruction (but which one)
-				// track back from the last instruction, pick the one whose tgt/tgt2 is ins.src
-				uint32_t i_id = &ins - &face.instrs[0];
-				assert(i_id >= 1 && "First instruction must not use a temporary, right?");
-				uint32_t i_id2 = -1U;
-				for(int k = i_id-1; k >= 0; k--){
-					auto const &ins2  = face.instrs[k];
-					if(ins2.tgt == ins.src){
-						i_id2 = k;
-						break;
-					}
-					else if(ins2.tgt2 == ins.src){
-						i_id2 = k;
-						break;
-					}
-				}
-				assert(i_id2 != -1U && "some instruction should have created this temporary");
-				instructions_to_instructions_connections.insert(std::make_pair(i_id2, i_id));
-			}
-			incoming.erase(ins.src);
-			temporaries.erase(ins.src);
-			if(!ins.tgt.dontcare()) {
-				temporaries.insert(ins.tgt);
-			}
-			if(!ins.tgt2.dontcare()) {
-				temporaries.insert(ins.tgt2);
-			}
-			if(!ins.yarns.empty()){
-				std::istringstream str(ins.yarns);
-				std::string yarn;
-				while (str >> yarn){
-					if (!carriers.count(yarn)) throw std::runtime_error("yarn [" + yarn + " of " + ins.yarns + "] not specified on edge label by code:" + face.key());
+
+		auto has_common_yarns = [](std::string y1, std::string y2)->bool{
+			std::istringstream s1(y1);
+			std::istringstream s2(y2);
+			std::vector<std::string> t1{std::istream_iterator<std::string>{s1}, std::istream_iterator<std::string>{}};
+			std::vector<std::string> t2{std::istream_iterator<std::string>{s2}, std::istream_iterator<std::string>{}};
+			for(auto y : t1){
+				if(std::find(t2.begin(), t2.end(), y) != t2.end()){
+					return true;
 				}
 			}
 
-		}
+			return false;
+		};
+		auto get_yarn_in_edge_id = [&](std::string yarns)->uint32_t{
+			for(auto const &edge : face.edges){
+				if(edge.type[0] == 'l') continue;
+				if(edge.direction != sm::Code::Face::Edge::In) continue;
+				if(has_common_yarns(yarns, edge.yarns)) return (&edge - &face.edges[0]);
+			}
+			return -1U;
+		};
+		auto get_yarn_out_edge_id = [&](std::string yarns)->uint32_t{
 
-		for(auto bn : outgoing){
-			if(!temporaries.count(bn))
-				throw std::runtime_error("tgt bed-needle [" + bn.to_string() + "] is not produced by code:" + face.key());
-			{
-				// 4.instruction to edge
-				uint32_t e_id = get_out_edge_id(bn);
-				uint32_t i_id = -1U;
-				// does this make sense for drops? (yes, because otherwise doesn't exist in outgoing?
-				// find the last instruction that produced this outgoing
-				if(!face.instrs.empty()){
-					for(int k = face.instrs.size()-1; k >= 0; k--){
-						auto ins =face.instrs[k];
-						if(ins.tgt == bn || ins.tgt2 == bn){
-							i_id = k;
-							break;
+
+			for(auto const &edge : face.edges){
+				if(edge.type[0] == 'l') continue;
+				if(edge.direction != sm::Code::Face::Edge::Out) continue;
+				if(has_common_yarns(yarns, edge.yarns)) return (&edge - &face.edges[0]);
+			}
+
+			return -1U;
+		};
+		
+
+		// Loops
+		{
+			for(auto const &ins : face.instrs){
+				if(!ins.src.dontcare() && !(incoming.count(ins.src) || temporaries.count(ins.src))){
+					throw std::runtime_error("src bed-needle " + ins.src.to_string() + " is not an input resource:" + face.key());
+				}
+				std::set<std::string> ins_yarns;
+				{
+					std::istringstream str(ins.yarns);
+					std::string yarn;
+					while(str >> yarn) {
+						ins_yarns.insert(yarn);
+					}
+
+				}
+				if(incoming.count(ins.src)){
+					// 2.edge to instruction 
+					{
+						uint32_t e_id = get_loop_in_edge_id(ins.src);
+						if(e_id == -1U){
+							// input resource has already been tested
+							std::cerr << "Input resource missing?" << std::endl;
+						}
+						edge_to_instructions_connections.insert(std::make_pair(e_id, &ins - &face.instrs[0]));
+					}
+
+				}
+				
+
+				if(temporaries.count(ins.src)){
+					// 3.instruction to instruction (but which one)
+					// track back from the last instruction, pick the one whose tgt/tgt2 is ins.src
+					{
+						uint32_t i_id = &ins - &face.instrs[0];
+						assert(i_id >= 1 && "First instruction must not use a temporary, right?");
+						uint32_t i_id2 = -1U;
+						for(int k = i_id-1; k >= 0; k--){
+							auto const &ins2  = face.instrs[k];
+							if(ins2.tgt == ins.src){
+								i_id2 = k;
+								break;
+							}
+							else if(ins2.tgt2 == ins.src){
+								i_id2 = k;
+								break;
+							}
+						}
+						assert(i_id2 != -1U && "some instruction should have created this temporary");
+						instructions_to_instructions_connections.insert(std::make_pair(i_id2, i_id));
+					}
+				}
+				incoming.erase(ins.src);
+				temporaries.erase(ins.src);
+				if(!ins.tgt.dontcare()) {
+					temporaries.insert(ins.tgt);
+				}
+				if(!ins.tgt2.dontcare()) {
+					temporaries.insert(ins.tgt2);
+				}
+			}
+			for(auto bn : outgoing){
+				if(!temporaries.count(bn))
+					throw std::runtime_error("tgt bed-needle [" + bn.to_string() + "] is not produced by code:" + face.key());
+				{
+					// 4.instruction to edge
+					uint32_t e_id = get_loop_out_edge_id(bn);
+					uint32_t i_id = -1U;
+					// does this make sense for drops? (yes, because otherwise doesn't exist in outgoing?
+					// find the last instruction that produced this outgoing
+					if(!face.instrs.empty()){
+						for(int k = face.instrs.size()-1; k >= 0; k--){
+							auto ins =face.instrs[k];
+							if(ins.tgt == bn || ins.tgt2 == bn){
+								i_id = k;
+								break;
+							}
+						}
+					}
+					assert(i_id != -1U && "some instruction must produce this outgoing edge");
+					instructions_to_edge_connections.insert(std::make_pair( i_id, e_id));
+				}
+
+
+				temporaries.erase(bn);
+			}
+		} // end of loops
+		auto find_ins_with_yarn_before = [&](uint32_t id, std::string y)->uint32_t{
+			
+			for(int k = (int)id-1; k >=0; k--){
+				auto ins2 = face.instrs[k];
+				if(has_common_yarns(y, ins2.yarns)) return k;
+			}
+			return -1U;
+		};
+		// Yarns
+		{
+			//std::cout << "Face: " << face.key() << std::endl;
+			for(auto const &ins : face.instrs){
+				//std::cout <<"\t Instr: " << ins.to_string() << std::endl;
+				std::set<std::string> ins_yarns;
+				{
+					std::istringstream str(ins.yarns);
+					std::string yarn;
+					while(str >> yarn) {
+						ins_yarns.insert(yarn);
+					}
+				}
+				if(ins.op == sm::Instr::In){
+					for(auto y : ins_yarns){
+						if(yarn_incoming.count(y)){
+							throw std::runtime_error("In inserts yarn that was already incoming.");
+						}
+						yarn_used.insert(y);
+					}
+				}
+				else if(ins.op == sm::Instr::Out){
+					for(auto y : ins_yarns){
+						uint32_t prev_id = find_ins_with_yarn_before(&ins - &face.instrs[0], y);
+						yarn_used.erase(y);
+						if(prev_id != -1U){
+							yarn_instructions_to_instructions_connections.insert(std::make_pair(y,std::make_pair(prev_id, &ins - &face.instrs[0])));
+						}
+						else if(yarn_incoming.count(y)){
+							auto eid = get_yarn_in_edge_id(y);
+							if(eid != -1U){
+							yarn_edge_to_instructions_connections.insert(std::make_pair(y,std::make_pair(eid, &ins - &face.instrs[0])));
+							}
+							yarn_incoming.erase(y);
+						}
+						yarn_locations[y] = sm::BedNeedle();
+					}
+				}
+				else if(/*!ins.tgt.dontcare() &&*/ ins.is_loop()){
+					for(auto y : ins_yarns){
+						if(yarn_incoming.count(y)){
+							// move the yarn_location based on instruction direction on the tgt location 
+							if(ins.direction == sm::Instr::Left){
+								// TODO is the yarn to the right of the tgt location?
+								yarn_locations[y] = ins.tgt;
+								yarn_locations[y].nudge = -1;
+							} else {
+								// TODO is the yarn to the left of the tgt location?
+								yarn_locations[y] = ins.tgt;
+								yarn_locations[y].nudge = 1;
+							}
+							yarn_incoming.erase(y);
+							yarn_used.insert(y);
+							// Edge to Instruction
+							// find the edge that has this yarn 
+							auto eid = get_yarn_in_edge_id(y);
+							if(eid == -1U){
+								assert(false);
+							}
+							// Yarn edge to instructions
+							yarn_edge_to_instructions_connections.insert(std::make_pair(y, std::make_pair(eid, &ins - &face.instrs[0])));
+						}
+						else if(yarn_used.count(y)){
+							if(ins.direction == sm::Instr::Left){
+								// TODO is the yarn to the right of the tgt location?
+								yarn_locations[y] = ins.tgt;
+								yarn_locations[y].nudge = -1;
+							} else {
+								// TODO is the yarn to the right of the tgt location?
+								yarn_locations[y] = ins.tgt;
+								yarn_locations[y].nudge = 1;
+							}
+							yarn_used.insert(y);
+							// Instruction to Instruction
+							// find the last instruction that used this yarns
+							uint32_t i_id = &ins - &face.instrs[0];
+							uint32_t prev_id = find_ins_with_yarn_before(i_id, y);
+							
+							assert(prev_id != -1U); //found it somewhere, right?
+							yarn_instructions_to_instructions_connections.insert(std::make_pair(y,std::make_pair(prev_id, i_id)));
 						}
 					}
 				}
-				assert(i_id != -1U && "some instruction must produce this outgoing edge");
-				instructions_to_edge_connections.insert(std::make_pair( i_id, e_id));
+			//	std::cout << "\t Used:"; for(auto y : yarn_used) std::cout << y << ","; std::cout << std::endl;
 			}
-			temporaries.erase(bn);
-		}
+			for(auto yo : yarn_outgoing){
+				if(yarn_used.count(yo)){
+					// find the last instruction that used this :
+					// add a yarn_instructions_to_edge connection 
+					auto eid = get_yarn_out_edge_id(yo);
+
+					uint32_t i_id = find_ins_with_yarn_before(face.instrs.size(), yo);
+					if(i_id != -1U){
+					yarn_instructions_to_edge_connections.insert(std::make_pair(yo,std::make_pair(i_id, eid)));
+					}
+					else{
+						std::cerr << "Yarn on the outgoing edge " << yo <<" not used by anything?" << std::endl;
+						std::cerr << "Face " << face.name << std::endl;
+						std::cerr << "Yarn " << yo << " was not used?" << std::endl;
+						std::cout << "Used yarns: ";for(auto x : yarn_used) std::cout << x << ","; std::cout << std::endl;
+
+						assert(false);
+					}
+				}
+				else if(yarn_incoming.count(yo)){
+					// check that yarn_edge_to_edge exists?
+					auto eid1 = get_yarn_in_edge_id(yo);
+					auto eid2 = get_yarn_out_edge_id(yo);
+					if(eid1 != -1U && eid2 != -1U){
+					yarn_edge_to_edge_connections.insert(std::make_pair(yo,std::make_pair(eid1, eid2)));
+					}
+					else{
+						std::cerr << "Yarn missing in outgoing.." << std::endl;
+						std::cerr << "Face " << face.name << std::endl;
+						std::cerr << "Yarn " << yo << " was not not in incoming?" << std::endl;
+						std::cout << "Used yarns: ";for(auto x : yarn_used) std::cout << x << ","; std::cout << std::endl;
+
+						assert(false);
+					}
+				}
+				else{
+					std::cerr << "Face " << face.name << std::endl;
+					std::cerr << "Yarn " << yo << " was not used/not in incoming" << std::endl;
+					std::cout << "Used yarns: ";for(auto x : yarn_used) std::cout << x << ","; std::cout << std::endl;
+					assert(false && "has to fall in one of those buckets");
+				}
+			}
+		} // end of yarns
 
 		{
 			// copy all this informaton to code face in some way
-			face.edge_to_edge_connections = edge_to_edge_connections;
-			face.edge_to_instruction_connections = edge_to_instructions_connections;
-			face.instruction_to_edge_connections = instructions_to_edge_connections;
-			face.instruction_to_instruction_connections = instructions_to_instructions_connections;
+			face.loop_edge_to_edge_connections = edge_to_edge_connections;
+			face.loop_edge_to_instruction_connections = edge_to_instructions_connections;
+			face.loop_instruction_to_edge_connections = instructions_to_edge_connections;
+			face.loop_instruction_to_instruction_connections = instructions_to_instructions_connections;
+
+			face.yarn_edge_to_edge_connections = yarn_edge_to_edge_connections;
+			face.yarn_edge_to_instruction_connections = yarn_edge_to_instructions_connections;
+			face.yarn_instruction_to_edge_connections = yarn_instructions_to_edge_connections;
+			face.yarn_instruction_to_instruction_connections = yarn_instructions_to_instructions_connections;
+
 		}
 
 

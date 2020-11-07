@@ -150,7 +150,7 @@ namespace sm {
 			return (op == Xfer);
 		}
 		bool is_loop() const{
-			return (op == Knit || op == Tuck || op == Split || op == Drop);
+			return (op == Knit || op == Tuck || op == Split || op == Drop || op == Miss);
 		}
 	};
 
@@ -402,10 +402,17 @@ struct Code {
 		std::vector< Instr > instrs;
 
 		// for local instruction graph:
-		std::set<std::pair<uint32_t, uint32_t>> edge_to_edge_connections;
-		std::set<std::pair<uint32_t, uint32_t>> edge_to_instruction_connections;
-		std::set<std::pair<uint32_t, uint32_t>> instruction_to_edge_connections;
-		std::set<std::pair<uint32_t, uint32_t>> instruction_to_instruction_connections;
+		std::set<std::pair<uint32_t, uint32_t>> loop_edge_to_edge_connections;
+		std::set<std::pair<uint32_t, uint32_t>> loop_edge_to_instruction_connections;
+		std::set<std::pair<uint32_t, uint32_t>> loop_instruction_to_edge_connections;
+		std::set<std::pair<uint32_t, uint32_t>> loop_instruction_to_instruction_connections;
+
+		std::set<std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_edge_to_edge_connections;
+		std::set<std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_edge_to_instruction_connections;
+		std::set<std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_instruction_to_edge_connections;
+		std::set<std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_instruction_to_instruction_connections;
+
+		
 
 		//TODO: derive face code for opposite bed variant, opp direction variant
 		//key_library() produces the corresponding .smobj library ('L' line) signature for the face:
