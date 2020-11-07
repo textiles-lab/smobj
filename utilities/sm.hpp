@@ -171,7 +171,7 @@ namespace sm {
 		int racking = 0;
 		int tension  = 0; // stitch value maybe
 		std::vector<Loop> loops; // holds all the loops created
-		
+		std::map<std::string, BedNeedle> yarn_positions; // which yarn is parked where
 		std::map<BedNeedle, std::vector<uint32_t>> bn_loops; // maintain loop + order
 		std::vector< std::vector<Instr> > passes;
 		bool make(Instr instr, sm::Mesh const &mesh, sm::Code const &code);
@@ -180,7 +180,7 @@ namespace sm {
 		bool find_loop_at_location(BedNeedle const &bn, Loop* loop); // false if no loop was created, else return the latest loop at location
 		bool find_last_loop_for_yarn(std::string yarn, Loop* loop); // the last loop made with this yarn
 		bool is_loop_active(Loop loop, sm::BedNeedle *bn); // if active return the location at which exists
-	
+		bool is_yarn_active(std::string yarn);
 		void print();
 	};
 

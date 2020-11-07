@@ -58,7 +58,10 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 		bn_loops[bn].emplace_back(loop_idx);
 		loops[loop_idx].sequence.emplace_back(bn);
 	};
-	auto make_loop = [&](std::string yarn, sm::BedNeedle bn)->uint32_t{
+	auto make_loop = [&](std::string yarn, sm::BedNeedle bn, sm::Instr::Direction direction)->uint32_t{
+		if(!is_yarn_active(yarn)){
+			std::cerr << "Yarn " << yarn << " used before being braught in." << std::endl;
+		}
 		assert(!bn.dontcare());
 		loops.emplace_back();
 		auto &loop = loops.back();
@@ -69,6 +72,24 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 			loop.prev_slack = std::abs(bn.needle - loops[prev.id].bn.needle);
 			if(bn.needle == loops[prev.id].bn.needle && bn.bed != loops[prev.id].bn.bed) loop.prev_slack++;
 			loops[prev.id].post_slack = loop.prev_slack;
+		
+			// use yarn positions to also track if found where expected
+			// TODO this will penalize not having misses inside a face as well, but that is okay for now
+			sm::BedNeedle ypn = yarn_positions[yarn];
+			float yslack = ypn.location() - bn.location();
+			if(direction == sm::Instr::Left){
+				if(!(yslack > 0.f && yslack < 1.f)){
+					std::cerr << "Yarn location is too far away from where it should be used. " << std::endl;
+					//return false;
+				}
+				
+			} else if (direction == sm::Instr::Right){
+				yslack = -yslack;
+				if(!(yslack > 0.f && yslack < 1.f)){
+					std::cerr << "Yarn location is too far away from where it should be used. " << std::endl;
+					//return false;
+				}
+			}
 		}
 		loop.bn = bn;
 		loop.yarn = yarn;
@@ -241,19 +262,28 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 			break;
 		case sm::Instr::Tuck:
 			for(auto yarn : tokens){
-				auto l = make_loop(yarn, instr.tgt);
+				auto l = make_loop(yarn, instr.tgt, instr.direction);
 				add_to_location(instr.tgt, l);
+				yarn_positions[yarn] = instr.tgt;
+				if(instr.direction == sm::Instr::Left) yarn_positions[yarn].nudge = -1;
+				else if(instr.direction == sm::Instr::Right) yarn_positions[yarn].nudge = 1;
 			}
 			break;
 		case sm::Instr::Knit:
 			clear_location(instr.src);
 			for(auto yarn : tokens){
-				auto l = make_loop(yarn, instr.tgt);
+				auto l = make_loop(yarn, instr.tgt, instr.direction);
 				add_to_location(instr.tgt, l);
+				if(instr.direction == sm::Instr::Left) yarn_positions[yarn].nudge = -1;
+				else if(instr.direction == sm::Instr::Right) yarn_positions[yarn].nudge = 1;
 			}
 			assert(instr.src == instr.tgt);
 			break;
 		case sm::Instr::Miss:
+			for(auto yarn: tokens){
+				if(instr.direction == sm::Instr::Left) yarn_positions[yarn].nudge = -1;
+				else if(instr.direction == sm::Instr::Right) yarn_positions[yarn].nudge = 1;
+			}
 			break;
 		case sm::Instr::Split:
 			for(auto it = bn_loops[instr.src].rbegin(); it != bn_loops[instr.src].rend(); ++it){
@@ -261,13 +291,31 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 			}
 			clear_location(instr.src);
 			for(auto yarn : tokens){
-				auto l = make_loop(instr.yarns, instr.tgt);
+				auto l = make_loop(instr.yarns, instr.tgt, instr.direction);
 				add_to_location(instr.tgt, l);
+				if(instr.direction == sm::Instr::Left) yarn_positions[yarn].nudge = -1;
+				else if(instr.direction == sm::Instr::Right) yarn_positions[yarn].nudge = 1;
 			}
 			assert(instr.src == instr.tgt);
 			break;
 		case sm::Instr::In:
+			for(auto yarn: tokens){
+				if(yarn_positions.count(yarn) && !yarn_positions[yarn].dontcare()){
+					print();
+					std::cerr << "Bringing yarn that is already in, in again. " << std::endl;
+					return false;
+				}
+			}
+			break;
 		case sm::Instr::Out:
+			for(auto yarn : tokens){
+				if(!yarn_positions.count(yarn) || yarn_positions[yarn].dontcare()){
+					print();
+					std::cerr << "Taking yarn out that wasn't in. " << std::endl;
+					return false;
+				}
+				yarn_positions[yarn].bed = 'x'; // yarn is out
+			}
 			break;
 		case sm::Instr::Unknown:
 		default:
@@ -360,7 +408,10 @@ bool sm::MachineState::is_loop_active(sm::Loop loop, sm::BedNeedle *bn){
 	}
 	return false;
 }
-
+bool sm::MachineState::is_yarn_active(std::string yarn){
+	if(yarn_positions.count(yarn) && !yarn_positions[yarn].dontcare()) return true;
+	return false;
+}
 void sm::MachineState::print(){
 
 	std::cout <<"--------------------------------------" << std::endl;
@@ -907,7 +958,7 @@ void sm::Mesh::save(std::string const &filename) const {
 	}
 
 	for(auto const &ins : total_order){
-		out << "I " << (ins.first == -1U ? 0 : ins.first+1) <<"/" << ins.second << "\n";
+		out << "I " << (ins.first == -1U ? 0 : ins.first+1) <<"/" << ins.second+1 << "\n";
 	}
 
 	for (auto const &u : units) {
