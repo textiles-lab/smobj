@@ -183,7 +183,7 @@ face turn-tuck))(
 		;;Carriers: A
 		tuck - f0 A
 		miss + f0 A
-
+#TODO update the geometry face
 face turn)((
 	edge -lX f0
 	edge +lX f0
@@ -192,6 +192,7 @@ face turn)((
     variant front
 	code
 		;;Carriers: A
+		miss + f0 A
 		miss - f0 A
 
 face turn))(
@@ -202,6 +203,7 @@ face turn))(
     variant front
 	code
 		;;Carriers: A
+		miss - f0 A
 		miss + f0 A
 
 face edge(
