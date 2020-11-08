@@ -500,13 +500,18 @@ struct Yarns {
 	std::vector< Unit > units;
 };
 
+//------ transfer helper functions -----
+// TODO move to a different file, perhaps
+// TODO API vector<vector<BedNeedle>> pieces, std::vector<vector<bool>> is_sheets 
+bool transfer_from_to();
+
 //------ helper functions ------
 
 bool compute_code_graph(sm::Code &code);
 bool compute_library_graph(sm::Library &library);
 // order face instructions to generate a total order (base order, may be reordered for efficiency)
 
-bool compute_total_order(sm::Mesh &mesh, sm::Code const &code);
+bool compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library const &library);
 
 // order the mesh faces in a partial order that follows dependencies using the face library
 bool can_order_faces(sm::Mesh const  &mesh,  sm::Library const  &library, std::vector<uint32_t> *_order);
@@ -563,5 +568,6 @@ void derive_face(sm::Library::Face const &source, uint8_t by_bits, sm::Library::
 // helper
 // todo maybe this should be templated
 bool  partial_order_to_sequence(std::set<std::pair<uint32_t, uint32_t>> partial, std::vector<uint32_t> *_sequence);
+bool  partial_order_to_sequences(std::set<std::pair<uint32_t, uint32_t>> partial, std::vector<std::vector<uint32_t>> &sequences, uint32_t max_iterations=-1U);
 
 } //namespace sm

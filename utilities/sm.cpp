@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <deque>
+#include <queue>
 #include <random>
 #include <iterator>
 
@@ -3304,6 +3305,71 @@ bool sm::add_hint(sm::Mesh::Hint const h, sm::Mesh *_mesh, sm::Library const &li
 	return false;
 }
 
+bool sm::partial_order_to_sequences(std::set<std::pair<uint32_t, uint32_t>> partial, std::vector<std::vector<uint32_t>> &sequences, uint32_t max_sequences){
+
+	std::cout << "Partial order to sequences... " << std::endl;
+	sequences.clear();
+
+	std::set<uint32_t> nodes;
+	for(auto p : partial) {nodes.insert(p.first); nodes.insert(p.second);}
+
+	struct State : std::vector<uint32_t>{
+	};
+
+	auto qcmp = [](State const &l, State const &r) { return l.size() < r.size(); };
+	std::priority_queue<State, std::vector<State>, decltype(qcmp)> pq(qcmp);
+
+	// initial states
+	for(auto n : nodes){
+		bool is_root = true;
+		for(auto p : partial){
+			if(p.second == n) is_root = false;
+		}
+		if(is_root){
+			State s;
+			s.emplace_back(n);
+			pq.push(s);
+		}
+	}
+	std::cout << "Starting states.. " << pq.size() << std::endl;
+	while(!pq.empty()){
+		auto s = pq.top();
+		pq.pop();
+		if(s.size() == nodes.size()){
+			sequences.emplace_back(s);
+			if(sequences.size() >= max_sequences) return true;
+			if(sequences.size()%10000 == 0){
+				std::cout << "Found " << sequences.size() << " sequences." << std::endl;
+			}
+			continue;
+		}
+		for(auto &n : nodes){
+			std::set<uint32_t> done(s.begin(), s.end());
+			if(done.count(n)) continue;
+			bool is_next  = true;
+			for(auto &p : partial){
+				if(p.second == n && !done.count(p.first)){
+					is_next = false;
+				}
+			}
+			if(is_next){
+				State nxt = s;
+				nxt.emplace_back(n);
+				pq.push(nxt);
+			}
+		}
+	}
+	uint32_t  t = 10;
+	if(sequences.size() < t) t = sequences.size();
+	for(uint32_t i = 0; i < t; ++i){
+		for(auto s : sequences[i]){
+			std::cout << s << " ";
+		} std::cout << std::endl;
+	}
+	std::cout << "..finished computing all sequences.. found " << sequences.size() << std::endl;
+
+	return !(sequences.empty());
+}
 // returns false if not a partial order, else returns a sequence of instructions that respects the order
 bool sm::partial_order_to_sequence(std::set<std::pair<uint32_t, uint32_t>> partial, std::vector<uint32_t> *_sequence){
 	assert(_sequence);
@@ -3733,8 +3799,8 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 	return true;
 }
 
-bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code){
-
+bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library const &library){
+	std::cout << "Computing total order..." << std::endl;
 	mesh.total_order.clear();
 	std::vector<uint32_t> sequence;
 	std::map<sm::Mesh::FaceEdge, uint32_t> face_instr_idx;
@@ -3791,7 +3857,7 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code){
 		face_instr_idx[fe] = idx; 
 		instr_face_map[idx] = fe;
 	}
-	
+
 	{
 		for(auto const &h : mesh.hints){
 			if(h.type == sm::Mesh::Hint::Order){
@@ -3807,7 +3873,7 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code){
 				else{
 					std::cerr << "hint includes face instruction that does not exist. " << h.to_string() << std::endl;
 				}
-		
+
 			}
 		}
 		for(auto const &h : mesh.hints){
@@ -3816,27 +3882,36 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code){
 				partials.insert(std::make_pair(face_instr_idx[h.lhs], face_instr_idx[rhs]));
 			}
 		}
-		if(!partial_order_to_sequence(partials, &sequence)){
-			//TODO find offending hints
-			std::cerr << "Instruction hints have a cycle. " << std::endl;
-			return false;
-		}
-		else{
-			// seqeunce is incomplete
-			if(sequence.size() != face_instr_idx.size()){
-				return false;
-			}
-			// create total order from instructions
-			for(auto const &x : sequence){
-				std::pair<uint32_t, uint32_t> o; 
-				auto fe = instr_face_map[x]; o.first = fe.face; o.second = fe.edge;
-				mesh.total_order.emplace_back(o);
-			}
-		}
-
 	}
 
-	return true;
+	{
+		std::vector<std::vector<uint32_t>> all_sequences;
+		if(partial_order_to_sequences(partials, all_sequences, 1000)){
+			for(auto &order : all_sequences){
+				mesh.total_order.clear();
+				for(auto const &x : order){
+					std::pair<uint32_t, uint32_t> o; 
+					auto fe = instr_face_map[x]; o.first = fe.face; o.second = fe.edge;
+					mesh.total_order.emplace_back(o);
+				}
+
+				std::vector<Mesh::Hint> offenders;
+				bool strict = true;
+				bool verified = verify(mesh, library, code, &offenders, strict);
+
+				if(verified){
+					std::cout << "Succeeded with sequence " << &order - &all_sequences[0] << " / " << all_sequences.size() << std::endl;
+					return true;
+				}
+
+			}
+		}
+		std::cerr << "Tried 1000 possible total orders, need more ordering constraints.." << std::endl;
+	}
+
+
+	// not verified..
+	return false;
 }
 
 // knitout from faces

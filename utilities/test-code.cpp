@@ -25,7 +25,7 @@ int main(int argc, char *argv[]){
 	
 	std::vector<sm::Mesh::Hint> offenders;
 	//if(sm::verify(mesh, lib, code, &offenders) && sm::compute_total_order(mesh, code)){
-	if( /*sm::compute_total_order(mesh, code)  && */sm::verify(mesh, lib, code, &offenders, true)){
+	if( sm::verify(mesh, lib, code, &offenders, true)){
 		std::string knitout = sm::knitout(mesh, lib, code);
 		std::ofstream kw("out.knitout");
 		kw << knitout;
@@ -36,15 +36,16 @@ int main(int argc, char *argv[]){
 		for(auto const &fi : mesh.total_order){
 			std::cout << fi.first << "/" << fi.second << std::endl; 
 		}
-	} else {
-		std::cout << "Could not compute total order/verifier. " << std::endl;
-		if(!sm::compute_total_order(mesh, code)){
+	} 
+	{
+		if(!sm::compute_total_order(mesh, code, lib)){
 			std::cerr << "\tTotal order doesn't exist. " << std::endl;
 		}
+		/*
 		if(!sm::verify(mesh, lib, code, &offenders, true)){
 			std::cerr << "\tCould not verify mesh. " << std::endl;
 			std::cerr << "\tOffenders: " << offenders.size() << std::endl;
-		}
+		}*/
 	}
 	return 0;
 } 
