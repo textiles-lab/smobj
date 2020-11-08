@@ -18,7 +18,7 @@
 //---------------------------------
 //Machine
 
-bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code const &code){
+bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code const &code){
 
 	//DEBUG
 	{
@@ -47,6 +47,9 @@ bool sm::MachineState::make(sm::Instr instr, sm::Mesh const &mesh, sm::Code cons
 		passes.emplace_back();
 	}
 	auto &curr_pass = passes.back();
+
+	// update step
+	instr.step = passes.size() - 1;
 
 	auto clear_location = [&](sm::BedNeedle bn){
 		assert(!bn.dontcare());
@@ -4009,6 +4012,7 @@ std::string sm::knitout(sm::Mesh &mesh, sm::Library const &library, sm::Code con
 
 
 	mesh.total_instructions.clear();
+	MachineState machine;
 	// go by order, plug translate by and hint index to get knitout instruction
 	for(auto const &fi : mesh.total_order){
 	
@@ -4018,6 +4022,7 @@ std::string sm::knitout(sm::Mesh &mesh, sm::Library const &library, sm::Code con
 			assert(xfer_op.op == sm::Instr::Xfer);
 			knitout_string += xfer_op.to_string(true);
 			xfer_op.face_instr = fi;
+			machine.make(xfer_op, mesh, code); // will update pass
 			mesh.total_instructions.emplace_back(xfer_op);
 		}
 		else{
@@ -4036,6 +4041,7 @@ std::string sm::knitout(sm::Mesh &mesh, sm::Library const &library, sm::Code con
 			auto ins = l.instrs[fi.second];
 			ins.face_instr = fi;
 			ins.translate(t);
+			machine.make(ins, mesh, code); // will update pass
 			mesh.total_instructions.emplace_back(ins);
 		}
 

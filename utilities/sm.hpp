@@ -67,6 +67,7 @@ namespace sm {
 		BedNeedle tgt;   // location produced (n/a: drop)
 		BedNeedle tgt2; // aux produced (only for split)
 		std::string yarns;
+		uint32_t step=-1U;
 		int rack() const {
 			//TODO enum this
 			
@@ -174,7 +175,7 @@ namespace sm {
 		std::map<std::string, BedNeedle> yarn_positions; // which yarn is parked where
 		std::map<BedNeedle, std::vector<uint32_t>> bn_loops; // maintain loop + order
 		std::vector< std::vector<Instr> > passes;
-		bool make(Instr instr, sm::Mesh const &mesh, sm::Code const &code);
+		bool make(Instr &instr, sm::Mesh const &mesh, sm::Code const &code);
 		bool empty();
 	
 		bool find_loop_at_location(BedNeedle const &bn, Loop* loop); // false if no loop was created, else return the latest loop at location
