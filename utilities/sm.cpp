@@ -61,6 +61,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		assert(!bn.dontcare());
 		bn_loops[bn].emplace_back(loop_idx);
 		loops[loop_idx].sequence.emplace_back(bn);
+		loops[loop_idx].sources.emplace_back(instr);
 	};
 	auto make_loop = [&](std::string yarn, sm::BedNeedle bn, sm::Instr::Direction direction)->uint32_t{
 		if(!is_yarn_active(yarn)){
@@ -3778,8 +3779,8 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 		for(auto const &fi : mesh.total_order){
 			sm::Instr ins;
 			if(fi.first == -1U){
-				ins.face_instr = fi;
 				ins = mesh.move_instructions[fi.second];
+				ins.face_instr = fi;
 			}
 			else{
 
@@ -4027,7 +4028,6 @@ std::string sm::knitout(sm::Mesh &mesh, sm::Library const &library, sm::Code con
 	MachineState machine;
 	// go by order, plug translate by and hint index to get knitout instruction
 	for(auto const &fi : mesh.total_order){
-	
 		if(fi.first == -1U){ // pick from instruction stream
 			assert(fi.second < mesh.move_instructions.size());
 			auto xfer_op = mesh.move_instructions[fi.second];

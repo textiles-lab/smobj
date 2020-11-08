@@ -160,7 +160,8 @@ namespace sm {
 	struct Loop{
 		uint32_t id = -1U;
 		uint32_t prev = -1U;
-		std::vector<BedNeedle> sequence; // maybe this should be a vector of locations
+		std::vector<BedNeedle> sequence; // a vector of locations
+		std::vector<sm::Instr> sources;  // a vector of instructions
 		BedNeedle bn; // location at which this loop was produced (initially bn == produced_bn)
 		uint32_t step = -1U; // step at which this loop was produced (might be moved subsequently)
 		std::string yarn = ""; // using yarn maybe yarn_id
