@@ -53,6 +53,22 @@ namespace sm {
 		bool dontcare() const{
 			return bed == 'x';
 		}
+		bool is_front() const{
+			return (bed == 'f' || bed == 'F');
+		}
+		bool is_back() const{
+			return (bed == 'b' || bed == 'B');
+		}
+		bool is_hook() const{
+			return (bed == 'f' || bed == 'b');
+		}
+		bool is_slider() const{
+			return (bed == 'F' || bed == 'B');
+		}
+		float position_on_front(int racking) const{
+			if(is_front()) return location();
+			return (location() + racking);
+		}
 	};
 
 	// awkward that sm.hpp seems to have more and more knitout specific information, but well...

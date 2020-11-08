@@ -22,7 +22,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 
 	//DEBUG
 	{
-		std::cout << "Making: " << instr.to_string() << " generated from " << instr.face_instr.first << "," << instr.face_instr.second << std::endl;
+		std::cout << "Making: " << instr.to_string() << " generated from " << instr.face_instr.first << "," << instr.face_instr.second << " at rack: " << racking << std::endl;
 	}
 	bool new_pass = false;
 	if(instr.op == sm::Instr::Xfer || instr.op == sm::Instr::Split){
@@ -31,6 +31,8 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 			racking = instr.rack();
 			new_pass = true;
 		}
+	} else {
+		racking = 0; // TODO should we allow independent racking or knitting at rack?
 	}
 	if(!passes.empty() && !passes.back().empty()){
 		auto last = passes.back().back();
@@ -38,10 +40,11 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		if(last.yarns != instr.yarns) new_pass = true; // yarn setup changed
 		if(last.is_move() && instr.is_loop()) new_pass  = true;
 		if(last.is_loop() && instr.is_move()) new_pass = true;
-		// going rightwards but lower needle than previous instruction
-		// going leftwards but higher needle than previous instruction
-		// todo loop vs mov instructios
-		// f->b, b->f 
+		if(last.is_move() && last.src.is_front() && instr.src.is_back()) new_pass = true; 
+		if(last.is_move() && last.src.is_back() && instr.src.is_front()) new_pass = true;
+		if(last.tgt.needle == instr.tgt.needle /*&& not racking 0.25*/) new_pass = true;
+		if(!instr.tgt.dontcare() && last.tgt.needle > instr.tgt.needle && instr.direction == sm::Instr::Right) new_pass = true;
+		if(!instr.tgt.dontcare() && last.tgt.needle < instr.tgt.needle && instr.direction == sm::Instr::Left) new_pass = true;
 	}
 	if(passes.empty() || new_pass) {
 		passes.emplace_back();
@@ -81,12 +84,14 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 			// use yarn positions to also track if found where expected
 			// TODO this will penalize not having misses inside a face as well, but that is okay for now
 			sm::BedNeedle ypn = yarn_positions[yarn];
-			float yslack = std::abs(ypn.location() - bn.location());
+			float yslack = std::abs(ypn.position_on_front(racking) - bn.position_on_front(racking));
+			//float yslack = std::abs(ypn.location() - bn.location());
 			if(direction == sm::Instr::Left){
 				if(!(yslack >= 0.f && yslack < 1.f)){
 					std::cerr << "(A)Yarn location is too far away from where it should be used. Yslack: " << yslack  << std::endl;
 					std::cerr << "ypn: " << ypn.to_string() << " bn: " << bn.to_string() << std::endl;
 					std::cerr << "ypn: " << ypn.bed << ypn.location() << " bn: " << bn.bed << bn.location() << std::endl;
+					std::cerr << "ypn(f): " <<  ypn.position_on_front(racking) << " bn: " <<  bn.position_on_front(racking) << std::endl;
 					//return false;
 					return -1U;
 				}
@@ -96,6 +101,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					std::cerr << "(B)Yarn location is too far away from where it should be used. Yslack: " << yslack << std::endl;
 					std::cerr << "ypn: " << ypn.to_string() << " bn: " << bn.to_string() << std::endl;
 					std::cerr << "ypn: " << ypn.bed << ypn.location() << " bn: " << bn.bed << bn.location() << std::endl;
+					std::cerr << "ypn(f): " <<  ypn.position_on_front(racking) << " bn: " <<  bn.position_on_front(racking) << std::endl;
 					//return false;
 					return -1U;
 				}
@@ -264,9 +270,9 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 				// if the last made location for any yarn was instr.src, move it to instr.tgt 
 				for(auto yp : yarn_positions){
 					sm::BedNeedle ybn = loops[*it].sequence.back();
-					if(!yp.second.dontcare() && ybn == instr.src){
-						sm::BedNeedle obn = yarn_positions[yp.first];
-						float loc = instr.src.location() - yarn_positions[yp.first].location();
+					if(!yp.second.dontcare() && ybn == instr.src && std::abs(ybn.location() - yp.second.location()) <= 0.5f){
+						sm::BedNeedle obn = yp.second;
+						float loc = instr.src.location() - yp.second.location();
 						assert(loc != 0.f);
 						yarn_positions[yp.first] = instr.tgt;
 						if(loc > 0) yarn_positions[yp.first].nudge = -1; 
@@ -360,7 +366,8 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 				if(!is_loop_active(loops[loops[l_id].prev], &bn2)) continue;
 				sm::BedNeedle bnc = loops[l_id].sequence.back();
 				sm::BedNeedle bnp = loops[loops[l_id].prev].sequence.back();
-				uint32_t slack = std::abs(bnc.needle - bnp.needle);
+				//uint32_t slack = std::abs(bnc.needle - bnp.needle);
+				uint32_t slack = std::abs(bnc.position_on_front(racking) - bnp.position_on_front(racking));
 				if(bnc.bed != bnp.bed && bnc.needle == bnp.needle) slack++;
 				if(slack > loops[l_id].prev_slack){
 					std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
@@ -381,14 +388,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		// Does xfer* instruction create loop tangle (not local)
 		{
 		}
-
-		// Does xfer* violate slack on the bed
-		{
-		}
-	} else {
-		// Does instruction use locations not available to it ? (needs more info smobj+code)
 	}
-
 	// maybe tracking passes is not necessary, but why not..
 	curr_pass.emplace_back(instr);
 
@@ -3902,7 +3902,7 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 
 	{
 		std::vector<std::vector<uint32_t>> all_sequences;
-		if(partial_order_to_sequences(partials, all_sequences, 1000)){
+		if(partial_order_to_sequences(partials, all_sequences, 1000)){ //DEBUG 1, else 1000
 			for(auto &order : all_sequences){
 				mesh.total_order.clear();
 				for(auto const &x : order){
@@ -4432,7 +4432,7 @@ bool sm::create_in_slack_xfer(uint32_t face_id,  sm::Mesh &mesh, sm::Library &li
 
 bool sm::compute_library_graph(sm::Library &library){
 	// TODO
-	return false;
+	return true;
 }
 bool sm::compute_code_graph(sm::Code &code){
 	// doesn't really need library but maybe should be tested against both
