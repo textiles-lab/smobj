@@ -260,8 +260,20 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	switch( instr.op ){
 		case sm::Instr::Xfer:
 			for(auto it = bn_loops[instr.src].rbegin(); it != bn_loops[instr.src].rend(); ++it){
+				// if the last made location for any yarn was instr.src, move it to instr.tgt 
+				for(auto yp : yarn_positions){
+					sm::BedNeedle ybn = loops[*it].sequence.back();
+					if(!yp.second.dontcare() && ybn == instr.src){
+						sm::BedNeedle obn = yarn_positions[yp.first];
+						float loc = instr.src.location() - yarn_positions[yp.first].location();
+						assert(loc != 0.f);
+						yarn_positions[yp.first] = instr.tgt;
+						if(loc > 0) yarn_positions[yp.first].nudge = -1; 
+						else yarn_positions[yp.first].nudge = 1;
+						std::cout << "yarn moved along with xfer op from " << obn.bed << obn.location()  << " to " << yarn_positions[yp.first].bed << yarn_positions[yp.first].location() << " op " << instr.to_string() << std::endl;
+					}
+				}
 				add_to_location(instr.tgt, *it);
-				// make sure instr.src loop id's bn-sequence is updated
 			}
 			clear_location(instr.src);
 			break;
