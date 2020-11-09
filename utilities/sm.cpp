@@ -24,6 +24,24 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	{
 		std::cout << "Making: " << instr.to_string() << " generated from " << instr.face_instr.first << "," << instr.face_instr.second << " at rack: " << racking << std::endl;
 	}
+	
+	// loop setup "a"
+	std::set<sm::Loop> lefts, rights;
+	if(instr.face_instr.first == -1U){
+		for(auto loop: loops){
+			sm::BedNeedle bn;
+			if(is_loop_active(loop, &bn)){
+				float p = bn.position_on_front(racking);
+				if(p >= instr.src.position_on_front(racking)){
+					rights.insert(loop);
+				}
+				if(p <= instr.src.position_on_front(racking)){
+					lefts.insert(loop);
+				}
+			}
+		}
+	}
+
 	bool new_pass = false;
 	if(instr.op == sm::Instr::Xfer || instr.op == sm::Instr::Split){
 		if(racking != instr.rack()){
@@ -379,14 +397,28 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 			}
 		}
 	}
-
+	// loop setup "b"
 	if(instr.face_instr.first == -1U){
-		// Does xfer* instruction create yarn tangle  (not local)
-		{
+		bool invalid = false;
+		for(auto loop: loops){
+			sm::BedNeedle bn;
+			if(is_loop_active(loop, &bn)){
+				float p = bn.position_on_front(racking);
+				if(p >= instr.tgt.position_on_front(racking)){
+					if(!rights.count(loop)){
+						invalid = true;
+					}
+				}
+				if(p <= instr.tgt.position_on_front(racking)){
+					if(!rights.count(loop)){
+						invalid = true;
+					}
+				}
+			}
 		}
-
-		// Does xfer* instruction create loop tangle (not local)
-		{
+		if(invalid){
+			std::cerr << "WARNING:Instruction " << instr.to_string() << " re-arranged loops" << std::endl;
+			// return false; // check on pickup ?
 		}
 	}
 	// maybe tracking passes is not necessary, but why not..

@@ -184,6 +184,10 @@ namespace sm {
 		std::pair<uint32_t, uint32_t> face_instr; // face_instr that made the loop
 		uint32_t prev_slack = -1U; // (maximum) distance between this loop and its (yarn-wise)previous loop during construction
 		uint32_t post_slack = -1U; // (maximum) distance between this loop and the (yarn-wise) next loop during construction
+	
+		bool operator<(const Loop& o)const{
+			return (id < o.id);
+		}
 	};
 	struct MachineState{
 		int racking = 0;
