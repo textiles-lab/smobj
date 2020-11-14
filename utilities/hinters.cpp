@@ -551,18 +551,11 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
 // For instructions within the face, insert partial orders
 bool sm::constraint_assign_order_from_face_order(sm::Mesh &mesh, sm::Code const &code_library, sm::Library const &face_library){
 
-	std::vector<uint32_t> order;
-	if(!can_order_faces(mesh, face_library, &order)){
-		return false;
-	}
-	assert(order.size() == mesh.faces.size());
-	std::map<uint32_t, std::pair<std::string, sm::Mesh::Hint::HintSource> > face_variants;
-	std::map<std::string, uint32_t> name_to_code_idx;
-	std::map<sm::Mesh::FaceEdge, uint32_t> face_instr_idx; 
 	
-	for(auto const &c : code_library.faces){
-		name_to_code_idx[c.key()] = &c - &code_library.faces[0];
-	}
+	std::map<uint32_t, std::pair<std::string, sm::Mesh::Hint::HintSource> > face_variants;
+	std::vector<sm::Mesh::Hint> candidates;
+	std::map<sm::Mesh::FaceEdge, uint32_t> face_instr_idx; 
+
 	for(auto const &h : mesh.hints){
 		if(h.type == sm::Mesh::Hint::Variant){
 			// TODO deal with multiple possible constraints
@@ -584,74 +577,36 @@ bool sm::constraint_assign_order_from_face_order(sm::Mesh &mesh, sm::Code const 
 			}
 		}
 	}
-	std::vector<sm::Mesh::Hint> candidates;
-
-	for(uint32_t fi_ = 0; fi_ < order.size(); ++fi_){
-		uint32_t fi = order[fi_];
-		if(!face_variants.count(fi)) continue;
-		auto variant_src = face_variants[fi];
-		std::string signature = mesh.library[mesh.faces[fi].type] + ' ' + variant_src.first;
-		if(!name_to_code_idx.count(signature)) continue;
-		auto const &li = code_library.faces[name_to_code_idx[signature]];
-		
-		if(li.instrs.size() <= 1) continue;
-
-		for(uint32_t k = 0; k < li.instrs.size()-1; ++k){
-			sm::Mesh::FaceEdge lhs, rhs;
-			lhs.face = rhs.face = fi;
-			lhs.edge = k; rhs.edge = (k+1);
-			sm::Mesh::Hint h;
-			h.type = sm::Mesh::Hint::Order;
-			h.src = variant_src.second; // if variant is heuristic, order is heuristic
-			h.lhs = lhs; h.rhs = rhs;
-			candidates.emplace_back(h);
-			
-		}
-	}
-
-/*
-	uint32_t fj = order[0];
-	uint32_t fi_ = 1;
-	for(uint32_t i = 0; i < order.size(); ++i){
-		uint32_t fi = order[i];
-		if(!face_variants.count(fi)) continue;
-		auto variant_src_i = face_variants[fi];
-		std::string name_i = mesh.library[mesh.faces[fi].type] + ' ' + variant_src_i.first;
-		if(!name_to_code_idx.count(name_i)) continue;
-		auto const &li = code_library.faces[name_to_code_idx[name_i]];
-		if(li.instrs.empty()) continue;
-		fj = order[i];
-		fi_ = i+1;
-		break;
-	}
-	for(; fi_ < order.size(); ++fi_){
-		uint32_t fi = order[fi_];
-		if(!face_variants.count(fi)) continue;
-		if(!face_variants.count(fj)) continue;
-		// code faces
-		auto variant_src_j = face_variants[fj];
-		auto variant_src_i = face_variants[fi];
-		std::string name_j = mesh.library[mesh.faces[fj].type] + ' ' + variant_src_j.first;
-		std::string name_i = mesh.library[mesh.faces[fi].type] + ' ' + variant_src_i.first;
-		if(!name_to_code_idx.count(name_j)) continue;
-		if(!name_to_code_idx.count(name_i)) continue;
-		auto const &lj = code_library.faces[name_to_code_idx[name_j]]; 
-		auto const &li = code_library.faces[name_to_code_idx[name_i]];
-		if(li.instrs.empty()) continue; // li is empty, so continue to the next one
-		// assign order between fj->fi 
+	sm::InstrGraph graph;
+	compute_instruction_graph(mesh, code_library, &graph);
+	//std::cout << "Graph: " << graph.nodes.size() << " edges l(" << graph.edge_loops.size() << ") y(" << graph.edge_yarns.size() << ")" << std::endl;
+	for(auto pr : graph.edge_loops){
 		sm::Mesh::Hint h;
-		h.src = sm::Mesh::Hint::Inferred;
+		auto i1 = graph.nodes[pr.first];
+		auto i2 = graph.nodes[pr.second];
+		h.lhs.face = i1.face_instr.first; h.lhs.edge = i1.face_instr.second;
+		sm::Mesh::FaceEdge rhs;
+		rhs.face =i2.face_instr.first; rhs.edge = i2.face_instr.second;
+		h.rhs = rhs;
 		h.type = sm::Mesh::Hint::Order;
-		sm::Mesh::FaceEdge lhs, rhs;
-		lhs.face = fj;
-		lhs.edge = lj.instrs.size()-1;
-		rhs.face = fi;
-		rhs.edge = 0;
-		h.lhs = lhs; h.rhs = rhs;
+		h.src = sm::Mesh::Hint::Inferred;
+		//std::cout << "Loop edge between " << i1.face_instr.first << "/" << i1.face_instr.second << "-> " << i2.face_instr.first << "/" <<i2.face_instr.second << std::endl;
 		candidates.emplace_back(h);
-		fj = fi;
 	}
-*/
+	for(auto pr : graph.edge_yarns){
+		sm::Mesh::Hint h;
+		auto i1 = graph.nodes[pr.first];
+		auto i2 = graph.nodes[pr.second];
+		h.lhs.face = i1.face_instr.first; h.lhs.edge = i1.face_instr.second;
+		sm::Mesh::FaceEdge rhs;
+		rhs.face =i2.face_instr.first; rhs.edge = i2.face_instr.second;
+		h.rhs = rhs;
+		h.type = sm::Mesh::Hint::Order;
+		h.src = sm::Mesh::Hint::Inferred;
+		//std::cout << "Yarn edge between " << i1.face_instr.first << "/" << i1.face_instr.second << "-> " << i2.face_instr.first << "/" <<i2.face_instr.second << std::endl;
+		candidates.emplace_back(h);
+	}
+
 	// check if these hints are really new
 	bool did_update = false;
 	std::set<std::pair<uint32_t, uint32_t>> partials; // note: this should not be necessary here, but in general for checking ordering hints will be useful

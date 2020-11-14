@@ -4821,3 +4821,98 @@ bool sm::compute_code_graph(sm::Code &code){
 	std::cout << "Computed code graph using code faces " << code.faces.size()  <<  std::endl;
 	return true;
 }
+
+bool sm::compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGraph *_graph){
+	assert(_graph);
+	InstrGraph &graph = *_graph;
+	std::map<uint32_t, std::string> face_variant;
+	std::map<std::string, uint32_t> code_name_to_idx;
+	for(auto const &f : code.faces){
+		code_name_to_idx[f.key()] = &f - &code.faces[0];
+	}
+	for(auto const &h : mesh.hints){
+		if(h.type == sm::Mesh::Hint::Variant){
+			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
+		}
+	}
+	std::map<std::pair<uint32_t, uint32_t> , uint32_t> fi_to_idx;
+	for(auto &f : mesh.faces){
+		uint32_t fi = &f - &mesh.faces[0];
+		if(face_variant.count(fi)){
+			std::string name = mesh.library[f.type] + ' ' + face_variant[fi];
+			if(!code_name_to_idx.count(name)) continue;
+			auto c = code.faces[code_name_to_idx[name]];
+			for(auto &ins : c.instrs){
+				auto in = ins;
+				in.face_instr = std::make_pair(fi, &ins - &c.instrs[0]);
+				fi_to_idx[in.face_instr] = graph.nodes.size();
+				graph.nodes.emplace_back(in);
+			}
+		}
+	}
+	for(auto const &c : mesh.connections){
+		if(face_variant.count(c.a.face) && face_variant.count(c.b.face)){
+			std::string aname = mesh.library[mesh.faces[c.a.face].type] + ' ' + face_variant[c.a.face];
+			std::string bname = mesh.library[mesh.faces[c.b.face].type] + ' ' + face_variant[c.b.face];
+			if(!code_name_to_idx.count(aname) || ! code_name_to_idx.count(bname)) continue;
+			auto ca = code.faces[code_name_to_idx[aname]];
+			auto cb = code.faces[code_name_to_idx[bname]];
+			auto fa = c.a.face;
+			auto fb = c.b.face;
+			if(ca.edges[c.a.edge].direction == sm::Code::Face::Edge::In && cb.edges[c.b.edge].direction == sm::Code::Face::Edge::Out){
+				// a is in, b is out (ulta)
+				std::swap(ca,cb);
+				std::swap(fa,fb);
+			}
+			
+			{
+				// a is out, b is in (typical)
+				// ca (instruction-to-edge)
+				// cb (edge-to-instruction)
+				for(auto pr_a: ca.loop_instruction_to_edge_connections){
+					for(auto pr_b: cb.loop_edge_to_instruction_connections){
+						auto face_instr_1 = std::make_pair(fa, pr_a.first);
+						auto face_instr_2 = std::make_pair(fb, pr_b.second);
+						graph.edge_loops.insert(std::make_pair(fi_to_idx[face_instr_1], fi_to_idx[face_instr_2]));
+					}
+				}
+				for(auto pr_a_: ca.yarn_instruction_to_edge_connections){
+					for(auto pr_b_: cb.yarn_edge_to_instruction_connections){
+						auto pr_a = pr_a_.second;
+						auto pr_b = pr_b_.second;
+
+						auto face_instr_1 = std::make_pair(fa, pr_a.first);
+						auto face_instr_2 = std::make_pair(fb, pr_b.second);
+						graph.edge_yarns.insert(std::make_pair(fi_to_idx[face_instr_1], fi_to_idx[face_instr_2]));
+					}
+				}
+				// else other (instruction-to-instruction)
+				for(auto pr : ca.loop_instruction_to_instruction_connections){
+					auto i1 = std::make_pair(fa, pr.first);
+					auto i2 = std::make_pair(fa, pr.second);
+					graph.edge_loops.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
+				}
+				for(auto pr_ : ca.yarn_instruction_to_instruction_connections){
+					auto pr = pr_.second;
+					auto i1 = std::make_pair(fa, pr.first);
+					auto i2 = std::make_pair(fa, pr.second);
+					graph.edge_yarns.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
+				}
+				
+				for(auto pr : cb.loop_instruction_to_instruction_connections){
+					auto i1 = std::make_pair(fb, pr.first);
+					auto i2 = std::make_pair(fb, pr.second);
+					graph.edge_loops.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
+				}
+				for(auto pr_ : cb.yarn_instruction_to_instruction_connections){
+					auto pr = pr_.second;
+					auto i1 = std::make_pair(fb, pr.first);
+					auto i2 = std::make_pair(fb, pr.second);
+					graph.edge_yarns.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
+				}
+			}
+		}
+	}
+
+	return true;
+}

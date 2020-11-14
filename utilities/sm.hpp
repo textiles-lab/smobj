@@ -522,6 +522,11 @@ struct Yarns {
 	std::vector< Unit > units;
 };
 
+struct InstrGraph{
+	std::vector<Instr> nodes; // record face instr in these
+	std::set<std::pair<uint32_t, uint32_t>> edge_loops;
+	std::set<std::pair<uint32_t, uint32_t>> edge_yarns;
+};
 //------ transfer helper functions -----
 // TODO move to a different file, perhaps
 // TODO API vector<vector<BedNeedle>> pieces, std::vector<vector<bool>> is_sheets 
@@ -531,8 +536,10 @@ bool transfer_from_to();
 
 bool compute_code_graph(sm::Code &code);
 bool compute_library_graph(sm::Library &library);
-// order face instructions to generate a total order (base order, may be reordered for efficiency)
 
+bool compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGraph *graph); // TODO implement this
+
+// total order of face instructions 
 bool compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library const &library);
 
 // order the mesh faces in a partial order that follows dependencies using the face library
