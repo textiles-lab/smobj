@@ -39,12 +39,12 @@ namespace sm {
 		bool operator< (const BedNeedle& rhs) const {
 			float loc = location();
 			float rloc = rhs.location();
-			return std::tie(bed, loc) < std::tie(rhs.bed, rloc);
+			return std::tie(bed, loc, depth) < std::tie(rhs.bed, rloc, rhs.depth);
 		}
 		bool operator== (const BedNeedle& rhs) const {
 			float loc = location();
 			float rloc = rhs.location();
-			return std::tie(bed, loc) == std::tie(rhs.bed, rloc);
+			return std::tie(bed, loc, depth) == std::tie(rhs.bed, rloc, rhs.depth);
 		}
 		std::string to_string() const{
 			int n = location();
@@ -203,6 +203,9 @@ namespace sm {
 		bool find_last_loop_for_yarn(std::string yarn, Loop* loop); // the last loop made with this yarn
 		bool is_loop_active(Loop loop, sm::BedNeedle *bn); // if active return the location at which exists
 		bool is_yarn_active(std::string yarn);
+		
+		BedNeedle get_new_needle_at(BedNeedle in);
+
 		void print();
 	};
 
@@ -553,18 +556,6 @@ bool add_hint(sm::Mesh::Hint h, sm::Mesh *mesh, sm::Library const &library, sm::
 
 // verify existing hints
 bool verify(sm::Mesh const &mesh, sm::Library const &library,  Code const &code, std::vector<Mesh::Hint> *_offenders, bool strict=false);
-
-
-// transfer and slack helpers
-// insert a custom face to satisfy some slack and/or xfer constraint
-// given the entire structure of the mesh.
-bool create_out_slack_xfer(uint32_t face_id,  sm::Mesh &mesh, sm::Library &library, sm::Code &code);
-bool create_in_slack_xfer(uint32_t face_id,  sm::Mesh &mesh, sm::Library &library, sm::Code &code);
-//bool create_out_xfer();	// TODO
-//bool create_in_xfer();	// TODO
-//bool create_out_slack(); // this is not allowed, right (unless explicit)?
-//bool create_in_slack();  // this is not allowed, right (unless explicit)?
-
 
 
 //build from a mesh and library, connecting yarns over edges:
