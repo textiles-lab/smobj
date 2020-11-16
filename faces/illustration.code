@@ -298,6 +298,7 @@ face knit-fair-isle-2+ #slightly awkward in terms of using all resources
 	code
 		;;Carriers: A B
 		knit + f0 B
+		miss + f0 A
 
 face knit-fair-isle-1+
 	edge -lX f0
@@ -308,6 +309,29 @@ face knit-fair-isle-1+
 	code
 		;;Carriers: A B
 		knit + f0 A
+		miss + f0 B
+
+face knit-fair-isle-1-
+	edge -lX f0
+	edge -yX f+0.5 A B
+	edge +lX f0
+	edge +yX f-0.5 A B
+	variant front
+	code
+		;;Carriers: A B
+		knit - f0 A
+
+face knit-fair-isle-2-
+	edge -lX f0
+	edge -yX f+0.5 A B
+	edge +lX f0
+	edge +yX f-0.5 A B
+	variant front
+	code
+		;;Carriers: A B
+		knit - f0 B
+
+
 
 face knit-plating-1+
 	edge -lX f0
@@ -338,6 +362,48 @@ face knit+.2111 #What face is this ??
 	code
 		;;Carriers: A
 		knit + f0 A
+
+face knittuck+ 
+	edge -lX f0
+	edge +yX f0.5 A
+	edge +lX f0
+	edge -yX f-0.5 A
+	variant front
+	code
+		;;Carriers: A
+		knit + f0 A
+
+face knittuck-
+	edge -lX f0
+	edge -yX f-0.5 A
+	edge +lX f0
+	edge +yX f0.5 A
+	variant front
+	code
+		;;Carriers: A
+		knit - f0 A
+
+
+face knittuck+ 
+	edge -lX b0
+	edge +yX b-0.5 A
+	edge +lX b0
+	edge -yX b0.5 A
+	variant back
+	code
+		;;Carriers: A
+		knit - b0 A
+
+face knittuck-
+	edge -lX b0
+	edge -yX b0.5 A
+	edge +lX b0
+	edge +yX b-0.5 A
+	variant back
+	code
+		;;Carriers: A
+		knit + b0 A
+
 
 face drop+
 	edge -l1 f0
@@ -756,6 +822,7 @@ face tuck-twist+
 	code
 		;;Carriers: A
 		tuck + b0 A
+		miss - b0 A
 
 face tuck-twist-
 	edge -lX b0
@@ -766,6 +833,7 @@ face tuck-twist-
 	code
 		;;Carriers: A
 		tuck - b0 A
+		miss + b0 A
 
 
 face purl+
@@ -810,6 +878,32 @@ face purl-
 
 
 #complex faces
+face spacer4+
+	edge -lX f0
+	edge -lX b0
+	edge -lX f1
+	edge -lX b1
+	edge -lX f2
+	edge -lX b2
+	edge -lX f3
+	edge -lX b3
+	edge +yX b3.5 B
+	edge +lX b3
+	edge +lX f3
+	edge +lX b2
+	edge +lX f2
+	edge +lX b1
+	edge +lX f1
+	edge +lX b0
+	edge +lX f0
+	edge -yX f-0.5 B
+	variant front-back
+	code
+		;;Carriers: B
+		tuck + f0 B
+		tuck + b1 B
+		tuck + f2 B
+		tuck + b3 B
 #todo 
 #face seed-stitch+
 #	edge -l1 f0
