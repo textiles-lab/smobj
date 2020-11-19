@@ -169,6 +169,11 @@ namespace sm {
 		bool is_loop() const{
 			return (op == Knit || op == Tuck || op == Split || op == Drop || op == Miss);
 		}
+
+		glm::vec3 posMesh_start(sm::Mesh const &mesh);
+		glm::vec3 posMachineBed_start();
+		glm::vec3 posMesh_end(sm::Mesh const &mesh);
+		glm::vec3 posMachineBed_end();
 	};
 
 
@@ -224,6 +229,7 @@ struct Mesh {
 	struct Face : public std::vector< uint32_t > {
 		uint32_t type = -1U;
 		uint32_t source = 0; //1-based source line number; 0 means 'unknown'
+	
 	};
 	std::vector< Face > faces;
 
@@ -538,6 +544,7 @@ bool transfer_from_to();
 
 //------ helper functions ------
 
+glm::vec3 face_centroid(uint32_t fid, sm::Mesh const &mesh);
 
 bool compute_code_graph(sm::Code &code);
 bool compute_library_graph(sm::Library &library); //NOTIMPLEMENTED

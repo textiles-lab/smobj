@@ -3587,6 +3587,7 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 		}
 	}
 
+	MachineState machine;
 	mesh.total_instructions.clear();
 	// go by order, plug translate by and hint index to get knitout instruction
 	for(auto const &fi : mesh.total_order){
@@ -3595,6 +3596,7 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 			auto xfer_op = mesh.move_instructions[fi.second];
 			assert(xfer_op.op == sm::Instr::Xfer);
 			xfer_op.face_instr = fi;
+			machine.make(xfer_op, mesh, code);
 			mesh.total_instructions.emplace_back(xfer_op);
 		}
 		else{
@@ -3618,6 +3620,7 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 				}
 				ins.yarns = "Y" + std::to_string(face_yarn_mappings[fy]);
 			}
+			machine.make(ins, mesh, code);
 			mesh.total_instructions.emplace_back(ins);
 		}
 	}
@@ -4706,4 +4709,39 @@ std::string sm::knitout(sm::Mesh &mesh, sm::Library const &library, sm::Code con
 	return knitout_string;
 }
 
+glm::vec3 sm::face_centroid(uint32_t fid, sm::Mesh const &mesh){
+	glm::vec3 pos(0.f);
+	for(auto v : mesh.faces[fid]){
+		pos += mesh.vertices[v];
+	}
+	if(mesh.faces[fid].empty()) return pos;
+	pos /= (float)(mesh.faces[fid].size());
 
+	return pos;
+}
+
+glm::vec3 sm::Instr::posMesh_start(sm::Mesh const &mesh){
+	glm::vec3 start;
+	start = face_centroid(face_instr.first, mesh);
+	return start;
+}
+
+glm::vec3 sm::Instr::posMachineBed_start(){
+	glm::vec3 start;
+	start.y = step;
+	start.z = (src.is_front() ? 1.f : -1.f);
+	start.x = src.location();
+	return start;
+}
+glm::vec3 sm::Instr::posMesh_end(sm::Mesh const &mesh){
+	glm::vec3 end = face_centroid(face_instr.first, mesh);
+	return end;
+}
+
+glm::vec3 sm::Instr::posMachineBed_end(){
+	glm::vec3 end;
+	end.y = step;
+	end.z = (tgt.is_front() ? 1.f : -1.f);
+	end.x = tgt.location();
+	return end;
+}
