@@ -16,12 +16,21 @@ int main(int argc, char *argv[]){
 	sm::Library lib = sm::Library::load(argv[2]);
 	sm::Mesh mesh = sm::Mesh::load(argv[3]);
 
+	// ----- yarns ----- 
+	{
+		sm::Yarns yarns;
+		std::map<sm::Mesh::FaceEdge, uint32_t> fe_to_y;
+		sm::mesh_and_library_to_yarns(mesh, lib, &yarns, &fe_to_y);
+		
+	}
+
 	std::cout << "------------- loaded files --------------- " << std::endl;
 	if(!sm::compute_code_graph(code)){
 		return 0;
 	}
 	std::cout << "------------- code graph computed  --------------- " << std::endl;
-	
+
+
 	
 	std::vector<sm::Mesh::Hint> offenders;
 	//if(sm::verify(mesh, lib, code, &offenders) && sm::compute_total_order(mesh, code)){
@@ -41,11 +50,10 @@ int main(int argc, char *argv[]){
 		if(!sm::compute_total_order(mesh, code, lib)){
 			std::cerr << "\tTotal order doesn't exist. " << std::endl;
 		}
-		/*
 		if(!sm::verify(mesh, lib, code, &offenders, true)){
 			std::cerr << "\tCould not verify mesh. " << std::endl;
 			std::cerr << "\tOffenders: " << offenders.size() << std::endl;
-		}*/
+		}
 	}
 	return 0;
 } 

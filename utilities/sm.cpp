@@ -514,6 +514,10 @@ void sm::MachineState::print(){
 //---------------------------------
 //Mesh
 
+//glm::vec3 sm::Mesh::instr_to_pos(sm::Instr const &ins){
+//
+//}
+
 sm::Mesh sm::Mesh::load(std::string const &filename) {
 	sm::Mesh mesh;
 
@@ -2151,7 +2155,7 @@ static float twice_area(glm::vec2 const &a, glm::vec2 const &b, glm::vec2 const 
 	return glm::dot( c - a, glm::vec2( -(b.y - a.y), b.x - a.x ) );
 }
 
-void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &library, sm::Yarns *yarns_) {
+void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &library, sm::Yarns *yarns_, std::map<sm::Mesh::FaceEdge, uint32_t> *fe_to_yarn_index) {
 	assert(yarns_);
 	auto &yarns = *yarns_;
 	yarns = Yarns();
@@ -2187,8 +2191,6 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		}
 		assert(mesh_library.size() == mesh.library.size());
 	}
-
-
 
 
 	//generate long connected chains of yarn segments by looking at edge labels:
@@ -2468,6 +2470,47 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 
 	}
 
+	if(fe_to_yarn_index){
+		auto &fe_to_y = *fe_to_yarn_index;
+		std::map<std::string, uint32_t> name_to_idx;
+		for(auto const &lf : library.faces){
+			name_to_idx[lf.key()] = &lf - &library.faces[0];
+		}
+		for(auto &segments: chains){
+			uint32_t segment_id = &segments - &chains[0];
+			for(auto &seg: segments){
+				assert(seg.face);
+				assert(seg.yarn != -1U);
+				if(seg.face->type == -1U){
+					std::cerr << "face has no assigned type" << std::endl;
+				} 
+				else if(!name_to_idx.count(mesh.library[seg.face->type])){
+					std::cerr << "face name not in library" << std::endl;
+				}
+				else{
+					auto lface =library.faces[name_to_idx[mesh.library[seg.face->type]]];
+					auto yarn = lface.yarns[seg.yarn];
+					if(lface.edges[yarn.begin.edge].type[0] == 'y'){
+						// assign segment id to face/edge
+						sm::Mesh::FaceEdge fe;
+						fe.face = seg.face - &mesh.faces[0];
+						fe.edge = yarn.begin.edge;
+						fe_to_y[fe] = segment_id;
+					}
+					if(lface.edges[yarn.end.edge].type[0] == 'y'){
+						// assign segment id to face/edge
+						sm::Mesh::FaceEdge fe;
+						fe.face = seg.face - &mesh.faces[0];
+						fe.edge = yarn.end.edge;
+						fe_to_y[fe] = segment_id;
+
+					}
+				}
+				
+			}
+		}
+
+	}
 
 
 	//Idea: express xy coords of yarn points in each face in terms of generalized barycentric coordinates.
@@ -2718,6 +2761,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 
 		}
 	}
+
 
 	//lookup table for checkpoints:
 	std::unordered_multimap< glm::uvec3, Mesh::Checkpoint const * > fec_to_checkpoints;
@@ -3464,6 +3508,124 @@ bool sm::partial_order_to_sequence(std::set<std::pair<uint32_t, uint32_t>> parti
 	return true;
 }
 
+bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library,  sm::Code const &code){
+	mesh.total_instructions.clear();
+
+	// process all the hints into easy to access formats
+	std::map<std::string, uint32_t> name_to_code_idx;
+	std::map<uint32_t, std::string> face_variant;
+	std::map<int32_t, int32_t> face_translation;
+	std::vector<std::string> carriers;
+
+	auto face_to_code_key = [&](const sm::Mesh::Face &f)->std::string{
+		std::string variant = "";
+		if(face_variant.count(&f- &mesh.faces[0])){
+			variant = face_variant[&f - &mesh.faces[0]];
+		}
+		std::string signature = mesh.library[f.type] + ' ' + variant;
+		return signature;
+	};
+
+
+	for(auto const &c : code.faces){
+		name_to_code_idx[c.key()] = &c - &code.faces[0];
+	}
+	for(auto h : mesh.hints){
+		if(h.type == sm::Mesh::Hint::Variant){
+			if(face_variant.count(h.lhs.face) && face_variant[h.lhs.face] != std::get<std::string>(h.rhs)){
+				std::cerr << "[Variant] Hints for face " << h.lhs.face << " are inconsistent: " << face_variant[h.lhs.face] << ", " << std::get<std::string>(h.rhs) << std::endl;
+				return "";
+			}
+			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
+		}
+	}
+
+	// Resource hints
+	for(auto h: mesh.hints){
+		if(h.type == sm::Mesh::Hint::Resource){
+			const sm::Mesh::Face &f = mesh.faces[h.lhs.face];
+			std::string signature = face_to_code_key(f);
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			const sm::BedNeedle bn = std::get<sm::BedNeedle>(h.rhs);
+			const sm::BedNeedle bn_template = l.edges[h.lhs.edge].bn;
+			if(bn_template.dontcare()) continue;
+			int offset = bn.location() - bn_template.location();
+			// verify checks that these are indeed valid.
+			face_translation[h.lhs.face] = offset;
+		}
+	}
+
+	sm::Yarns yarns;
+	std::map<sm::Mesh::FaceEdge, uint32_t> fe_to_yarn_index;
+	mesh_and_library_to_yarns(mesh, library, &yarns, &fe_to_yarn_index);
+
+	std::map<std::pair<uint32_t, std::string>, uint32_t> face_yarn_mappings;
+
+	for(auto &f : mesh.faces){
+		uint32_t fid = &f - &mesh.faces[0];
+		std::string name = mesh.library[f.type] + ' ' + face_variant[fid];
+		if(name_to_code_idx.count(name)){
+			auto &cf = code.faces[name_to_code_idx[name]];
+			for(uint32_t i = 0; i < cf.edges.size(); ++i){
+				if(cf.edges[i].yarns.empty()) continue;
+				sm::Mesh::FaceEdge fe;
+				fe.face = fid; fe.edge = i;
+				uint32_t yi = fe_to_yarn_index[fe];
+				std::string yns = cf.edges[i].yarns;
+				std::istringstream stream(yns);
+				std::vector<std::string> tokens{std::istream_iterator<std::string>{stream},std::istream_iterator<std::string>{}};
+				for(auto yn : tokens){
+					auto fy = std::make_pair(fid, yn);
+					if(!face_yarn_mappings.count(fy)){
+						face_yarn_mappings[fy] = yi;
+					}
+					if(face_yarn_mappings[fy] != yi){
+						throw std::runtime_error("face yarn carrier mapping is not consistent");
+					}
+				}
+			}
+		}
+	}
+
+	mesh.total_instructions.clear();
+	// go by order, plug translate by and hint index to get knitout instruction
+	for(auto const &fi : mesh.total_order){
+		if(fi.first == -1U){ // pick from instruction stream
+			assert(fi.second < mesh.move_instructions.size());
+			auto xfer_op = mesh.move_instructions[fi.second];
+			assert(xfer_op.op == sm::Instr::Xfer);
+			xfer_op.face_instr = fi;
+			mesh.total_instructions.emplace_back(xfer_op);
+		}
+		else{
+			if(!face_translation.count(fi.first)) {
+				std::cerr << "Mesh is not sufficiently hinted, total order missing " << std::endl; break;
+			}
+
+			std::string signature = mesh.library[mesh.faces[fi.first].type] +  ' ' + (face_variant.count(fi.first) ? face_variant[fi.first] : "");
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			if(fi.second >= l.instrs.size()){
+				assert(false && "Invalid instruction index for face."); // should be verified earlier.
+			}
+			int t = face_translation[fi.first];
+			auto ins = l.instrs[fi.second];
+			ins.face_instr = fi;
+			ins.translate(t);
+			if(ins.is_loop() && !ins.yarns.empty()){
+				auto fy = std::make_pair(fi.first, ins.yarns);
+				if(face_yarn_mappings.count(fy) == 0){
+					throw std::runtime_error("face yarn carrier mapping not encountered before?");
+				}
+				ins.yarns = "Y" + std::to_string(face_yarn_mappings[fy]);
+			}
+			mesh.total_instructions.emplace_back(ins);
+		}
+	}
+
+	return true;
+}
+
+
 // if is_fully_hinted is true, checks also if mesh is fully hinted
 // else only checks if hints are consistent
 bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> *_offenders,  bool is_fully_hinted){
@@ -3816,7 +3978,21 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 
 	
 	if(is_fully_hinted && offenders.empty()){
+	
+		sm::Mesh m = mesh;
+		compute_total_instructions(m, library, code);
 		MachineState machine;
+		for(auto ins : m.total_instructions){
+			if(!machine.make(ins, m, code)){
+				std::cerr << "Machine could not create " << ins.to_string() << " without violating constraints" << std::endl;
+				return false;
+			}
+		}
+		if(!machine.empty()){
+			std::cerr << "Loops leftover at the very end" << std::endl;
+		}
+		std::cout << "Total passes recorded: " << machine.passes.size() << std::endl;
+		/*
 		// we reached here, test that machine sim is okay
 		// go by order, plug translate by and hint index to get knitout instruction
 		for(auto const &fi : mesh.total_order){
@@ -3849,6 +4025,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 			//return false; // maybe this is an error
 		}
 		std::cout << "Total passes recorded:  " << machine.passes.size() << std::endl;
+		*/
 	}
 
 	// --------------End of hint verification -------------
@@ -3972,145 +4149,69 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 	// not verified..
 	return false;
 }
-
-// knitout from faces
-// assumes hinting is complete and valid
-std::string sm::knitout(sm::Mesh &mesh, sm::Library const &library, sm::Code const &code){
-
-	mesh.total_instructions.clear();
-
-	std::vector<Mesh::Hint> offenders;
-	bool strict = true;
-	bool verified = verify(mesh, library, code, &offenders, strict);
-
-	if(!verified){
-		std::cout << "Constraints are not complete; #offending constraints = " << offenders.size() << std::endl;
-		return "";
-	}
-	assert(offenders.empty());
-
-	// constraints check out, now "run" the machine
-
-	// process all the hints into easy to access formats
-	std::map<std::string, uint32_t> name_to_code_idx;
-	std::map<uint32_t, std::string> face_variant;
-	std::map<int32_t, int32_t> face_translation;
-	std::vector<std::string> carriers;
-
-	auto face_to_code_key = [&](const sm::Mesh::Face &f)->std::string{
-		std::string variant = "";
-		if(face_variant.count(&f- &mesh.faces[0])){
-			variant = face_variant[&f - &mesh.faces[0]];
-		}
-		std::string signature = mesh.library[f.type] + ' ' + variant;
-		return signature;
-	};
-
-
-	for(auto const &c : code.faces){
-		name_to_code_idx[c.key()] = &c - &code.faces[0];
-	}
-	for(auto h : mesh.hints){
-		if(h.type == sm::Mesh::Hint::Variant){
-			if(face_variant.count(h.lhs.face) && face_variant[h.lhs.face] != std::get<std::string>(h.rhs)){
-				std::cerr << "[Variant] Hints for face " << h.lhs.face << " are inconsistent: " << face_variant[h.lhs.face] << ", " << std::get<std::string>(h.rhs) << std::endl;
-				return "";
-			}
-			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
-		}
-	}
-
-	// Resource hints
-	for(auto h: mesh.hints){
-		if(h.type == sm::Mesh::Hint::Resource){
-			const sm::Mesh::Face &f = mesh.faces[h.lhs.face];
-			std::string signature = face_to_code_key(f);
-			auto const &l = code.faces[name_to_code_idx[signature]];
-			const sm::BedNeedle bn = std::get<sm::BedNeedle>(h.rhs);
-			const sm::BedNeedle bn_template = l.edges[h.lhs.edge].bn;
-			if(bn_template.dontcare()) continue;
-			int offset = bn.location() - bn_template.location();
-			// verify checks that these are indeed valid.
-			face_translation[h.lhs.face] = offset;
-		}
-	}
-	{
-		// Go over all the yarn carriers that appear in each face code
-		// to generate a carrier header string
-		// TODO this needs to be order consistent.
-		// a face with c:1,3 c:2,3 c:1,2 should generate carriers:1,2,3
-		// i.e., sort with a function that goes over all the code faces
-		for(auto const &f : mesh.faces){
-			std::string signature = face_to_code_key(f);
-			auto const &l = code.faces[name_to_code_idx[signature]];
-			for(auto c : l.carriers){
-				if(std::find(carriers.begin(), carriers.end(), c) == carriers.end()){
-					carriers.emplace_back(c);
-				}
-			}
-		}
-	}
-	// --------------Code Generation------------------------
-	// todo run machine here? verifier already did..
-	std::string knitout_string = "";
-	// knitout header
-	knitout_string += ";!knitout-2\n";
-
-
-	{
-		// append all the carriers
-		knitout_string += ";;Carriers: ";
-		for(auto c : carriers) knitout_string += c + " ";
-		knitout_string += "\n";
-	}
-	// what to blame:
-	knitout_string += ";auto-generated from smobj, see sm.cpp,  sm::knitout()\n";
-
-
-	mesh.total_instructions.clear();
-	MachineState machine;
-	// go by order, plug translate by and hint index to get knitout instruction
-	for(auto const &fi : mesh.total_order){
-		if(fi.first == -1U){ // pick from instruction stream
-			assert(fi.second < mesh.move_instructions.size());
-			auto xfer_op = mesh.move_instructions[fi.second];
-			assert(xfer_op.op == sm::Instr::Xfer);
-			knitout_string += xfer_op.to_string(true);
-			xfer_op.face_instr = fi;
-			machine.make(xfer_op, mesh, code); // will update pass
-			mesh.total_instructions.emplace_back(xfer_op);
-		}
-		else{
-			if(!face_translation.count(fi.first)) {
-				std::cerr << "Mesh is not sufficiently hinted, total order missing " << std::endl; break;
-			}
-
-			std::string signature = mesh.library[mesh.faces[fi.first].type] +  ' ' + (face_variant.count(fi.first) ? face_variant[fi.first] : "");
-			auto const &l = code.faces[name_to_code_idx[signature]];
-			if(fi.second >= l.instrs.size()){
-				assert(false && "Invalid instruction index for face."); // should be verified earlier.
-			}
-			int t = face_translation[fi.first];
-			knitout_string += l.knitout_string(t, fi.second, true);
-			knitout_string += "\n";
-			auto ins = l.instrs[fi.second];
-			ins.face_instr = fi;
-			ins.translate(t);
-			machine.make(ins, mesh, code); // will update pass
-			mesh.total_instructions.emplace_back(ins);
-		}
-
-	}
-
-	return knitout_string;
-}
-
-
-
 bool sm::compute_library_graph(sm::Library &library){
 	// TODO
 	return true;
 }
+
+// 
+bool sm::connect_with_transfers(sm::Mesh &mesh, sm::Library const &library,  uint32_t connection_id){
+
+	if(connection_id >= mesh.connections.size()) return false;
+	
+	sm::Mesh::Connection connection = mesh.connections[connection_id];
+
+	sm::BedNeedle bn_a, bn_b;
+	for(auto const &h : mesh.hints){
+		if(h.type == sm::Mesh::Hint::Resource && h.lhs == connection.a){
+			bn_a = std::get<sm::BedNeedle>(h.rhs);
+		}
+		else if(h.type == sm::Mesh::Hint::Resource && h.lhs == connection.b){
+			bn_b = std::get<sm::BedNeedle>(h.rhs);
+		}
+	}
+	if(bn_a.dontcare() || bn_b.dontcare()) return false;
+	
+	// swap if necessary to make sure a is out, b is in.
+	{
+	}
+
+	// Todo, use the machine setup ?
+	int slack = bn_a.location() - bn_b.location();
+	if(slack != 0){
+
+		sm::Mesh::MoveConnection ca;
+		sm::Mesh::MoveConnection cb;
+		// add xfer instructions
+		sm::Instr x1,x2;
+		x1.src = bn_a;
+		x1.tgt = bn_b;
+		if(bn_a.is_front()) x1.tgt.bed = 'b'; else x1.tgt.bed = 'f';
+		
+		x2.src = x1.tgt;
+		x2.tgt = bn_b; 
+		ca.c_idx = connection_id;
+		ca.connection = connection;
+		ca.i_idx = mesh.move_instructions.size();
+		mesh.move_instructions.emplace_back(x1);
+		mesh.move_connections.emplace_back(ca);
+		if(bn_a.bed == bn_b.bed){
+			cb.c_idx = connection_id;
+			cb.connection = connection;
+			cb.i_idx = mesh.move_instructions.size();
+			mesh.move_instructions.emplace_back(x2);
+			mesh.move_connections.emplace_back(cb);
+		}
+		bool is_yarn_connection = false;
+		if(is_yarn_connection){
+			// find the corresponding loop connection and also associate with that..
+		}
+	}
+
+	return true;
+
+}
+
 bool sm::compute_code_graph(sm::Code &code){
 	// doesn't really need library but maybe should be tested against both
 	// verify that instructions are valid (does this need to ssa?)
@@ -4561,3 +4662,48 @@ bool sm::compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGra
 
 	return true;
 }
+
+
+// knitout from faces
+// assumes hinting is complete and valid
+std::string sm::knitout(sm::Mesh &mesh, sm::Library const &library, sm::Code const &code){
+
+	compute_total_instructions(mesh, library, code);
+	
+	std::set<std::string> carriers;
+	for(auto &ins : mesh.total_instructions){
+		std::istringstream stream(ins.yarns);
+		std::vector<std::string> tokens{std::istream_iterator<std::string>{stream},
+			std::istream_iterator<std::string>{}};
+		for(auto yarns : tokens){
+			carriers.insert(yarns);
+		} 
+	}
+	// --------------Code Generation------------------------
+	// todo run machine here? verifier already did..
+	std::string knitout_string = "";
+	// knitout header
+	knitout_string += ";!knitout-2\n";
+
+
+	{
+		// append all the carriers
+		knitout_string += ";;Carriers: ";
+		for(auto c : carriers) knitout_string += c + " ";
+		knitout_string += "\n";
+	}
+	// what to blame:
+	knitout_string += ";auto-generated from smobj, see sm.cpp,  sm::knitout()\n";
+
+
+	MachineState machine;
+	// go by order, plug translate by and hint index to get knitout instruction
+	for(auto &ins : mesh.total_instructions){
+		machine.make(ins, mesh, code);
+		knitout_string += ins.to_string() + "\n";
+	}
+
+	return knitout_string;
+}
+
+
