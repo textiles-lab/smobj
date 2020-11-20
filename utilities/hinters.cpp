@@ -2,6 +2,7 @@
 #include "hinters.hpp"
 #include <algorithm>
 #include <iostream>
+#include <fstream>
 
 // generate hints assuming:
 // 1. Patch has only short-rows <-- verify face signatures only consume/produce 1 loop
@@ -702,6 +703,160 @@ bool sm::constraint_face_instruction_order(sm::Mesh &mesh, sm::Code const &code_
 //}
 //
 
+static std::pair<std::string, std::vector<std::string>> generate_smt_f
+    (const sm::Mesh::Face &face, const sm::Mesh &mesh, sm::Code const &code_library) {
+    std::vector<sm::Code::Face> c_faces;
+    uint32_t face_num = &face - &mesh.faces[0];
+    std::string face_name = mesh.library[mesh.faces[face_num].type];
+
+    for(auto c : code_library.faces){
+        if(c.key_library() == face_name){
+            c_faces.push_back(c);
+        }
+    }
+
+    std::string ret = "";
+    std::vector<std::string> var_names;
+
+    // declare variables
+    // Assume that edge names are consistant within variants
+    for (auto &e : c_faces[0].edges) {
+        std::string sig;
+        if (e.direction == sm::Code::Face::Edge::Out) {
+            sig = "_out_";
+        } else {
+            sig = "_in_";
+        }
+
+        std::string v = "f" + std::to_string(face_num) + sig + e.type;
+        var_names.push_back(v);
+        std::string bed = v + "_b"; // Bed
+        std::string nee = v + "_n";
+        ret += (bed + " = " + "Bool(\'" + bed + "\')\n");
+        ret += (nee + " = " + "Real(\'" + nee + "\')\n");
+    }
+
+    std::vector<std::string> variants;
+    for (auto &c : c_faces) {
+        std::string v_str = "f" + std::to_string(face_num) + "_v_" + c.variant;
+        variants.push_back(v_str);
+
+        // bed formula
+        std::string bed_var = v_str + "_bed";
+        std::string bed_str = bed_var + " = And(";
+        for (int i = 0; i < (int)var_names.size(); i++) {
+            std::string v = var_names[i];
+            sm::BedNeedle bn = c.edges[i].bn;
+            std::string tf = (bn.bed == 'f') ? "True" : "False";
+            bed_str += v + "_b == " + tf + ",";
+        }
+        bed_str.pop_back();
+        bed_str += ")\n";
+
+        // needle formula
+        std::string needle_var = v_str + "_needle";
+        std::string needle_str = needle_var + " = And(";
+        std::string base_s = var_names[0] + "_n";
+        float base = c.edges[0].bn.location();
+        for (int i = 1; i < (int)var_names.size(); i++) {
+            std::string n = var_names[i] + "_n";
+            float bn = c.edges[i].bn.location();
+            needle_str += base_s + " == " + n + " + " + std::to_string(base - bn) + ",";
+        }
+        needle_str.pop_back();
+        needle_str += ")\n";
+
+        ret += bed_str;
+        ret += needle_str;
+        ret += v_str + " = And(" + bed_var + ", " + needle_var + ")\n";
+    }
+
+    ret += "f" + std::to_string(face_num) + " = Or(";
+    for (auto &s : variants) {
+        ret += s + ",";
+    }
+    ret.pop_back();
+    ret += ")\n";
+
+    return std::make_pair(ret, var_names);
+}
+
+static void generate_smt_phi(sm::Mesh &mesh, sm::Code const &code_library) {
+    std::string res = "";
+    res += "#!/usr/bin/python\n";
+    res += "from z3 import *\n\n";
+
+    std::map<std::string, std::vector<uint32_t> > name_to_code_idx;
+    for(auto const &c : code_library.faces){
+        std::vector<uint32_t> &vec = name_to_code_idx[c.key_library()];
+        vec.push_back(&c - &code_library.faces[0]);
+    }
+
+    std::vector<std::vector<std::string>> variables;
+    for(auto const &f : mesh.faces) {
+        auto F_a = generate_smt_f(f, mesh, code_library);
+        res += F_a.first + "\n";
+        variables.push_back(F_a.second);
+    }
+
+    std::map<uint32_t, std::vector<std::pair<sm::BedNeedle, sm::BedNeedle>>> c_xfer;
+    for (auto const &mc : mesh.move_connections) {
+        sm::BedNeedle src = mesh.move_instructions[mc.i_idx].src;
+        sm::BedNeedle tgt = mesh.move_instructions[mc.i_idx].tgt;
+        std::pair p = std::make_pair(src, tgt);
+
+        if (c_xfer.count(mc.c_idx)) {
+            c_xfer[mc.c_idx].push_back(p);
+        } else {
+            std::vector<std::pair<sm::BedNeedle, sm::BedNeedle>> v;
+            v.push_back(p);
+            c_xfer.insert({mc.c_idx, v});
+        }
+    }
+
+    // Construct C_i here
+    std::string phi = "Phi";
+    res += phi + " = And(";
+    for (uint32_t i = 0; i < mesh.connections.size(); i++){
+        auto const &c = mesh.connections[i];
+        std::string src = variables[c.a.face][c.a.edge];
+        std::string tgt = variables[c.b.face][c.b.edge];
+
+        std::string bed = src + "_b";
+        if (c_xfer[i].size() % 2) {
+            bed = "Not(" + bed + ")";
+        }
+        bed = "(" + bed + " == " + tgt + "_b)";
+
+        int sum = 0;
+        for (auto &p : c_xfer[i]) {
+            sum += p.first.needle - p.second.needle;
+        }
+        std::string needle = "(" + src + "_n + " + std::to_string(sum) + ")";
+        needle = "(" + needle + " == " + tgt + "_n)";
+
+        std::string xfer = "And(" + bed + "," + needle + ")";        
+        std::string c_str = "And(f" + std::to_string(c.a.face) +
+                            ", f" + std::to_string(c.b.face) + ", " + xfer + ")";
+        res  += c_str + ",";
+    }
+    res.pop_back();
+    res += ")\n\n";
+
+    std::string solver = "solver";
+    res += solver + " = Solver()\n";
+    res += (solver + ".add(" + phi + ")\n");
+    res += ("print(" + solver + ".check())\n");
+    res += ("print(" + solver + ".model())\n");
+
+    std::ofstream py;
+    py.open("solver.py");
+    py << res ;
+    py.close();
+
+    return;
+}
+
 sm::Mesh sm::infer_constraints(sm::Mesh &mesh, sm::Code const &code_library, sm::Library const &face_library) {
     // Delete all constraints except user constraints when infer_constraints is called
     for(int i = 0;; ) {
@@ -714,6 +869,7 @@ sm::Mesh sm::infer_constraints(sm::Mesh &mesh, sm::Code const &code_library, sm:
         }
     }
 
+    generate_smt_phi(mesh, code_library);
 	bool flag = true;
 	while (flag) {
 		flag = false;
