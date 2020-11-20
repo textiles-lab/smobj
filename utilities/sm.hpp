@@ -169,6 +169,11 @@ namespace sm {
 		bool is_loop() const{
 			return (op == Knit || op == Tuck || op == Split || op == Drop || op == Miss);
 		}
+
+		glm::vec3 posMesh_start(sm::Mesh const &mesh);
+		glm::vec3 posMachineBed_start();
+		glm::vec3 posMesh_end(sm::Mesh const &mesh);
+		glm::vec3 posMachineBed_end();
 	};
 
 
@@ -224,6 +229,7 @@ struct Mesh {
 	struct Face : public std::vector< uint32_t > {
 		uint32_t type = -1U;
 		uint32_t source = 0; //1-based source line number; 0 means 'unknown'
+	
 	};
 	std::vector< Face > faces;
 
@@ -294,8 +300,8 @@ struct Mesh {
 			return str;
 		}
 		bool operator== (const Hint& other) const {
-		return std::tie(type,src,lhs,rhs) == std::tie(other.type, other.src, other.lhs, other.rhs);
-	}
+			return std::tie(type,src,lhs,rhs) == std::tie(other.type, other.src, other.lhs, other.rhs);
+		}
 
 	};
 	std::vector< Hint > hints; // can be an unordered_map, but hints could be multiple?
@@ -333,6 +339,7 @@ struct Mesh {
 
 	void remove_inferred_hints(uint32_t from = -1U);
 	void remove_heuristic_hints(uint32_t from = -1U);
+
 };
 
 
@@ -537,10 +544,16 @@ bool transfer_from_to();
 
 //------ helper functions ------
 
-bool compute_code_graph(sm::Code &code);
-bool compute_library_graph(sm::Library &library);
+glm::vec3 face_centroid(uint32_t fid, sm::Mesh const &mesh);
 
-bool compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGraph *graph); // TODO implement this
+bool compute_code_graph(sm::Code &code);
+bool compute_library_graph(sm::Library &library); //NOTIMPLEMENTED
+bool compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGraph *graph); 
+
+bool compute_total_instructions(sm::Mesh &mesh, sm::Library const &library,  sm::Code const &code);
+
+// TODO helper for individual connections
+bool connect_with_transfers(sm::Mesh &mesh, sm::Library const &library, uint32_t connection_id);
 
 // total order of face instructions 
 bool compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library const &library);
@@ -561,7 +574,7 @@ bool verify(sm::Mesh const &mesh, sm::Library const &library,  Code const &code,
 //build from a mesh and library, connecting yarns over edges:
 // will warn on inconsistent edge types/directions, and missing face types
 // will erase output yarns structure
-void mesh_and_library_to_yarns(Mesh const &mesh, Library const &library, Yarns *yarns);
+void mesh_and_library_to_yarns(Mesh const &mesh, Library const &library, Yarns *yarns, std::map<sm::Mesh::FaceEdge,uint32_t> *fe_to_yarn_index=nullptr);
 
 //visualization helper: build tubes around a yarn spine:
 // will append to attribs array
