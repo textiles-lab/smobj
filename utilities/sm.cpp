@@ -89,6 +89,12 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 			std::cerr << "Yarn " << yarn << " used before being braught in." << std::endl;
 		}
 		assert(!bn.dontcare());
+	
+		// does adding this yarn segment create yarn tangling
+		{
+		}
+
+
 		loops.emplace_back();
 		auto &loop = loops.back();
 		loop.id = loops.size()-1;
@@ -153,7 +159,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	auto path_exists_between = [&](std::pair<uint32_t, uint32_t> ins1, std::pair<uint32_t, uint32_t> ins2)->bool{
 		// is there a path between the instruction that created ins 1 and ins 2
 		assert(ins1.first != -1U); assert(ins2.first != -1U);
-		
+		//std::cout << "Checking path between " << ins1.first <<"/"<<ins1.second << " and " << ins2.first << "/" << ins2.second << " : "<< std::endl;
 		if(ins1.first == ins2.first){
 			uint32_t cid = get_code_for_face(ins1.first);
 			if(cid == -1U) return false;
@@ -176,7 +182,10 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		} else {
 			
 			uint32_t cid = get_code_for_face(ins1.first);
-			if(cid == -1U) return false;
+			if(cid == -1U) {
+				std::cerr << "Could not find code face for face " << ins1.first << std::endl;
+				return false;
+			}
 			auto const &l  = code.faces[cid];
 			std::set<std::pair<uint32_t, uint32_t>> candidates, up_candidates;
 			for(auto x : l.loop_instruction_to_instruction_connections){
@@ -198,9 +207,11 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 				}
 			}
 			int max_iters = mesh.faces.size()*10; // heuristic
+			//std::cout << "Starting with " << candidates.size() << " candidates and " << up_candidates.size() << " up_candidates." << std::endl;
 			while(true){
 				while(!up_candidates.empty()){
 					auto next = *up_candidates.begin();
+					//std::cout << "\tup-candidates: " << next.first << "/" << next.second << std::endl;
 					//cue the next candidates from the next upward face 
 					uint32_t cid = get_code_for_face(next.first);
 					up_candidates.erase(next);
@@ -212,10 +223,23 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 							candidates.insert(std::make_pair(next.first, x.second));
 						}
 					}
+					//cue the next up-candidates from the next upward face as well
+					for(auto x : nc.loop_edge_to_edge_connections){
+						// find the next connection where next.first/x.second is involved
+						for(auto const &c : mesh.connections){
+							if(c.a.face == next.first && c.a.edge == x.second){
+								up_candidates.insert(std::make_pair(c.b.face, c.b.edge));
+							}
+							if(c.b.face == next.first && c.b.edge == x.second){
+								up_candidates.insert(std::make_pair(c.a.face, c.a.edge));
+							}
+						}
+					}
 				}
 				
 				while(!candidates.empty()){
 					auto next = *candidates.begin();
+					//std::cout << "\tCandidate: " << next.first << "/" << next.second << std::endl;
 					if(next == ins2) return true;
 					candidates.erase(next);
 					uint32_t cid = get_code_for_face(next.first);
@@ -242,7 +266,10 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					}
 				}
 				max_iters--;
-				if(max_iters < 0) return false;
+				if(max_iters < 0){
+					std::cerr << "\tMax iterations reached."<< std::endl;
+					return false;
+				}
 			} // big-while
 
 		}
@@ -4663,6 +4690,8 @@ bool sm::compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGra
 		}
 	}
 
+	graph.time.clear();
+	graph.time.assign(graph.nodes.size(), 0.);
 	return true;
 }
 
@@ -4744,4 +4773,15 @@ glm::vec3 sm::Instr::posMachineBed_end(){
 	end.z = (tgt.is_front() ? 1.f : -1.f);
 	end.x = tgt.location();
 	return end;
+}
+
+bool sm::InstrGraph::is_monotonic() const{
+	if(time.size() != nodes.size()) return false;
+	for(auto &edge: edge_loops){
+		if(time[edge.first] >= time[edge.second]) return false;
+	}
+	for(auto &edge: edge_yarns){
+		if(time[edge.first] >= time[edge.second]) return false;
+	}
+	return true;
 }

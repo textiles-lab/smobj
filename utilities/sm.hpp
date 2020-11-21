@@ -536,6 +536,9 @@ struct InstrGraph{
 	std::vector<Instr> nodes; // record face instr in these
 	std::set<std::pair<uint32_t, uint32_t>> edge_loops;
 	std::set<std::pair<uint32_t, uint32_t>> edge_yarns;
+	std::vector<double> time; // monotonic
+	bool is_monotonic() const;
+	
 };
 //------ transfer helper functions -----
 // TODO move to a different file, perhaps
@@ -549,6 +552,7 @@ glm::vec3 face_centroid(uint32_t fid, sm::Mesh const &mesh);
 bool compute_code_graph(sm::Code &code);
 bool compute_library_graph(sm::Library &library); //NOTIMPLEMENTED
 bool compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGraph *graph); 
+
 
 bool compute_total_instructions(sm::Mesh &mesh, sm::Library const &library,  sm::Code const &code);
 
