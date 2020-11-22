@@ -26,7 +26,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	}
 	
 	// loop setup "a"
-	std::set<sm::Loop> lefts, rights;
+	std::set<sm::Loop> lefts, rights, actives;
 	if(instr.face_instr.first == -1U){
 		for(auto loop: loops){
 			sm::BedNeedle bn;
@@ -34,9 +34,11 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 				float p = bn.position_on_front(racking);
 				if(p >= instr.src.position_on_front(racking)){
 					rights.insert(loop);
+					actives.insert(loop);
 				}
 				if(p <= instr.src.position_on_front(racking)){
 					lefts.insert(loop);
+					actives.insert(loop);
 				}
 			}
 		}
@@ -84,6 +86,45 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		loops[loop_idx].sequence.emplace_back(bn);
 		loops[loop_idx].sources.emplace_back(instr);
 	};
+
+	auto cross = [&](glm::vec2 a, glm::vec2 b, glm::vec2 c)->bool{
+		return (c.y-a.y)*(b.x-a.x) > (b.y-a.y)*(c.x-a.x);
+	};
+	auto intersects = [&](glm::vec2 p0, glm::vec2 p1, glm::vec2 q0, glm::vec2 q1)->bool{
+		return cross(p0,q0,q1) != cross(p1,q0,q1) && cross(p0, p1, q0) != cross(p0, p1, q1);
+	};
+
+	auto yarn_captures = [&](std::pair<uint32_t, sm::BedNeedle> a, std::pair<uint32_t, uint32_t> b, std::pair<uint32_t, uint32_t> c)->bool{
+		// if a crosses c before c was made and b crosses c after c was made, then we have a capture
+		sm::BedNeedle a0, a1, b0,b1, c0,c1;
+		a1 = a.second;
+		a0 = loops[a.first].sequence.back();
+		b0 = loops[b.first].sequence.back();
+		b1 = loops[b.second].sequence.back();
+		c0 = loops[c.first].sequence.back();
+		c1 = loops[c.second].sequence.back();
+		// potential overlap 
+		{
+		// a crosses c?
+			glm::vec2 p0(a0.needle*2.f + ((float)a0.is_back()), a.first);
+			glm::vec2 p1(a.second.needle*2.f + ((float)a.second.is_back()), loops.size());
+			glm::vec2 q0(b0.needle*2.f + ((float)b0.is_back()), b.first);
+			glm::vec2 q1(b1.needle*2.f + ((float)b1.is_back()), b.second);
+		// b crosses c? 
+			glm::vec2 r0(c0.needle*2.f + ((float)c0.is_back()), c.first);
+			glm::vec2 r1(c1.needle*2.f + ((float)c1.is_back()), c.second);
+
+			if(intersects(p0,p1,q0,q1) && intersects(q0,q1,r0,r1)) return true;
+			
+		}
+		return false;
+	};
+	(void)yarn_captures;
+	auto loop_captures = [&](uint32_t l1, uint32_t l2)->bool{
+		// ...
+		return false;
+	};
+	(void)loop_captures;
 	auto make_loop = [&](std::string yarn, sm::BedNeedle bn, sm::Instr::Direction direction)->uint32_t{
 		if(!is_yarn_active(yarn)){
 			std::cerr << "Yarn " << yarn << " used before being braught in." << std::endl;
@@ -91,7 +132,55 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		assert(!bn.dontcare());
 	
 		// does adding this yarn segment create yarn tangling
-		{
+		if(true){
+			sm::Loop prev;
+			std::set<std::pair<uint32_t, uint32_t>> segments;
+			if(find_last_loop_for_yarn(yarn, &prev)){
+				for(auto const &yv : yarn_loops){
+					if(yv.first.empty() || yv.first == "Y") continue; // this is an empty yarn of sort
+					if(yv.second.size() < 2) continue;
+					for(uint32_t x = yv.second.size()-1; x >= 1; x--){
+						assert(yv.second[x] < loops.size());
+						assert(yv.second[x-1] < loops.size());
+						auto l1 = loops[yv.second[x]];
+						auto l2 = loops[yv.second[x-1]];
+						sm::BedNeedle bn_temp;
+						if(!is_loop_active(l1, &bn_temp)) continue;
+						while(!is_loop_active(l2, &bn_temp)){
+							if(x == 1){
+								break;
+							}
+							x--;
+							assert(yv.second[x-1] < loops.size());
+							l2=loops[yv.second[x-1]];
+						}
+						if(!is_loop_active(l2,&bn_temp)) continue;
+						//l1->l2 is a segment
+						segments.insert(std::make_pair(l1.id, l2.id));
+					}
+				}
+				if(instr.face_instr.first != prev.face_instr.first){
+					// get all active loop segments i.e for all active loops, 
+					for(auto a : segments){
+						for(auto b : segments){
+							if(a == b) continue;
+							// if current yarn captures b using a, return -1U;
+							auto curr = std::make_pair(prev.id, bn);
+							
+							if(yarn_captures(curr, a,b)){
+								std::cerr << "Yarn " << yarn << " making loop at " << bn.to_string() << " captures yarns between active loop segments " << a.first << "/" << a.second << " and " << b.first << "/" << b.second << std::endl;
+								return -1U;
+							}
+						}
+					}
+				}
+				else{
+					// an internal segment can do whatever it wants
+					// TODO if it captures external yarns still should be flagged
+				}
+			} else {
+				// yarn is being introduced, cannot capture anything at this point...
+			}
 		}
 
 
@@ -136,6 +225,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		loop.step = passes.size()-1;
 		loop.face_instr = instr.face_instr;
 		assert(loop.bn.nudge == 0);
+		yarn_loops[yarn].emplace_back(loop.id);
 		return loop.id;
 	};
 
@@ -3822,10 +3912,12 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 				}
 
 				if(is_yarn_connection && std::abs(rhs_a.location() - rhs_b.location()) > 0.5f){
+					std::cerr << "Slack conflict. " << std::endl;
 					offenders.emplace_back(*ha_it);
 					offenders.emplace_back(*hb_it);
 				}
 				else if(!is_yarn_connection && (std::abs(rhs_a.location() - rhs_b.location()) > 0.5f || rhs_a.bed != rhs_b.bed)){
+					std::cerr << "Slack conflict. " << std::endl;
 					offenders.emplace_back(*ha_it);
 					offenders.emplace_back(*hb_it);
 				}
@@ -3851,6 +3943,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 			if(bn_template.dontcare()) continue;
 			if(bn.bed != bn_template.bed){
 				offenders.emplace_back(h); // edge resource conflicts with variant.
+				std::cerr << "Template and assigned bed don't match. Template:" << bn_template.bed << " assigned: " << bn.bed << std::endl;
 				// also find variant hint for this face and add it to offence.
 				for(auto hh : mesh.hints){
 					if(hh.type == sm::Mesh::Hint::Variant && hh.lhs.face == h.lhs.face){

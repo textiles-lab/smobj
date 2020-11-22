@@ -179,7 +179,7 @@ namespace sm {
 
 	
 	struct Loop{
-		uint32_t id = -1U;
+		uint32_t id = -1U; // this also acts as a monotonic function on the construction space, when was this loop created
 		uint32_t prev = -1U;
 		std::vector<BedNeedle> sequence; // a vector of locations
 		std::vector<sm::Instr> sources;  // a vector of instructions
@@ -200,6 +200,7 @@ namespace sm {
 		std::vector<Loop> loops; // holds all the loops created
 		std::map<std::string, BedNeedle> yarn_positions; // which yarn is parked where
 		std::map<BedNeedle, std::vector<uint32_t>> bn_loops; // maintain loop + order
+		std::map<std::string, std::vector<uint32_t>> yarn_loops; //maintain loops created by each yarn
 		std::vector< std::vector<Instr> > passes;
 		bool make(Instr &instr, sm::Mesh const &mesh, sm::Code const &code);
 		bool empty();
