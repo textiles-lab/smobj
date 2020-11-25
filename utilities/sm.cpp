@@ -373,7 +373,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	
 	// track all yarns being inserted and taken out
 	
-	{
+	if(!instr.src.dontcare()){
 		// is there a loop at the src, and if so who created it 
 		if(!bn_loops.count(instr.src)){
 			// empty location: warn if operation is not a tuck
@@ -470,18 +470,20 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		case sm::Instr::In:
 			for(auto yarn: tokens){
 				if(yarn_positions.count(yarn) && !yarn_positions[yarn].dontcare()){
-					print();
-					std::cerr << "Bringing yarn that is already in, in again. " << std::endl;
-					return false;
+					//print();
+					std::cerr << "[Warning] Bringing yarn that is already in, in again. Yarn: " << yarn << std::endl;
+					//return false;
 				}
+				sm::BedNeedle start;
+				yarn_positions[yarn] = start;
 			}
 			break;
 		case sm::Instr::Out:
 			for(auto yarn : tokens){
 				if(!yarn_positions.count(yarn) || yarn_positions[yarn].dontcare()){
-					print();
-					std::cerr << "Taking yarn out that wasn't in. " << std::endl;
-					return false;
+					//print();
+					std::cerr << "[Warning] Taking yarn out that wasn't in. Yarn: " << yarn << std::endl;
+					//return false;
 				}
 				yarn_positions[yarn].bed = 'x'; // yarn is out
 			}
@@ -3633,6 +3635,21 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 	std::map<uint32_t, std::string> face_variant;
 	std::map<int32_t, int32_t> face_translation;
 	std::vector<std::string> carriers;
+	std::map<sm::Mesh::FaceEdge, uint8_t> edge_map; 
+    for(auto &fi : mesh.faces){
+		for(uint32_t i = 0; i < fi.size(); ++i){
+			sm::Mesh::FaceEdge fe; fe.face = &fi - &mesh.faces[0]; fe.edge = i;
+			edge_map[fe] += 1;
+		}
+	}
+	for(auto const &c : mesh.connections){
+		//c.a.face, c.a.edge and c.b.face, c.b.edge
+		sm::Mesh::FaceEdge a = c.a;
+		sm::Mesh::FaceEdge b = c.b;
+		edge_map[a] += 1;
+		edge_map[b] += 1;
+    }
+
 
 	auto face_to_code_key = [&](const sm::Mesh::Face &f)->std::string{
 		std::string variant = "";
@@ -3708,6 +3725,40 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 	mesh.total_instructions.clear();
 	// go by order, plug translate by and hint index to get knitout instruction
 	for(auto const &fi : mesh.total_order){
+        
+        sm::Code::Face const  *cf = nullptr;
+        if(fi.first != -1U){
+            auto f_ = mesh.faces[fi.first];
+            std::string name = mesh.library[f_.type] + ' ' + face_variant[fi.first];
+            if(name_to_code_idx.count(name)){
+                cf = &code.faces[name_to_code_idx[name]];
+            }
+        }
+        for(auto xmap : edge_map){
+			if(xmap.second != 1) continue;
+			auto x = xmap.first;
+            if(x.face == fi.first){
+                // if yarn in, insert yarn
+                if(cf && cf->edges[x.edge].direction == sm::Code::Face::Edge::In && !cf->edges[x.edge].yarns.empty()){
+                    sm::Instr in_op;
+                    in_op.op = sm::Instr::In;
+                    in_op.yarns = cf->edges[x.edge].yarns;
+                    in_op.face_instr = fi; 
+					in_op.face_instr.second--;
+					
+					auto fy = std::make_pair(fi.first, cf->edges[x.edge].yarns);
+					if(face_yarn_mappings.count(fy) == 0){
+						throw std::runtime_error("face yarn carrier mapping not encountered before?");
+					}
+					in_op.yarns = "Y" + std::to_string(face_yarn_mappings[fy]);
+
+					machine.make(in_op, mesh, code);
+                    mesh.total_instructions.emplace_back(in_op);
+               		edge_map[xmap.first] = 0;
+				}
+            }
+        }
+        
 		if(fi.first == -1U){ // pick from instruction stream
 			assert(fi.second < mesh.move_instructions.size());
 			auto xfer_op = mesh.move_instructions[fi.second];
@@ -3740,7 +3791,29 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 			machine.make(ins, mesh, code);
 			mesh.total_instructions.emplace_back(ins);
 		}
-	}
+        for(auto xmap : edge_map){
+			if(xmap.second != 1) continue;
+			auto x = xmap.first;
+            if(x.face == fi.first){
+                // if yarn in, insert yarn
+                if(cf && fi.second == cf->instrs.size()-1 && cf->edges[x.edge].direction == sm::Code::Face::Edge::Out && !cf->edges[x.edge].yarns.empty()){
+                    sm::Instr out_op;
+                    out_op.op = sm::Instr::Out;
+					out_op.face_instr = fi;
+					out_op.face_instr.second++;
+					
+					auto fy = std::make_pair(fi.first, cf->edges[x.edge].yarns);
+					if(face_yarn_mappings.count(fy) == 0){
+						throw std::runtime_error("face yarn carrier mapping not encountered before?");
+					}
+					out_op.yarns = "Y" + std::to_string(face_yarn_mappings[fy]);
+					machine.make(out_op, mesh, code);
+                    mesh.total_instructions.emplace_back(out_op);
+               		edge_map[xmap.first] = 0;
+                }
+            }
+        }
+	} // fi loop
 
 	return true;
 }
@@ -4245,7 +4318,7 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 
 	{
 		std::vector<std::vector<uint32_t>> all_sequences;
-		if(partial_order_to_sequences(partials, all_sequences, 1000)){ //DEBUG 1, else 1000
+		if(partial_order_to_sequences(partials, all_sequences, 1)){ //DEBUG 1, else 1000
 			for(auto &order : all_sequences){
 				mesh.total_order.clear();
 				for(auto const &x : order){
@@ -4733,51 +4806,61 @@ bool sm::compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGra
 				std::swap(ca,cb);
 				std::swap(fa,fb);
 			}
-			
+			bool is_yarn_connection = (ca.edges[c.a.edge].type[0] == 'y');
+			if(!is_yarn_connection && ca.edges[c.a.edge].type[0] != 'l'){
+				continue;
+			}
 			{
 				// a is out, b is in (typical)
 				// ca (instruction-to-edge)
 				// cb (edge-to-instruction)
-				for(auto pr_a: ca.loop_instruction_to_edge_connections){
-					for(auto pr_b: cb.loop_edge_to_instruction_connections){
-						auto face_instr_1 = std::make_pair(fa, pr_a.first);
-						auto face_instr_2 = std::make_pair(fb, pr_b.second);
-						graph.edge_loops.insert(std::make_pair(fi_to_idx[face_instr_1], fi_to_idx[face_instr_2]));
+				if(!is_yarn_connection){
+					for(auto pr_a: ca.loop_instruction_to_edge_connections){
+						for(auto pr_b: cb.loop_edge_to_instruction_connections){
+							auto face_instr_1 = std::make_pair(fa, pr_a.first);
+							auto face_instr_2 = std::make_pair(fb, pr_b.second);
+							graph.edge_loops.insert(std::make_pair(fi_to_idx[face_instr_1], fi_to_idx[face_instr_2]));
+						}
 					}
-				}
-				for(auto pr_a_: ca.yarn_instruction_to_edge_connections){
-					for(auto pr_b_: cb.yarn_edge_to_instruction_connections){
-						auto pr_a = pr_a_.second;
-						auto pr_b = pr_b_.second;
 
-						auto face_instr_1 = std::make_pair(fa, pr_a.first);
-						auto face_instr_2 = std::make_pair(fb, pr_b.second);
-						graph.edge_yarns.insert(std::make_pair(fi_to_idx[face_instr_1], fi_to_idx[face_instr_2]));
+					// else other (instruction-to-instruction)
+					for(auto pr : ca.loop_instruction_to_instruction_connections){
+						auto i1 = std::make_pair(fa, pr.first);
+						auto i2 = std::make_pair(fa, pr.second);
+						graph.edge_loops.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
+					}
+
+					for(auto pr : cb.loop_instruction_to_instruction_connections){
+						auto i1 = std::make_pair(fb, pr.first);
+						auto i2 = std::make_pair(fb, pr.second);
+						graph.edge_loops.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
 					}
 				}
-				// else other (instruction-to-instruction)
-				for(auto pr : ca.loop_instruction_to_instruction_connections){
-					auto i1 = std::make_pair(fa, pr.first);
-					auto i2 = std::make_pair(fa, pr.second);
-					graph.edge_loops.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
-				}
-				for(auto pr_ : ca.yarn_instruction_to_instruction_connections){
-					auto pr = pr_.second;
-					auto i1 = std::make_pair(fa, pr.first);
-					auto i2 = std::make_pair(fa, pr.second);
-					graph.edge_yarns.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
-				}
-				
-				for(auto pr : cb.loop_instruction_to_instruction_connections){
-					auto i1 = std::make_pair(fb, pr.first);
-					auto i2 = std::make_pair(fb, pr.second);
-					graph.edge_loops.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
-				}
-				for(auto pr_ : cb.yarn_instruction_to_instruction_connections){
-					auto pr = pr_.second;
-					auto i1 = std::make_pair(fb, pr.first);
-					auto i2 = std::make_pair(fb, pr.second);
-					graph.edge_yarns.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
+				else{
+					for(auto pr_a_: ca.yarn_instruction_to_edge_connections){
+						for(auto pr_b_: cb.yarn_edge_to_instruction_connections){
+							auto pr_a = pr_a_.second;
+							auto pr_b = pr_b_.second;
+
+							auto face_instr_1 = std::make_pair(fa, pr_a.first);
+							auto face_instr_2 = std::make_pair(fb, pr_b.second);
+							graph.edge_yarns.insert(std::make_pair(fi_to_idx[face_instr_1], fi_to_idx[face_instr_2]));
+						}
+					}
+					for(auto pr_ : ca.yarn_instruction_to_instruction_connections){
+						auto pr = pr_.second;
+						auto i1 = std::make_pair(fa, pr.first);
+						auto i2 = std::make_pair(fa, pr.second);
+						graph.edge_yarns.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
+					}
+
+
+					for(auto pr_ : cb.yarn_instruction_to_instruction_connections){
+						auto pr = pr_.second;
+						auto i1 = std::make_pair(fb, pr.first);
+						auto i2 = std::make_pair(fb, pr.second);
+						graph.edge_yarns.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
+					}
 				}
 			}
 		}
@@ -4825,7 +4908,9 @@ std::string sm::knitout(sm::Mesh &mesh, sm::Library const &library, sm::Code con
 	// go by order, plug translate by and hint index to get knitout instruction
 	for(auto &ins : mesh.total_instructions){
 		machine.make(ins, mesh, code);
-		knitout_string += ins.to_string() + "\n";
+		knitout_string += ins.to_string();
+		knitout_string += ";"+std::to_string(ins.face_instr.first+1)+"/"+std::to_string(ins.face_instr.second+1);
+		knitout_string += "\n";
 	}
 
 	return knitout_string;
