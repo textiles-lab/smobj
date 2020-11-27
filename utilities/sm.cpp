@@ -2572,7 +2572,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			chains.emplace_back(chain.begin(), chain.end());
 		}
 		if (flipped_chains) {
-			std::cerr << "NOTE: flipped " << flipped_chains << " chains owing to direction vote." << std::endl;
+			//std::cerr << "NOTE: flipped " << flipped_chains << " chains owing to direction vote." << std::endl;
 		}
 
 		{ //show chain sizes breakdown:
@@ -2580,11 +2580,11 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			for (auto const &chain : chains) {
 				hist.insert(std::make_pair(chain.size(), 0)).first->second += 1;
 			}
-			std::cout << "Have " << chains.size() << " chains:\n";
-			for (auto const &sc : hist) {
-				std::cout << "  " << sc.second << " of size " << sc.first << "\n";
-			}
-			std::cout.flush();
+			//std::cout << "Have " << chains.size() << " chains:\n";
+			//for (auto const &sc : hist) {
+			//	std::cout << "  " << sc.second << " of size " << sc.first << "\n";
+			//}
+			//std::cout.flush();
 		}
 
 	}
@@ -2765,7 +2765,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			avg_ratio /= avg_ratio_count;
 		}
 		radius_scale = std::sqrt(avg_ratio);
-		std::cout << "Idea radius scaling, based on " << avg_ratio_count << " area ratios: " << radius_scale << std::endl;
+		//std::cout << "Idea radius scaling, based on " << avg_ratio_count << " area ratios: " << radius_scale << std::endl;
 	}
 
 	//---------------
@@ -3078,7 +3078,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		}
 
 	}
-	std::cout << "Total/max boundary mis-match from chains (should be very small): " << mismatch << "/" << max_mismatch << std::endl;
+	//std::cout << "Total/max boundary mis-match from chains (should be very small): " << mismatch << "/" << max_mismatch << std::endl;
 
 	//transfer units:
 	//TODO: could consider eliminating any unused units
@@ -3088,7 +3088,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		yarns.units.back().length = u.length;
 	}
 
-	std::cout << "Of " << mesh.checkpoints.size() << " checkpoints, " << fec_to_checkpoints.size() << " remain unassigned." << std::endl;
+	//std::cout << "Of " << mesh.checkpoints.size() << " checkpoints, " << fec_to_checkpoints.size() << " remain unassigned." << std::endl;
 
 	/*
 	for (auto const &face : mesh.faces) {
@@ -3148,7 +3148,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 	*/
 
 
-	std::cout << "Generated yarns lie in [" << min.x << "," << max.x << "]x[" << min.y << ", " << max.y << "]x[" << min.z << "," << max.z << "]." << std::endl;
+	//std::cout << "Generated yarns lie in [" << min.x << "," << max.x << "]x[" << min.y << ", " << max.y << "]x[" << min.z << "," << max.z << "]." << std::endl;
 
 }
 
