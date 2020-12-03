@@ -717,11 +717,20 @@ static void generate_smt_phi(sm::Mesh &mesh, sm::Code const &code_library) {
         uint32_t face_num = &f - &mesh.faces[0];
         std::string face_name = mesh.library[mesh.faces[face_num].type];
 
-        // Obtain all constraints for this face here
-
         for(auto c : code_library.faces){
             if(c.key_library() == face_name){
                 c_faces.push_back(c);
+            }
+        }
+
+        // Obtain all constraints for this face here
+        std::string face_variant = "";
+        std::vector<std::pair<sm::Mesh::FaceEdge, sm::BedNeedle>> r_constraints;
+        for(auto &h : mesh.hints) {
+            if (h.type == sm::Mesh::Hint::Variant && h.lhs.face == face_num) {
+                 face_variant = std::get<std::string>(h.rhs);
+            } else if (h.type == sm::Mesh::Hint::Resource && h.lhs.face == face_num) {
+                r_constraints.push_back(std::make_pair(h.lhs, std::get<sm::BedNeedle>(h.rhs)));
             }
         }
 
@@ -754,29 +763,63 @@ static void generate_smt_phi(sm::Mesh &mesh, sm::Code const &code_library) {
             resources.push_back(std::make_pair(fe, std::make_pair(b_expr, n_expr)));
         }
 
-        std::vector<std::pair<z3::expr, std::string>> variant_s;
         // Face Or
-        z3::expr face = context.bool_val(false);
         // For each variants
+        std::vector<std::pair<z3::expr, std::string>> variant_s;
+        z3::expr face = context.bool_val(false);
         for (auto &c : c_faces) {
             z3::expr variant = context.bool_val(true);
             // bed formula
             for (int i = 0; i < (int)e_beds.size(); i++) {
-                sm::BedNeedle bn = c.edges[i].bn;
-                z3::expr tf = (bn.bed == 'f') ? context.bool_val(true) : context.bool_val(false);
-                variant = variant && (e_beds[i] == tf);
+                bool hasconstraint = false;
+                // If resource constraint exists, assign here
+                for (auto const &r : r_constraints) {
+                    if ((int)r.first.edge == i) {
+                        hasconstraint = true;
+                        sm::BedNeedle bn = r.second;
+                        z3::expr tf = (bn.bed == 'f' || bn.bed == 'F') ? context.bool_val(true) : context.bool_val(false);
+                        variant = variant && (e_beds[i] == tf);
+                    }
+                }
+
+                if (!hasconstraint) {
+                    sm::BedNeedle bn = c.edges[i].bn;
+                    z3::expr tf = (bn.bed == 'f') ? context.bool_val(true) : context.bool_val(false);
+                    variant = variant && (e_beds[i] == tf);
+                }
             }
 
             // needle formula
             z3::expr base = context.real_val(std::to_string(c.edges[0].bn.location()).c_str());
             z3::expr e_base = e_needles[0];
+            for (auto const &r : r_constraints) {
+                if ((int)r.first.edge == 0) {
+                    z3::expr bn = context.real_val(std::to_string(r.second.location()).c_str());
+                    variant = variant && (e_base == bn);
+                }
+            }
             for (int i = 1; i < (int)e_needles.size(); i++) {
+                // If resource constraint exists, assign here
+                for (auto const &r : r_constraints) {
+                    if ((int)r.first.edge == i) {
+                        z3::expr bn = context.real_val(std::to_string(r.second.location()).c_str());
+                        variant = variant && (e_needles[i] == bn);
+                    }
+                }
+
                 z3::expr bn = context.real_val(std::to_string(c.edges[i].bn.location()).c_str());
                 variant = variant && (e_base == e_needles[i] + base - bn);
             }
 
-            variant_s.push_back(std::make_pair(variant, c.variant));
-            face = face || variant;
+            if (face_variant != "") {
+                if (face_variant == c.variant) {
+                    variant_s.push_back(std::make_pair(variant, c.variant));
+                    face = face || variant;
+                }
+            } else {
+                variant_s.push_back(std::make_pair(variant, c.variant));
+                face = face || variant;
+            }
         }
 
         face_expr.push_back(face);
@@ -819,13 +862,20 @@ static void generate_smt_phi(sm::Mesh &mesh, sm::Code const &code_library) {
                     sm::Mesh::Hint h;
                     sm::Mesh::FaceEdge fe;
                     fe.face = &variant - &variants[0];
+
+                    bool c_exists = false;
+                    for (auto const &c : mesh.hints) {
+                        if (c.lhs.face == fe.face)
+                            c_exists = true;
+                    }
+
                     h.lhs = fe;
                     h.type = sm::Mesh::Hint::Variant;
                     h.rhs = p.second;
                     h.src = sm::Mesh::Hint::Inferred;
-                    std::cout << fe.face << " "  << p.second << std::endl;
 
-                    mesh.hints.push_back(h);
+                    if (!c_exists)
+                        mesh.hints.push_back(h);
                 }
             }
         }
@@ -834,8 +884,13 @@ static void generate_smt_phi(sm::Mesh &mesh, sm::Code const &code_library) {
             sm::Mesh::FaceEdge fe = p.first;
             z3::expr bed = model.eval(p.second.first);
             z3::expr needle = model.eval(p.second.second);
-            std::cout << fe.face << std::endl;
             float needle_num = std::stof(needle.get_decimal_string(100));
+
+            bool c_exists = false;
+            for (auto const &c : mesh.hints) {
+                if (c.lhs == fe)
+                    c_exists = true;
+            }
 
             sm::Mesh::Hint h;
             h.lhs = fe;
@@ -847,7 +902,9 @@ static void generate_smt_phi(sm::Mesh &mesh, sm::Code const &code_library) {
             bn.needle = needle_num;
             bn.nudge = std::floor((needle_num - bn.needle) * 2);
             h.rhs = bn;
-            mesh.hints.push_back(h);
+
+            if (!c_exists)
+                mesh.hints.push_back(h);
         }
     }
 
