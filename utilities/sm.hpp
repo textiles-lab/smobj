@@ -179,7 +179,7 @@ namespace sm {
 
 	
 	struct Loop{
-		uint32_t id = -1U;
+		uint32_t id = -1U; // this also acts as a monotonic function on the construction space, when was this loop created
 		uint32_t prev = -1U;
 		std::vector<BedNeedle> sequence; // a vector of locations
 		std::vector<sm::Instr> sources;  // a vector of instructions
@@ -200,6 +200,7 @@ namespace sm {
 		std::vector<Loop> loops; // holds all the loops created
 		std::map<std::string, BedNeedle> yarn_positions; // which yarn is parked where
 		std::map<BedNeedle, std::vector<uint32_t>> bn_loops; // maintain loop + order
+		std::map<std::string, std::vector<uint32_t>> yarn_loops; //maintain loops created by each yarn
 		std::vector< std::vector<Instr> > passes;
 		bool make(Instr &instr, sm::Mesh const &mesh, sm::Code const &code);
 		bool empty();
@@ -536,6 +537,9 @@ struct InstrGraph{
 	std::vector<Instr> nodes; // record face instr in these
 	std::set<std::pair<uint32_t, uint32_t>> edge_loops;
 	std::set<std::pair<uint32_t, uint32_t>> edge_yarns;
+	std::vector<double> time; // monotonic
+	bool is_monotonic() const;
+	
 };
 //------ transfer helper functions -----
 // TODO move to a different file, perhaps
@@ -549,6 +553,7 @@ glm::vec3 face_centroid(uint32_t fid, sm::Mesh const &mesh);
 bool compute_code_graph(sm::Code &code);
 bool compute_library_graph(sm::Library &library); //NOTIMPLEMENTED
 bool compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGraph *graph); 
+
 
 bool compute_total_instructions(sm::Mesh &mesh, sm::Library const &library,  sm::Code const &code);
 

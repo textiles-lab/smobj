@@ -54,6 +54,7 @@ face decrease-right+
 	yarn [1:0.275,0] (-0.528105,-0.309375,-0.189062) (-0.553111,0.278126,0.062492) (0,0.420324,-0.235938) (0.471861,0.284377,0.087492) (0.721855,-0.217187,-0.0124998) [1:0.725,0]
 derive decrease-left+ -lX -lX +yX +lX -yX by mirror-x reverse-yarn from decrease-right+ -lX -lX +yX +lX -yX
 derive decrease-right- -lX -lX -yX +lX +yX by mirror-x from decrease-right+ -lX -lX +yX +lX -yX
+derive decrease-left- -lX -lX -yX +lX +yX by mirror-x from decrease-left+ -lX -lX +yX +lX -yX
 face turn-tuck)((
 	edge (-0.792,-1.22) -lX
 	edge (0.792,0) +lX
