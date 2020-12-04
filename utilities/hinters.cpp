@@ -778,11 +778,9 @@ static void generate_smt_phi(sm::Mesh &mesh, sm::Code const &code_library) {
                 uint32_t edge_idx = bed_pair.first;
                 auto b_expr = bed_pair.second;
 
-                bool hasconstraint = false;
                 // If resource constraint exists, assign here
                 for (auto const &r : r_constraints) {
                     if (r.first.edge == edge_idx) {
-                        hasconstraint = true;
                         sm::BedNeedle bn = r.second;
 
                         z3::expr tf = context.bool_val(true);
@@ -792,13 +790,11 @@ static void generate_smt_phi(sm::Mesh &mesh, sm::Code const &code_library) {
                     }
                 }
 
-                if (!hasconstraint) {
-                    sm::BedNeedle bn = c.edges[edge_idx].bn;
-                    z3::expr tf = context.bool_val(true);
-                    if (bn.bed == 'b' || bn.bed == 'B')
-                        tf = context.bool_val(false);
-                    variant = variant && (b_expr == tf);
-                }
+                sm::BedNeedle bn = c.edges[edge_idx].bn;
+                z3::expr tf = context.bool_val(true);
+                if (bn.bed == 'b' || bn.bed == 'B')
+                    tf = context.bool_val(false);
+                variant = variant && (b_expr == tf);
             }
 
             // needle formula
@@ -853,6 +849,12 @@ static void generate_smt_phi(sm::Mesh &mesh, sm::Code const &code_library) {
 	for(auto const &c : mesh.connections){
         auto face_a = face_expr[c.a.face];
         auto face_b = face_expr[c.b.face];
+        /*
+        std::string sa = std::to_string(&c - &mesh.connections[0]) + " " + std::to_string(c.a.face) + " " + std::to_string(c.b.face) + " face_a";
+        std::string sb = std::to_string(&c - &mesh.connections[0]) + " " + std::to_string(c.a.face) + " " + std::to_string(c.b.face) + " face_b";
+        solver.add(face_a, sa.c_str());
+        solver.add(face_b, sb.c_str());
+        */
         solver.add(face_a);
         solver.add(face_b);
         z3::expr a_b_expr = context.bool_const("a_b_expr");
