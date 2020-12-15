@@ -320,8 +320,8 @@ function relativeMouse(evt, elt) {
 canvas.addEventListener('wheel', function(evt){
 	evt.preventDefault();
 	let amt = evt.deltaY;
-	if (evt.deltaMode === 0x00) amt *= 16.0;
-	const zoom = Math.pow(0.5, -0.003 * evt.deltaY);
+	if (evt.deltaMode === 0x01) amt *= 16.0;
+	const zoom = Math.pow(0.5, -0.003 * amt);
 	camera.radius *= zoom;
 	if (camera.radius < 1.0) camera.radius = 1.0;
 	if (camera.radius > 1000.0) camera.radius = 1000.0;

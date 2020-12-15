@@ -38,11 +38,17 @@ const stripProgram = initShaderProgram(
 	attribute vec4 End;    //x,y,z, length
 	attribute vec3 Normal; //perpendicular to the plane containing start/middle/end
 
-	attribute vec3 PlyMulAddRad; //parameters for current ply -- angle is computed as pi * fract(Mul * len + Ofs)
+	attribute vec3 PlyMulAddRad; //parameters for current ply -- angle is computed as pi * fract(Mul * len + Add)
+	//paramters for current strand:
+	attribute vec2 SAMulAdd; //angle is computed as pi * fract(Mul * len + Add)
+	attribute vec4 SRMulAddRad1Rad2; //radius is mix(Rad1, Rad2, cos(pi * fract(Mul * len + Add)))
+
 	attribute vec2 ParamSide;
 
 	varying vec4 color;
 	varying vec3 normal;
+
+	#define PI 3.1415926
 
 	void main() {
 		vec4 sm = mix(Start, Middle, ParamSide.x);
@@ -59,9 +65,15 @@ const stripProgram = initShaderProgram(
 		vec3 p2 = -PerpNPerpB.y * Normal + PerpNPerpB.x * Binormal;
 
 		//ply center in local frame:
-		float ply_twist = 3.1415629 * 2.0 * fract(PlyMulAddRad.x * len + PlyMulAddRad.y);
-		//float ply_twist = 3.1415629 * 2.0 * fract(0.2 * len + 0.0);
+		float ply_twist = PI * 2.0 * fract(PlyMulAddRad.x * len + PlyMulAddRad.y);
 		vec2 ply_at = PlyMulAddRad.z * vec2(cos(ply_twist), sin(ply_twist));
+
+		//strand center in ply frame:
+		float strand_twist = PI * 2.0 * fract(SAMulAdd.x * len + SAMulAdd.y);
+		float strand_rad = mix(SRMulAddRad1Rad2.z, SRMulAddRad1Rad2.w, 0.5 + 0.5 * cos(PI * 2.0 * fract(SRMulAddRad1Rad2.x * len + SRMulAddRad1Rad2.y)));
+		//TODO: need to squish for ply frame!
+		ply_at += strand_rad * vec2(cos(strand_twist), sin(strand_twist));
+
 		vec3 pt = ply_at.x * p1 + ply_at.y * p2 + at;
 
 
@@ -89,8 +101,18 @@ const stripProgram = initShaderProgram(
 		vec3 d_p1 = PerpNPerpB.y * d_Binormal;
 		vec3 d_p2 = PerpNPerpB.x * d_Binormal;
 
-		float d_ply_twist = 3.1415629 * 2.0 * PlyMulAddRad.x * d_len;
+		float d_ply_twist = PI * 2.0 * PlyMulAddRad.x * d_len;
 		vec2 d_ply_at = d_ply_twist * PlyMulAddRad.z * vec2(-sin(ply_twist), cos(ply_twist));
+
+		float d_strand_twist = PI * 2.0 * SAMulAdd.x * d_len;
+		float d_strand_rad = (SRMulAddRad1Rad2.w - SRMulAddRad1Rad2.z) * 0.5 * -sin(PI * 2.0 * fract(SRMulAddRad1Rad2.x * len + SRMulAddRad1Rad2.y)) * SRMulAddRad1Rad2.x * d_len;
+
+		d_ply_at +=
+			d_strand_rad * vec2(cos(strand_twist), sin(strand_twist))
+			+ strand_rad * d_strand_twist * vec2(-sin(strand_twist), cos(strand_twist))
+		;
+
+
 		vec3 d_pt = d_ply_at.x * p1 + ply_at.x * d_p1 + d_ply_at.y * p2 + ply_at.y * d_p2 + d_at;
 
 		/*
@@ -107,8 +129,8 @@ const stripProgram = initShaderProgram(
 		vec3 n_p1 = PerpNPerpB.x * Normal + PerpNPerpB.y * n_Binormal;
 		vec3 n_p2 = -PerpNPerpB.y * Normal + PerpNPerpB.x * n_Binormal;
 
-		float n_ply_twist = 3.1415629 * 2.0 * fract(PlyMulAddRad.x * n_len + PlyMulAddRad.y);
-		//float n_ply_twist = 3.1415629 * 2.0 * fract(0.2 * n_len + 0.0);
+		float n_ply_twist = 3.1415926 * 2.0 * fract(PlyMulAddRad.x * n_len + PlyMulAddRad.y);
+		//float n_ply_twist = 3.1415926 * 2.0 * fract(0.2 * n_len + 0.0);
 		vec2 n_ply_at = PlyMulAddRad.z * vec2(cos(n_ply_twist), sin(n_ply_twist));
 		vec3 n_pt = n_ply_at.x * n_p1 + n_ply_at.y * n_p2 + n_at;
 		*/
@@ -126,7 +148,7 @@ const stripProgram = initShaderProgram(
 		vec3 along = d_pt;
 		vec3 to_eye = EYE_vec3 - pt;
 
-		pt += PlyMulAddRad.z * normalize(cross(along, to_eye)) * ParamSide.y; //now an approx of the perpendicular
+		pt += normalize(cross(along, to_eye)) * ParamSide.y; //now an approx of the perpendicular
 
 		gl_Position = MVP_mat4 * vec4(pt, 1.0);
 
@@ -302,23 +324,47 @@ renderer.uploadYarns = function strips_uploadYarns() {
 	instanceCount = RSMEAttribs.length / 17;
 	console.log("Have " + instanceCount + " instances.");
 
+	let randomIndex = 0;
+	function pseudoRandom(min, max) {
+		//from: https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
+		const amt = (Math.sin(randomIndex * 78.233) * 43758.5453) % 1;
+		randomIndex += 1;
+		return (0.5 * amt + 0.5) * (max - min) + min;
+	}
+
 	let ParamSideAttribs = [];
 	let radius = yarns.yarns[0].radius; //overall yarn radius
 	for (let p = 0; p < 3; ++p) {
 		let ply_add = p / 3.0;
-		let ply_mul = 1.0 / (10.0 * radius); //one twist every ten radii
+		let ply_mul = 1.0 / (5.0 * radius); //one twist every five radii
 		let ply_rad = radius * 0.5;
-		for (let i = 0; i <= 10; ++i) {
-			let amt = i / 10.0;
-			if (i == 0 && ParamSideAttribs.length > 0) ParamSideAttribs.push( ...ParamSideAttribs.slice(-5) );
-			ParamSideAttribs.push(amt,-1.0, ply_mul, ply_add, ply_rad);
-			if (i == 0 && ParamSideAttribs.length > 5) ParamSideAttribs.push( ...ParamSideAttribs.slice(-5) );
-			ParamSideAttribs.push(amt, 1.0, ply_mul, ply_add, ply_rad);
+		for (let s = 0; s < 20; ++s) {
+			let strand_angle_add = s / 20.0;
+			let strand_angle_mul = -1.0 / (5.0 * radius); //tighter strand twist than ply twist, opposite direction
+			let strand_radius_add = pseudoRandom(0.0,1.0);
+			let strand_radius_mul = 1.0 / (pseudoRandom(5.0, 10.0) * radius);
+			let strand_rad1 = pseudoRandom(-0.1, 0.5) * ply_rad;
+			let strand_rad2 = pseudoRandom(0.5, 1.1) * ply_rad;
+
+			let strand_radius = 0.1 * 0.5 * radius;
+			for (let i = 0; i <= 10; ++i) {
+				let amt = i / 10.0;
+				if (i == 0 && ParamSideAttribs.length > 0) ParamSideAttribs.push( ...ParamSideAttribs.slice(-11) );
+				ParamSideAttribs.push(amt,-strand_radius,
+					ply_mul, ply_add, ply_rad,
+					strand_angle_mul, strand_angle_add,
+					strand_radius_mul, strand_radius_add, strand_rad1, strand_rad2);
+				if (i == 0 && ParamSideAttribs.length > 11) ParamSideAttribs.push( ...ParamSideAttribs.slice(-11) );
+				ParamSideAttribs.push(amt, strand_radius,
+					ply_mul, ply_add, ply_rad,
+					strand_angle_mul, strand_angle_add,
+					strand_radius_mul, strand_radius_add, strand_rad1, strand_rad2);
+			}
 		}
 	}
 	gl.bindBuffer(gl.ARRAY_BUFFER, perVertexBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ParamSideAttribs), gl.STATIC_DRAW);
-	vertexCount = ParamSideAttribs.length / 5;
+	vertexCount = ParamSideAttribs.length / 11;
 	console.log("Have " + vertexCount + " vertices per instance.");
 
 
@@ -377,7 +423,7 @@ renderer.redraw = function strips_redraw() {
 		2, //size
 		gl.FLOAT, //type
 		false, //normalize
-		4*5, //stride
+		4*11, //stride
 		0 //offset
 	);
 	gl.enableVertexAttribArray(stripProgram.attribLocations.ParamSide);
@@ -387,11 +433,34 @@ renderer.redraw = function strips_redraw() {
 			3, //size
 			gl.FLOAT, //type
 			false, //normalize
-			4*5, //stride
+			4*11, //stride
 			4*2 //offset
 		);
 		gl.enableVertexAttribArray(stripProgram.attribLocations.PlyMulAddRad);
 	}
+
+	if ('SAMulAdd' in stripProgram.attribLocations) {
+		gl.vertexAttribPointer(stripProgram.attribLocations.SAMulAdd,
+			2, //size
+			gl.FLOAT, //type
+			false, //normalize
+			4*11, //stride
+			4*5 //offset
+		);
+		gl.enableVertexAttribArray(stripProgram.attribLocations.SAMulAdd);
+	}
+
+	if ('SRMulAddRad1Rad2' in stripProgram.attribLocations) {
+		gl.vertexAttribPointer(stripProgram.attribLocations.SRMulAddRad1Rad2,
+			4, //size
+			gl.FLOAT, //type
+			false, //normalize
+			4*11, //stride
+			4*7 //offset
+		);
+		gl.enableVertexAttribArray(stripProgram.attribLocations.SRMulAddRad1Rad2);
+	}
+
 
 	gl.bindBuffer(gl.ARRAY_BUFFER, perInstanceBuffer);
 
