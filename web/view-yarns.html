@@ -99,6 +99,11 @@ body {
 <!-- controls bar at the top of the window -->
 <div id="view-controls">
 <h1 id="file-name">No File Loaded<button id="reload">reload</button></h1>
+<select id="renderer">
+<option value="strips" selected>strips</option>
+<option value="tubes">tubes</option>
+<option value="lines">lines</option>
+</select>
 <input id="file" type="file" />
 <label id="fileLabel" for="file"><span>Choose an .yarns file</span> or drag one into the window to visualize it.</label>
 </div>
@@ -125,7 +130,6 @@ body {
 //File loading code
 
 window.currentFile = null;
-
 
 document.getElementById("reload").addEventListener("click", function(){
 	if (window.currentFile) {
@@ -236,25 +240,34 @@ const camera = {
 
 camera.computeUp = function camera_computeUp() {
 	return {
-		x:Math.sin(camera.azimuth)*-Math.sin(camera.elevation),
-		y:Math.cos(camera.elevation),
-		z:Math.cos(camera.azimuth)*-Math.sin(camera.elevation)
+		x:Math.sin(this.azimuth)*-Math.sin(this.elevation),
+		y:Math.cos(this.elevation),
+		z:Math.cos(this.azimuth)*-Math.sin(this.elevation)
 	};
 };
 
 camera.computeRight = function camera_computeRight() {
 	return {
-		x:Math.cos(camera.azimuth),
+		x:Math.cos(this.azimuth),
 		y:0.0,
-		z:-Math.sin(camera.azimuth)
+		z:-Math.sin(this.azimuth)
 	};
 };
 
 camera.computeOut = function camera_computeOut() {
 	return {
-		x:Math.sin(camera.azimuth)*Math.cos(camera.elevation),
-		y:Math.sin(camera.elevation),
-		z:Math.cos(camera.azimuth)*Math.cos(camera.elevation)
+		x:Math.sin(this.azimuth)*Math.cos(this.elevation),
+		y:Math.sin(this.elevation),
+		z:Math.cos(this.azimuth)*Math.cos(this.elevation)
+	};
+};
+
+camera.computeAt = function camera_computeAt() {
+	const out = this.computeOut();
+	return {
+		x:this.target.x+this.radius*out.x,
+		y:this.target.y+this.radius*out.y,
+		z:this.target.z+this.radius*out.z
 	};
 };
 
@@ -307,8 +320,8 @@ function relativeMouse(evt, elt) {
 canvas.addEventListener('wheel', function(evt){
 	evt.preventDefault();
 	let amt = evt.deltaY;
-	if (evt.deltaMode === 0x00) amt *= 16.0;
-	const zoom = Math.pow(0.5, -0.003 * evt.deltaY);
+	if (evt.deltaMode === 0x01) amt *= 16.0;
+	const zoom = Math.pow(0.5, -0.003 * amt);
 	camera.radius *= zoom;
 	if (camera.radius < 1.0) camera.radius = 1.0;
 	if (camera.radius > 1000.0) camera.radius = 1000.0;
@@ -415,14 +428,9 @@ function mul(A, B) {
 
 function computeMVP() {
 	const P = perspective(camera.fovy, camera.aspect, 0.1);
-	const out = camera.computeOut();
 	const up = camera.computeUp();
 	const MV = lookAt(
-		{
-			x:camera.target.x+camera.radius*out.x,
-			y:camera.target.y+camera.radius*out.y,
-			z:camera.target.z+camera.radius*out.z
-		},
+		camera.computeAt(),
 		camera.target,
 		up
 	);
@@ -484,9 +492,29 @@ function initShaderProgram(vsSource, fsSource) {
 </script>
 <script src="renderers.lines.js"></script>
 <script src="renderers.tubes.js"></script>
+<script src="renderers.strips.js"></script>
 <script>
 
-let renderer = renderers.tubes;
+let renderer = null;
+window.yarns = null;
+
+function setRenderer(name) {
+	const sel = document.getElementById("renderer");
+	for (const option of sel.getElementsByTagName("option")) {
+		option.selected = (option.value === name);
+	}
+	renderer = renderers[name];
+	if (yarns) {
+		uploadYarns();
+		requestRedraw();
+	}
+}
+
+setRenderer("strips");
+
+document.getElementById("renderer").addEventListener("change", function(){
+	setRenderer(document.getElementById("renderer").value);
+});
 
 function setTestYarns() {
 	yarns = new sm.Yarns();
