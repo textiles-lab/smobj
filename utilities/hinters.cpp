@@ -1,9 +1,9 @@
 #include "sm.hpp"
 #include "hinters.hpp"
+#include "z3/src/api/c++/z3++.h"
 #include <algorithm>
 #include <iostream>
 #include <fstream>
-#include <z3++.h>
 
 // generate hints assuming:
 // 1. Patch has only short-rows <-- verify face signatures only consume/produce 1 loop
