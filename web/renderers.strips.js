@@ -31,14 +31,13 @@ const stripProgram = initShaderProgram(
 	uniform vec3 EYE_vec3;
 	uniform vec3 OUT_vec3;
 
-
 	attribute vec2 PerpNPerpB; //radius + 1st perpendicular direction in terms of normal / binormal
 	attribute vec4 Start;  //x,y,z, length
 	attribute vec4 Middle; //x,y,z, length
 	attribute vec4 End;    //x,y,z, length
 	attribute vec3 Normal; //perpendicular to the plane containing start/middle/end
 
-	attribute vec3 PlyMulAddRad; //parameters for current ply -- angle is computed as pi * fract(Mul * len + Add)
+	attribute vec4 PlyMulAddRadSquish; //parameters for current ply -- angle is computed as pi * fract(Mul * len + Add)
 	//paramters for current strand:
 	attribute vec2 SAMulAdd; //angle is computed as pi * fract(Mul * len + Add)
 	attribute vec4 SRMulAddRad1Rad2; //radius is mix(Rad1, Rad2, cos(pi * fract(Mul * len + Add)))
@@ -46,9 +45,13 @@ const stripProgram = initShaderProgram(
 	attribute vec2 ParamSide;
 
 	varying vec4 color;
+	varying float pos; //position from -normal to normal across strand
 	varying vec3 normal;
+	varying vec3 tangent;
+	varying vec2 local; //local position in yarn
 
 	#define PI 3.1415926
+	#define EPS 0.001 //epsilon for finite difference approximations
 
 	void main() {
 		vec4 sm = mix(Start, Middle, ParamSide.x);
@@ -65,16 +68,16 @@ const stripProgram = initShaderProgram(
 		vec3 p2 = -PerpNPerpB.y * Normal + PerpNPerpB.x * Binormal;
 
 		//ply center in local frame:
-		float ply_twist = PI * 2.0 * fract(PlyMulAddRad.x * len + PlyMulAddRad.y);
-		vec2 ply_at = PlyMulAddRad.z * vec2(cos(ply_twist), sin(ply_twist));
+		float ply_twist = PI * 2.0 * fract(PlyMulAddRadSquish.x * len + PlyMulAddRadSquish.y);
+		vec2 ply_dir = vec2(cos(ply_twist), sin(ply_twist));
+		vec2 ply_at = PlyMulAddRadSquish.z * ply_dir;
 
 		//strand center in ply frame:
 		float strand_twist = PI * 2.0 * fract(SAMulAdd.x * len + SAMulAdd.y);
 		float strand_rad = mix(SRMulAddRad1Rad2.z, SRMulAddRad1Rad2.w, 0.5 + 0.5 * cos(PI * 2.0 * fract(SRMulAddRad1Rad2.x * len + SRMulAddRad1Rad2.y)));
-		//TODO: need to squish for ply frame!
-		ply_at += strand_rad * vec2(cos(strand_twist), sin(strand_twist));
+		vec2 strand_at = ply_at + strand_rad * (vec2(-ply_dir.y, ply_dir.x) * cos(strand_twist) + ply_dir * PlyMulAddRadSquish.w * sin(strand_twist));
 
-		vec3 pt = ply_at.x * p1 + ply_at.y * p2 + at;
+		vec3 pt = strand_at.x * p1 + strand_at.y * p2 + at;
 
 
 		//ply tangent (lots of chain rule!):
@@ -91,77 +94,115 @@ const stripProgram = initShaderProgram(
 		// dT(t)/dt = (dA(t)/dt - T(t)*dot(dA(t)/dt,T(t)) / |A(t)|
 		//via: https://www.gamedev.net/forums/topic/553227-vector-calculus-question-derivative-of-a-normalized-vector-from-coutinhos-book/
 
-		/*
-		vec3 d_Tangent_approx = 
-		(normalize(mix(Middle.xyz - Start.xyz, End.xyz - Middle.xyz, ParamSide.x + 0.01))-
-		 normalize(mix(Middle.xyz - Start.xyz, End.xyz - Middle.xyz, ParamSide.x)))/0.01; //DEBUG: approx
-		*/
-
 		vec3 d_Binormal = cross(d_Tangent, Normal) /* constant: + cross(Tangent, d_Normal) */;
 		vec3 d_p1 = PerpNPerpB.y * d_Binormal;
 		vec3 d_p2 = PerpNPerpB.x * d_Binormal;
 
-		float d_ply_twist = PI * 2.0 * PlyMulAddRad.x * d_len;
-		vec2 d_ply_at = d_ply_twist * PlyMulAddRad.z * vec2(-sin(ply_twist), cos(ply_twist));
+		float d_ply_twist = PI * 2.0 * PlyMulAddRadSquish.x * d_len;
+		vec2 d_ply_dir = d_ply_twist * vec2(-sin(ply_twist), cos(ply_twist));
+		vec2 d_ply_at = PlyMulAddRadSquish.z * d_ply_dir;
 
 		float d_strand_twist = PI * 2.0 * SAMulAdd.x * d_len;
-		float d_strand_rad = (SRMulAddRad1Rad2.w - SRMulAddRad1Rad2.z) * 0.5 * -sin(PI * 2.0 * fract(SRMulAddRad1Rad2.x * len + SRMulAddRad1Rad2.y)) * SRMulAddRad1Rad2.x * d_len;
+		float d_strand_rad = (SRMulAddRad1Rad2.w - SRMulAddRad1Rad2.z) * 0.5 * -sin(PI * 2.0 * fract(SRMulAddRad1Rad2.x * len + SRMulAddRad1Rad2.y)) * PI * 2.0 * SRMulAddRad1Rad2.x * d_len;
 
-		d_ply_at +=
-			d_strand_rad * vec2(cos(strand_twist), sin(strand_twist))
-			+ strand_rad * d_strand_twist * vec2(-sin(strand_twist), cos(strand_twist))
-		;
+		vec2 d_strand_at = d_ply_at
+			+ d_strand_rad * (vec2(-ply_dir.y, ply_dir.x) * cos(strand_twist) + ply_dir * PlyMulAddRadSquish.w * sin(strand_twist))
+			+ strand_rad * (
+				vec2(-d_ply_dir.y, d_ply_dir.x) * cos(strand_twist) + d_ply_dir * PlyMulAddRadSquish.w * sin(strand_twist)
+				+ vec2(-ply_dir.y, ply_dir.x) * d_strand_twist * -sin(strand_twist) + ply_dir * PlyMulAddRadSquish.w * d_strand_twist * cos(strand_twist)
+			);
 
+		vec3 d_pt = d_strand_at.x * p1 + strand_at.x * d_p1 + d_strand_at.y * p2 + strand_at.y * d_p2 + d_at;
 
-		vec3 d_pt = d_ply_at.x * p1 + ply_at.x * d_p1 + d_ply_at.y * p2 + ply_at.y * d_p2 + d_at;
-
-		/*
+#ifdef COMPARE_TO_NUMERICAL
 		//very lazy way of approximating the derviative:
-		vec4 n_sm = mix(Start, Middle, ParamSide.x + 0.01);
-		vec4 n_me = mix(Middle, End, ParamSide.x + 0.01);
-		vec4 n_sme = mix(n_sm, n_me, ParamSide.x + 0.01);
+		vec4 n_sm = mix(Start, Middle, ParamSide.x + EPS);
+		vec4 n_me = mix(Middle, End, ParamSide.x + EPS);
+		vec4 n_sme = mix(n_sm, n_me, ParamSide.x + EPS);
 
 		vec3 n_at = n_sme.xyz;
 		float n_len = n_sme.w;
 
-		vec3 n_Tangent = normalize(mix(Middle.xyz - Start.xyz, End.xyz - Middle.xyz, ParamSide.x + 0.01));
+		vec3 n_Tangent = normalize(mix(Middle.xyz - Start.xyz, End.xyz - Middle.xyz, ParamSide.x + EPS));
 		vec3 n_Binormal = cross(n_Tangent, Normal);
 		vec3 n_p1 = PerpNPerpB.x * Normal + PerpNPerpB.y * n_Binormal;
 		vec3 n_p2 = -PerpNPerpB.y * Normal + PerpNPerpB.x * n_Binormal;
 
-		float n_ply_twist = 3.1415926 * 2.0 * fract(PlyMulAddRad.x * n_len + PlyMulAddRad.y);
-		//float n_ply_twist = 3.1415926 * 2.0 * fract(0.2 * n_len + 0.0);
-		vec2 n_ply_at = PlyMulAddRad.z * vec2(cos(n_ply_twist), sin(n_ply_twist));
-		vec3 n_pt = n_ply_at.x * n_p1 + n_ply_at.y * n_p2 + n_at;
-		*/
+		//ply center in local frame:
+		float n_ply_twist = PI * 2.0 * fract(PlyMulAddRadSquish.x * n_len + PlyMulAddRadSquish.y);
+		if (n_ply_twist + PI < ply_twist) n_ply_twist += 2.0 * PI;
+		if (n_ply_twist - PI > ply_twist) n_ply_twist -= 2.0 * PI;
+
+		vec2 n_ply_dir = vec2(cos(n_ply_twist), sin(n_ply_twist));
+		vec2 n_ply_at = PlyMulAddRadSquish.z * n_ply_dir;
+
+		//strand center in ply frame:
+		float n_strand_twist = PI * 2.0 * fract(SAMulAdd.x * n_len + SAMulAdd.y);
+		if (n_strand_twist + PI < strand_twist) n_strand_twist += 2.0 * PI;
+		if (n_strand_twist - PI > strand_twist) n_strand_twist -= 2.0 * PI;
+
+		float n_strand_rad = mix(SRMulAddRad1Rad2.z, SRMulAddRad1Rad2.w, 0.5 + 0.5 * cos(PI * 2.0 * fract(SRMulAddRad1Rad2.x * n_len + SRMulAddRad1Rad2.y)));
+		vec2 n_strand_at = n_ply_at + n_strand_rad * (vec2(-n_ply_dir.y, n_ply_dir.x) * cos(n_strand_twist) + n_ply_dir * PlyMulAddRadSquish.w * sin(n_strand_twist));
+
+		vec3 n_pt = n_strand_at.x * n_p1 + n_strand_at.y * n_p2 + n_at;
 
 		//---- set color to check derviatives ---
-		//vec3 delta = vec3( (n_sme.xyz - sme.xyz)/0.01 - d_sme.xyz);
-		//vec3 delta = vec3( (n_pt - pt)/0.01 - d_pt);
-		//vec3 delta = vec3( d_Tangent - d_Tangent_real);
-		//color = vec4(1.0*abs(delta), 1); //Color;
+		//vec3 delta = vec3( (n_sme.xyz - sme.xyz)/EPS - d_sme.xyz);
+		//vec3 delta = vec3( (n_ply_twist - ply_twist)/EPS - d_ply_twist);
+		//vec3 delta = vec3( (n_ply_dir.xyy - ply_dir.xyy)/EPS - d_ply_dir.xyy);
+		//vec3 delta = vec3( (n_ply_at.xyy - ply_at.xyy)/EPS - d_ply_at.xyy);
+		//vec3 delta = vec3( (n_strand_rad - strand_rad)/EPS - d_strand_rad);
+		//vec3 delta = vec3( (n_strand_twist - strand_twist)/EPS - d_strand_twist);
+		//vec3 delta = vec3( (n_strand_at.xyy - strand_at.xyy)/EPS - d_strand_at.xyy);
+		//vec3 delta = vec3( (n_Tangent - Tangent)/EPS - d_Tangent);
+		//vec3 delta = vec3( (n_Binormal - Binormal)/EPS - d_Binormal);
+		//vec3 delta = vec3( (n_p1 - p1)/EPS - d_p1);
+		//vec3 delta = vec3( (n_p2 - p2)/EPS - d_p2);
+		//vec3 delta = vec3( (n_at - at)/EPS - d_at);
+		//vec3 delta = vec3( (n_pt - pt)/EPS - d_pt);
+		//color = vec4(10.0*abs(delta), 1); //Color;
+#endif
 
+		//shade with direction:
+		//color = vec4(normalize(d_pt)*0.5+0.5, 1.0);
 
-		color = vec4(normalize(d_pt)*0.5+0.5, 1.0);
 
 		//build strip:
 		vec3 along = d_pt;
 		vec3 to_eye = EYE_vec3 - pt;
-
 		pt += normalize(cross(along, to_eye)) * ParamSide.y; //now an approx of the perpendicular
-
 		gl_Position = MVP_mat4 * vec4(pt, 1.0);
 
-		normal = vec3(1,1,1);
+
+		color = vec4(1.0, 1.0, 0.0, 1.0); //DEBUG
+		normal = normalize(to_eye - dot(to_eye, d_pt) / dot(d_pt, d_pt) * d_pt);
+		pos = sign(ParamSide.y);
+		tangent = normalize(d_pt);
+		local = strand_at;
 	}
 `,`
+	uniform highp vec3 TO_LIGHT_vec3; //distant directional light
 	varying lowp vec4 color;
 	varying highp vec3 normal;
+	varying highp float pos;
+	varying highp vec2 at;
+	varying highp vec3 tangent;
+	varying highp vec2 local;
 	void main() {
-		highp vec3 n = normalize(normal);
+		highp vec3 n = normalize(normal); //perpendicular to both yarn and direction to eye
+		highp vec3 t = normalize(tangent); //tangent to yarn
+		highp vec3 b = cross(n, t); //perpendicular to yarn, points toward eye
+
+		highp vec3 s = pos * n + sqrt(1.0 - pos*pos) * b;
 		//upper dome light:
-		highp vec3 light = mix(vec3(0.1), vec3(1.0), 0.5*n.y+0.5);
-		gl_FragColor = vec4(color.rgb * light, color.a);
+		//highp vec3 light = mix(vec3(0.1), vec3(1.0), dot(TO_LIGHT_vec3,s)+0.5);
+
+		highp float e = mix(0.1, 1.0, 1.0 - abs(dot(TO_LIGHT_vec3, t)) );
+		//highp float e = mix(0.1, 1.0, 0.5 + dot(TO_LIGHT_vec3, n) );
+		e *= mix(0.5, 1.0, smoothstep(0.0, 0.1, length(local)));
+
+		gl_FragColor = vec4(color.rgb * e, color.a);
+		//gl_FragColor = vec4(0.5*s+0.5, 1.0);
 	}
 `);
 
@@ -338,6 +379,7 @@ renderer.uploadYarns = function strips_uploadYarns() {
 		let ply_add = p / 3.0;
 		let ply_mul = 1.0 / (5.0 * radius); //one twist every five radii
 		let ply_rad = radius * 0.5;
+		let ply_squish = 0.8;
 		for (let s = 0; s < 20; ++s) {
 			let strand_angle_add = s / 20.0;
 			let strand_angle_mul = -1.0 / (5.0 * radius); //tighter strand twist than ply twist, opposite direction
@@ -349,14 +391,14 @@ renderer.uploadYarns = function strips_uploadYarns() {
 			let strand_radius = 0.1 * 0.5 * radius;
 			for (let i = 0; i <= 10; ++i) {
 				let amt = i / 10.0;
-				if (i == 0 && ParamSideAttribs.length > 0) ParamSideAttribs.push( ...ParamSideAttribs.slice(-11) );
+				if (i == 0 && ParamSideAttribs.length > 0) ParamSideAttribs.push( ...ParamSideAttribs.slice(-12) );
 				ParamSideAttribs.push(amt,-strand_radius,
-					ply_mul, ply_add, ply_rad,
+					ply_mul, ply_add, ply_rad, ply_squish,
 					strand_angle_mul, strand_angle_add,
 					strand_radius_mul, strand_radius_add, strand_rad1, strand_rad2);
-				if (i == 0 && ParamSideAttribs.length > 11) ParamSideAttribs.push( ...ParamSideAttribs.slice(-11) );
+				if (i == 0 && ParamSideAttribs.length > 12) ParamSideAttribs.push( ...ParamSideAttribs.slice(-12) );
 				ParamSideAttribs.push(amt, strand_radius,
-					ply_mul, ply_add, ply_rad,
+					ply_mul, ply_add, ply_rad, ply_squish,
 					strand_angle_mul, strand_angle_add,
 					strand_radius_mul, strand_radius_add, strand_rad1, strand_rad2);
 			}
@@ -364,7 +406,7 @@ renderer.uploadYarns = function strips_uploadYarns() {
 	}
 	gl.bindBuffer(gl.ARRAY_BUFFER, perVertexBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ParamSideAttribs), gl.STATIC_DRAW);
-	vertexCount = ParamSideAttribs.length / 11;
+	vertexCount = ParamSideAttribs.length / 12;
 	console.log("Have " + vertexCount + " vertices per instance.");
 
 
@@ -423,20 +465,20 @@ renderer.redraw = function strips_redraw() {
 		2, //size
 		gl.FLOAT, //type
 		false, //normalize
-		4*11, //stride
+		4*12, //stride
 		0 //offset
 	);
 	gl.enableVertexAttribArray(stripProgram.attribLocations.ParamSide);
 
-	if ('PlyMulAddRad' in stripProgram.attribLocations) {
-		gl.vertexAttribPointer(stripProgram.attribLocations.PlyMulAddRad,
-			3, //size
+	if ('PlyMulAddRadSquish' in stripProgram.attribLocations) {
+		gl.vertexAttribPointer(stripProgram.attribLocations.PlyMulAddRadSquish,
+			4, //size
 			gl.FLOAT, //type
 			false, //normalize
-			4*11, //stride
+			4*12, //stride
 			4*2 //offset
 		);
-		gl.enableVertexAttribArray(stripProgram.attribLocations.PlyMulAddRad);
+		gl.enableVertexAttribArray(stripProgram.attribLocations.PlyMulAddRadSquish);
 	}
 
 	if ('SAMulAdd' in stripProgram.attribLocations) {
@@ -444,8 +486,8 @@ renderer.redraw = function strips_redraw() {
 			2, //size
 			gl.FLOAT, //type
 			false, //normalize
-			4*11, //stride
-			4*5 //offset
+			4*12, //stride
+			4*6 //offset
 		);
 		gl.enableVertexAttribArray(stripProgram.attribLocations.SAMulAdd);
 	}
@@ -455,8 +497,8 @@ renderer.redraw = function strips_redraw() {
 			4, //size
 			gl.FLOAT, //type
 			false, //normalize
-			4*11, //stride
-			4*7 //offset
+			4*12, //stride
+			4*8 //offset
 		);
 		gl.enableVertexAttribArray(stripProgram.attribLocations.SRMulAddRad1Rad2);
 	}
@@ -533,6 +575,12 @@ renderer.redraw = function strips_redraw() {
 	gl.uniform3fv(
 		stripProgram.uniformLocations.OUT_vec3,
 		new Float32Array([out.x, out.y, eye.z])
+	);
+
+	const to_light = normalize({x:1.0, y:1.0, z:0.5});
+	gl.uniform3fv(
+		stripProgram.uniformLocations.TO_LIGHT_vec3,
+		new Float32Array([to_light.x, to_light.y, to_light.z])
 	);
 
 
