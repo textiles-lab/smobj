@@ -99,13 +99,15 @@ body {
 <!-- controls bar at the top of the window -->
 <div id="view-controls">
 <h1 id="file-name">No File Loaded<button id="reload">reload</button></h1>
+<input id="file" type="file" />
+<label id="fileLabel" for="file"><span>Choose an .yarns file</span> or drag one into the window to visualize it.</label>
 <select id="renderer">
 <option value="strips" selected>strips</option>
 <option value="tubes">tubes</option>
 <option value="lines">lines</option>
 </select>
-<input id="file" type="file" />
-<label id="fileLabel" for="file"><span>Choose an .yarns file</span> or drag one into the window to visualize it.</label>
+<button id="benchmark">benchmark</button>
+<span id="benchmark-result"></span>
 </div>
 
 <!-- 3d view -->
@@ -437,6 +439,106 @@ function computeMVP() {
 	return mul(P, MV);
 }
 
+//------- benchmark -------
+
+function setBenchmarkYarns() {
+	yarns = new sm.Yarns();
+
+	yarns.units.push({ name:"1", length:1.0 });
+	yarns.units.push({ name:"a", length:2.0 });
+	yarns.units.push({ name:"b", length:2.0 });
+
+	const Courses = 40;
+	const Wales = 40;
+
+	const StitchHeight = 0.6;
+	const StitchWidth = 1.0;
+	//stitch in [-1,1]x[-1,1] box:
+	const LeftLeg = [
+		-1.0,-0.7, 0.3,
+		-0.2,-0.5, 0.3,
+		-0.5, 1.0, 0.0,
+	];
+
+	const RightLeg = [
+		 0.5, 1.0, 0.0,
+		 0.2,-0.5, 0.3,
+		 1.0,-0.7, 0.3,
+	];
+
+	const Loop = [
+		-0.5,-1.0, 0.0,
+		-0.8, 0.5, 0.3,
+		 0.0, 0.7, 0.3,
+		 0.8, 0.5, 0.3,
+		 0.5,-1.0, 0.0,
+	];
+
+	for (let course = 0; course < Courses; ++course) {
+		let points = [];
+		let sources = [];
+		let checkpoints = [];
+		function addPath(Path, x, y, z, skipFirst) {
+			for (let i = (skipFirst ? 3 : 0); i + 2 < Path.length; i += 3) {
+				points.push(StitchWidth * 0.5 * Path[i+0] + x, StitchHeight * 0.5 * Path[i+1] + y, Path[i+2] + z);
+			}
+		}
+		for (let wale = 0; wale < Wales; ++wale) {
+			const x = StitchWidth * (wale - 0.5 * Wales);
+			const y = StitchHeight * (course - 0.5 * Courses);
+			const z = 0;
+			addPath(LeftLeg, x, y, z, (wale !== 0));
+			addPath(Loop, x, y + StitchHeight, z, true);
+			addPath(RightLeg, x, y, z, true);
+		}
+		yarns.yarns.push({
+			points:points,
+			sources:sources,
+			checkpoints:checkpoints,
+			radius:0.15,
+			color:{ r:0xff, g:0x88, b:0x88, a:0xff }
+		});
+	}
+
+	resetCamera();
+	resetUnitsUI();
+	uploadYarns();
+	requestRedraw();
+}
+
+function benchmark() {
+	console.log("Running benchmark....");
+
+	//Okay, how to benchmark renderer? Consistent frame size, camera position, yarns.
+
+	canvas.style.width = "1024px";
+	canvas.style.height = "1024px";
+
+	setBenchmarkYarns();
+
+	camera.target = {x:0.0, y:0.0, z:0.0};
+	camera.radius = 37;
+	camera.azimuth = 0.0;
+	camera.elevation = 0.0;
+	camera.fovy = 60.0;
+	camera.aspect = 1.0;
+
+	let before = performance.now();
+	let iters = 0;
+	while (iters < 1000) {
+		++iters;
+		redraw();
+		gl.finish();
+		let after = performance.now();
+		if (after - before > 2000) break;
+	}
+	let total = performance.now() - before;
+	console.log("Did " + iters + " iterations in " + total + "ms.");
+	let result = iters.toString() + " iterations, avg " + total/iters + "ms per";
+	document.getElementById("benchmark-result").innerText = result;
+}
+
+document.getElementById("benchmark").addEventListener('click', benchmark);
 
 //------- rendering -------
 
