@@ -63,8 +63,9 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		if(last.is_move() && last.src.is_front() && instr.src.is_back()) new_pass = true; 
 		if(last.is_move() && last.src.is_back() && instr.src.is_front()) new_pass = true;
 		if(last.tgt.needle == instr.tgt.needle /*&& not racking 0.25*/) new_pass = true;
-		if(!instr.tgt.dontcare() && last.tgt.needle > instr.tgt.needle && instr.direction == sm::Instr::Right) new_pass = true;
-		if(!instr.tgt.dontcare() && last.tgt.needle < instr.tgt.needle && instr.direction == sm::Instr::Left) new_pass = true;
+		if(!instr.tgt.dontcare() && last.tgt.needle >= instr.tgt.needle && instr.direction == sm::Instr::Right) new_pass = true;
+		if(!instr.tgt.dontcare() && last.tgt.needle <= instr.tgt.needle && instr.direction == sm::Instr::Left) new_pass = true;
+		
 	}
 	if(passes.empty() || new_pass) {
 		passes.emplace_back();
@@ -403,9 +404,12 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		case sm::Instr::Xfer:
 			for(auto it = bn_loops[instr.src].rbegin(); it != bn_loops[instr.src].rend(); ++it){
 				// if the last made location for any yarn was instr.src, move it to instr.tgt 
+				// if the last made loop for a yarn was the loop getting transfered
 				for(auto yp : yarn_positions){
 					sm::BedNeedle ybn = loops[*it].sequence.back();
-					if(!yp.second.dontcare() && ybn == instr.src && std::abs(ybn.location() - yp.second.location()) <= 0.5f){
+					uint32_t last_loop_by_yarn_id = yarn_loops[yp.first].back();
+					if(!yp.second.dontcare()  && last_loop_by_yarn_id == *it && std::abs(ybn.location() - yp.second.location()) <= 0.5f){
+					//if(!yp.second.dontcare() && ybn == instr.src && std::abs(ybn.location() - yp.second.location()) <= 0.5f){
 						sm::BedNeedle obn = yp.second;
 						float loc = instr.src.location() - yp.second.location();
 						assert(loc != 0.f);
@@ -495,21 +499,40 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	
 	// is slack okay for all active loops
 	{
+		//std::cout << "DEBUG: Slack info for all loops on bed." << std::endl;
 		for(auto const &bn_ls : bn_loops){
 			for(auto l_id : bn_ls.second){
 				assert(loops[l_id].sequence.back() == bn_ls.first);
-				if(loops[l_id].prev == -1U) continue;
+				if (loops[l_id].prev == -1U) {
+					//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has no previous loop. " << std::endl; // debug
+					continue;
+				}
 				sm::BedNeedle bn2;
-				if(!is_loop_active(loops[loops[l_id].prev], &bn2)) continue;
+				if (!is_loop_active(loops[loops[l_id].prev], &bn2)) {
+					//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has previous loop that is dropped already. " << std::endl; // debug
+					continue;
+				}
 				sm::BedNeedle bnc = loops[l_id].sequence.back();
 				sm::BedNeedle bnp = loops[loops[l_id].prev].sequence.back();
+				//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has previous loop at " << bnp.to_string() << std::endl; // debug
+
 				//uint32_t slack = std::abs(bnc.needle - bnp.needle);
 				uint32_t slack = std::abs(bnc.position_on_front(racking) - bnp.position_on_front(racking));
+				//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has current (pre)slack " << slack << " and required slack (with prev)" << loops[l_id].prev_slack << std::endl; // debug
+				//std::cout << "Loop " << loops[l_id].prev << " at " << bnp.to_string() << " has current (post)slack " << slack << " and required slack (with next)" << loops[loops[l_id].prev].post_slack << std::endl; // debug
+
 				if(bnc.bed != bnp.bed && bnc.needle == bnp.needle) slack++;
 				if(slack > loops[l_id].prev_slack){
 					std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
 					std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
 					std::cerr << "required slack: " << loops[l_id].prev_slack << " has slack " << slack<< std::endl; 
+					print();
+					return false;
+				}
+				if (slack > loops[loops[l_id].prev].post_slack) {
+					std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
+					std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
+					std::cerr << "*required (post) slack: " << loops[loops[l_id].prev].post_slack << " has slack " << slack << std::endl;
 					print();
 					return false;
 				}
@@ -611,7 +634,7 @@ void sm::MachineState::print(){
 		auto const &l_ids = bn_l.second;
 		if(bn.bed == 'f'){
 			std::cout << "[" << bn.needle << ":";
-			for(auto x : l_ids) std::cout << x <<",";
+			for(auto x : l_ids) std::cout <<"(" << (int)loops[x].prev_slack << ")"<< x << "(" << (int)loops[x].post_slack <<")"<<",";
 			std::cout <<"]_" ;
 		}
 	}
@@ -622,7 +645,9 @@ void sm::MachineState::print(){
 		auto const &l_ids = bn_l.second;
 		if(bn.bed == 'b'){
 			std::cout << "[" << bn.needle << ":";
-			for(auto x : l_ids) std::cout << x <<",";
+			//for(auto x : l_ids) std::cout << x <<",";
+			for (auto x : l_ids) std::cout << "(" << (int)loops[x].prev_slack << ")" << x << "(" << (int)loops[x].post_slack << ")" << ",";
+
 			std::cout <<"]_" ;
 		}
 	}
@@ -3854,7 +3879,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 			}
 			std::string signature = mesh.library[mesh.faces[h.lhs.face].type] + ' ' + std::get<std::string>(h.rhs);
 			if(!name_to_code_idx.count(signature)){
-				std::cerr << "Variant hint for face does not exist in code library. " << std::endl;
+				std::cerr << "Variant hint for face does not exist in code library. Signature:" << signature << std::endl;
 				offenders.emplace_back(h);
 			}
 			else{
