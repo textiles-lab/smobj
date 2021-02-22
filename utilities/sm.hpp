@@ -72,6 +72,12 @@ namespace sm {
 	};
 
 	// awkward that sm.hpp seems to have more and more knitout specific information, but well...
+	// something to track error information that the machinestate can write into
+	struct InstrErrorInfo {
+		bool is_error = false;
+		std::string error_string="";
+	};
+
 	struct Instr{
 		enum Operation : char {
 			In = 'i', Out = 'o', Knit = 'k', Split = 's', Xfer = 'x', Miss = 'm',  Tuck = 't', Drop = 'd', Unknown = 'u'
@@ -97,7 +103,7 @@ namespace sm {
 		}
 		std::pair<uint32_t, uint32_t> face_instr = std::make_pair(-1U,-1U);
 		
-		
+		InstrErrorInfo error_info;
 
 		std::string to_string(bool include_racking = false) const{
 			std::string ret = "";

@@ -185,7 +185,9 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 							
 							if(yarn_captures(curr, a,b)){
 								std::cerr << "Yarn " << yarn << " making loop at " << bn.to_string() << " captures yarns between active loop segments " << a.first << "/" << a.second << " and " << b.first << "/" << b.second << std::endl;
-								return -1U;
+								instr.error_info.is_error = true;
+								instr.error_info.error_string += "yarn captures making loop at " + bn.to_string() + " captures active segment";
+								//return -1U;
 							}
 						}
 					}
@@ -221,6 +223,8 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					std::cerr << "ypn: " << ypn.to_string() << " bn: " << bn.to_string() << std::endl;
 					std::cerr << "ypn: " << ypn.bed << ypn.location() << " bn: " << bn.bed << bn.location() << std::endl;
 					std::cerr << "ypn(f): " <<  ypn.position_on_front(racking) << " bn: " <<  bn.position_on_front(racking) << std::endl;
+					instr.error_info.is_error = true;
+					instr.error_info.error_string += "yarn is too far away at " + ypn.to_string() + " for making loop at " + bn.to_string() ;
 					//return false;
 					//return -1U;
 				}
@@ -231,6 +235,9 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					std::cerr << "ypn: " << ypn.to_string() << " bn: " << bn.to_string() << std::endl;
 					std::cerr << "ypn: " << ypn.bed << ypn.location() << " bn: " << bn.bed << bn.location() << std::endl;
 					std::cerr << "ypn(f): " <<  ypn.position_on_front(racking) << " bn: " <<  bn.position_on_front(racking) << std::endl;
+
+					instr.error_info.is_error = true;
+					instr.error_info.error_string += "yarn is too far away at " + ypn.to_string() + " for making loop at " + bn.to_string();
 					//return false;
 					//return -1U;
 				}
@@ -407,6 +414,8 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					// is this the correct creator as expected by the knit graph 
 					if(!path_exists_between(fi, instr.face_instr)){
 						std::cerr << "Loop consumed by " << instr.face_instr.first << "," << instr.face_instr.second << " at " << instr.src.to_string() << " " << " was not meant to be constructed by " << fi.first << "," << fi.second << std::endl;
+						instr.error_info.is_error = true;
+						instr.error_info.error_string += "loop consumed by instruction is incorrect";
 						print();
 						//return false;
 					}
@@ -542,15 +551,17 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
 					std::cerr << "required slack: " << loops[l_id].prev_slack << " has slack " << slack<< std::endl; 
 					print();
+					instr.error_info.is_error = true;
+					instr.error_info.error_string += "slack error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
 					//return false;
 				}
-				if (slack > loops[loops[l_id].prev].post_slack) {
+				/*if (slack > loops[loops[l_id].prev].post_slack) {
 					std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
 					std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
 					std::cerr << "*required (post) slack: " << loops[loops[l_id].prev].post_slack << " has slack " << slack << std::endl;
 					print();
 					//return false;
-				}
+				}*/
 			}
 		}
 	}
