@@ -67,7 +67,7 @@ namespace sm {
 		}
 		float position_on_front(int racking) const{
 			if(is_front()) return location();
-			return (location() + racking);
+			return (location() - racking);
 		}
 	};
 
