@@ -3957,102 +3957,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 				offenders.emplace_back(h); // variant name
 			}
 		}
-		// 4.
-
-		for(auto const &c : mesh.connections){
-			uint32_t c_id = &c - &mesh.connections[0];
-			// if there exists a resource hint for c.a and a resource hint for c.b and they are inconsistent
-
-			auto ha_it = std::find_if(mesh.hints.begin(), mesh.hints.end(),[&](const sm::Mesh::Hint &h)->bool{return (h.type == sm::Mesh::Hint::Resource && h.lhs == c.a);} );
-			auto hb_it = std::find_if(mesh.hints.begin(), mesh.hints.end(),[&](const sm::Mesh::Hint &h)->bool{return (h.type == sm::Mesh::Hint::Resource && h.lhs == c.b);} );
-			if(ha_it != mesh.hints.end() && hb_it != mesh.hints.end()){
-				sm::BedNeedle rhs_a = std::get<sm::BedNeedle>(ha_it->rhs);
-				sm::BedNeedle rhs_b = std::get<sm::BedNeedle>(hb_it->rhs);
-			
-				// 0) flip if a is out, b is in (maybe should always maintain connections this way)
-				bool is_yarn_connection = false;
-				{
-					std::string aname = mesh.library[mesh.faces[c.a.face].type];
-					std::string bname = mesh.library[mesh.faces[c.b.face].type];
-					assert(name_to_lib_idx.count(aname));
-					assert(name_to_lib_idx.count(bname));
-					auto &fa = library.faces[name_to_lib_idx[aname]];
-					auto &fb = library.faces[name_to_lib_idx[bname]];
-					if(fa.edges[c.a.edge].direction == sm::Library::Face::Edge::Out &&
-							fb.edges[c.b.edge].direction == sm::Library::Face::Edge::In){
-						std::swap(rhs_a, rhs_b);
-					}
-					if(fa.edges[c.a.edge].type[0] == 'y'){
-						assert(fb.edges[c.b.edge].type[0] == 'y');
-						is_yarn_connection = true;
-					}
-					
-				}
-
-				/*{
-					// go over all the move_instructions with the correct instruction order
-					// does that take things to the right location? else offence
-					// Assumes move_instructions within the same connection are in the right order
-					// else need to reorder based on face/instruction order hints
-					std::set<uint32_t> potential_instructions;
-					std::set<std::pair<uint32_t, uint32_t>> partial_orders;
-					std::vector<uint32_t> sequence, offending_instructions;
-					// 1) Collect all instructions that are associated with this connection.
-					for(auto mc : mesh.move_connections){
-						if(mc.c_idx == c_id || mc.connection == c){
-							potential_instructions.insert(mc.i_idx);
-						}
-					}
-					// 2) Collect all hints that are associated with any of the collected instructions
-					for(auto hh : mesh.hints){
-						if(hh.type == sm::Mesh::Hint::Order && hh.lhs.face == -1U){
-							auto rhs = std::get<sm::Mesh::FaceEdge>(hh.rhs);
-							if(potential_instructions.count(hh.lhs.edge) || (potential_instructions.count(rhs.edge) && rhs.face == -1U)){
-								partial_orders.insert(std::make_pair(rhs.face, rhs.edge));
-							}
-						}
-					}
-					//3) turn partial order  into sequence
-					if(!partial_order_to_sequence(partial_orders, &sequence)){
-						// TODO hints have a cycle somewhere, mark offenders
-						
-					}
-					else{
-					//4) move the loops in sequence order, do they now reach the target?
-						for(auto const &idx : sequence){
-							if(!potential_instructions.count(idx))  continue; 
-							assert(idx >= 0 && idx < mesh.move_instructions.size()); 
-							sm::Instr op = mesh.move_instructions[idx];
-							float loc = std::abs(rhs_b.location() - op.src.location());
-							
-							if(!(loc <= 0.5f && (is_yarn_connection || op.src.bed == rhs_b.bed) )){
-								//std::cout << "starting bed-needles don't match. " << rhs_b.to_string() << " and " << op.to_string() << std::endl;
-								//std::cout << "starting locations don't match. " << rhs_b.location() << " and " << op.src.location() << std::endl;
-								offending_instructions.emplace_back(idx);
-								break; // cannot apply this sequence, TODO all hints with this instruction should be offending
-							}
-							else{
-								std::cout << "Applying " << op.to_string() << std::endl;
-								rhs_b = op.tgt;
-							}
-						}
-					}
-				}*/
-
-				if(is_yarn_connection && std::abs(rhs_a.location() - rhs_b.location()) > 0.5f){
-					std::cerr << "Slack conflict. " << std::endl;
-					offenders.emplace_back(*ha_it);
-					offenders.emplace_back(*hb_it);
-				}
-				else if(!is_yarn_connection && (std::abs(rhs_a.location() - rhs_b.location()) > 0.5f || rhs_a.bed != rhs_b.bed)){
-					std::cerr << "Slack conflict. " << std::endl;
-					offenders.emplace_back(*ha_it);
-					offenders.emplace_back(*hb_it);
-				}
-			}
-		}
-
-	}
+		
 
 	// Resource hints
 	for(auto h: mesh.hints){
@@ -4227,6 +4132,85 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 		// if total order exists and covers all face/instructions without repetition then it must be acyclic
 	}
 
+	// 4. Check that edge resources line up
+
+	for (auto const& c : mesh.connections) {
+		uint32_t c_id = &c - &mesh.connections[0];
+		// if there exists a resource hint for c.a and a resource hint for c.b and they are inconsistent
+
+		auto ha_it = std::find_if(mesh.hints.begin(), mesh.hints.end(), [&](const sm::Mesh::Hint& h)->bool {return (h.type == sm::Mesh::Hint::Resource && h.lhs == c.a); });
+		auto hb_it = std::find_if(mesh.hints.begin(), mesh.hints.end(), [&](const sm::Mesh::Hint& h)->bool {return (h.type == sm::Mesh::Hint::Resource && h.lhs == c.b); });
+		if (ha_it != mesh.hints.end() && hb_it != mesh.hints.end()) {
+			sm::BedNeedle rhs_a = std::get<sm::BedNeedle>(ha_it->rhs);
+			sm::BedNeedle rhs_b = std::get<sm::BedNeedle>(hb_it->rhs);
+
+			bool is_yarn_connection = false;
+			{
+				std::string aname = mesh.library[mesh.faces[c.a.face].type];
+				std::string bname = mesh.library[mesh.faces[c.b.face].type];
+				assert(name_to_lib_idx.count(aname));
+				assert(name_to_lib_idx.count(bname));
+				auto& fa = library.faces[name_to_lib_idx[aname]];
+				auto& fb = library.faces[name_to_lib_idx[bname]];
+
+				if (fa.edges[c.a.edge].type[0] == 'y') {
+					assert(fb.edges[c.b.edge].type[0] == 'y');
+					is_yarn_connection = true;
+				}
+
+			}
+			
+			// Get code faces for fa and fb
+			// find edge to instruction bounds
+			// find all the transfers that can be applied between these two instructions
+			// apply them and check...
+			std::string aname = face_to_code_key(mesh.faces[c.a.face]);
+			std::string bname = face_to_code_key(mesh.faces[c.b.face]);
+			if (name_to_code_idx.count(aname) && name_to_code_idx.count(bname)) {
+				auto ca = code.faces[name_to_code_idx[aname]]; //c.a
+				auto cb = code.faces[name_to_code_idx[bname]]; //c.b
+				sm::Mesh::FaceEdge a_fe, b_fe;
+				a_fe.face = a_fe.edge = -1U; b_fe.face = b_fe.edge = -1U;
+				if (!is_yarn_connection) {
+					// loop connection
+					for (auto& e : ca.loop_instruction_to_edge_connections) {
+						if (e.second == c.a.edge) {
+							a_fe.face = c.a.face;
+							a_fe.edge = e.first;
+						}
+					}
+					for (auto& e : cb.loop_edge_to_instruction_connections) {
+						if (e.first == c.a.edge) {
+							b_fe.face = c.a.face;
+							b_fe.edge = e.second;
+						}
+					}
+					std::vector<sm::Mesh::FaceEdge> ins;
+					ins.emplace_back(a_fe);
+					{
+
+					}
+					// 
+				}
+				else {
+					// yarn connection
+				}
+			}
+
+			if (is_yarn_connection && std::abs(rhs_a.location() - rhs_b.location()) > 0.5f) {
+				std::cerr << "Slack conflict. " << std::endl;
+				offenders.emplace_back(*ha_it);
+				offenders.emplace_back(*hb_it);
+			}
+			else if (!is_yarn_connection && (std::abs(rhs_a.location() - rhs_b.location()) > 0.5f || rhs_a.bed != rhs_b.bed)) {
+				std::cerr << "Slack conflict. " << std::endl;
+				offenders.emplace_back(*ha_it);
+				offenders.emplace_back(*hb_it);
+			}
+		}
+	}
+
+	}
 	
 	if(is_fully_hinted && offenders.empty()){
 	
@@ -4373,7 +4357,7 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 		}
 	}
 	// also use the dependency order
-	{
+	if(false){
 		int count = partials.size();
 		int tcount = 0;
 		std::vector<uint32_t> order;
