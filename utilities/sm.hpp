@@ -263,7 +263,7 @@ struct Mesh {
 		Connection connection; // keep a copy for sanity checking, for now
 	};
 	// slightly awkward but need to maintain 2 connections-> 1 instruction 
-	std::vector< MoveConnection > move_connections; // a mapping of connections associated with move_instructions, the same instruction can have multiple connections
+	//std::vector< MoveConnection > move_connections; // a mapping of connections associated with move_instructions, the same instruction can have multiple connections
 
 	std::vector< std::pair<uint32_t, uint32_t> > total_order; // face-id/instruction-id face_id = -1U, order from move_instructions
 	std::vector< Instr > total_instructions;
@@ -282,14 +282,18 @@ struct Mesh {
 		std::variant<BedNeedle,  FaceEdge, std::string> rhs;
 		uint32_t inferred_from = -1U; // optional index to maintain what constraint this was inferred from if at all
 		std::string to_string() const{
-			std::string str = std::to_string(lhs.face) + "/" + std::to_string(lhs.edge) + " ";
+			std::string type_str = "";
+			if (type == Resource) type_str = "[Resource]";
+			else if (type == Order) type_str = "[Order]";
+			else if (type == Variant) type_str = "[Variance]";
+			std::string str = type_str + " " + std::to_string((int)lhs.face) + "/" + std::to_string((int)lhs.edge) + " ";
 			if(type == Resource){
 				BedNeedle r = std::get<BedNeedle>(rhs);
-				str += std::to_string(r.bed) + "/" + std::to_string(r.needle);
+				str += std::string(1,r.bed) + "/" + std::to_string(r.needle);
 			}
 			else if(type == Order){
 				FaceEdge r = std::get<FaceEdge>(rhs);
-				str += std::to_string(r.face) + "/" + std::to_string(r.edge);
+				str += std::to_string((int)r.face) + "/" + std::to_string(r.edge);
 			}
 			else if(type == Variant){
 				std::string r = std::get<std::string>(rhs);
@@ -537,28 +541,22 @@ struct InstrGraph{
 	std::vector<Instr> nodes; // record face instr in these
 	std::set<std::pair<uint32_t, uint32_t>> edge_loops;
 	std::set<std::pair<uint32_t, uint32_t>> edge_yarns;
+	std::set<std::pair<uint32_t, uint32_t>> edge_orders; // coming from transfers, not to check loop or yarn consumption
 	std::vector<double> time; // monotonic
 	bool is_monotonic() const;
 	
 };
-//------ transfer helper functions -----
-// TODO move to a different file, perhaps
-// TODO API vector<vector<BedNeedle>> pieces, std::vector<vector<bool>> is_sheets 
-bool transfer_from_to();
+
 
 //------ helper functions ------
 
 glm::vec3 face_centroid(uint32_t fid, sm::Mesh const &mesh);
 
 bool compute_code_graph(sm::Code &code);
-bool compute_library_graph(sm::Library &library); //NOTIMPLEMENTED
 bool compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGraph *graph); 
 
 
 bool compute_total_instructions(sm::Mesh &mesh, sm::Library const &library,  sm::Code const &code);
-
-// TODO helper for individual connections
-bool connect_with_transfers(sm::Mesh &mesh, sm::Library const &library, uint32_t connection_id);
 
 // total order of face instructions 
 bool compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library const &library);
