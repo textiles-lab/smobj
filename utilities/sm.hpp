@@ -248,6 +248,9 @@ struct Mesh {
 		bool operator< (const FaceEdge& rhs) const {
 			return std::tie(face, edge) < std::tie(rhs.face, rhs.edge);
 		}
+		std::string to_string() {
+			return std::to_string((int)face) + "/" + std::to_string((int)edge);
+		}
 	};
 	struct Connection {
 		FaceEdge a,b;

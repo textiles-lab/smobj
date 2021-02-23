@@ -3877,6 +3877,7 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 // if is_fully_hinted is true, checks also if mesh is fully hinted
 // else only checks if hints are consistent
 bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> *_offenders,  bool is_fully_hinted){
+	std::cout << "----------------- Start constraint verification ---------------- " << std::endl;
 
 	assert(_offenders);
 	std::vector<sm::Mesh::Hint> &offenders = *_offenders;
@@ -3954,6 +3955,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 			auto f = mesh.faces[h.lhs.face];
 			std::string signature = mesh.library[f.type] + " " + variant_name;
 			if(!name_to_code_idx.count(signature)){
+				std::cerr << "Variant name does not exist for signature " << signature << std::endl;
 				offenders.emplace_back(h); // variant name
 			}
 		}
@@ -3980,6 +3982,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 				// also find variant hint for this face and add it to offence.
 				for(auto hh : mesh.hints){
 					if(hh.type == sm::Mesh::Hint::Variant && hh.lhs.face == h.lhs.face){
+						std::cerr << "\t Also flagging variant hint " << hh.to_string() << std::endl;
 						offenders.emplace_back(hh);
 					}
 				}
@@ -4133,7 +4136,34 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 	}
 
 	// 4. Check that edge resources line up
-
+	std::map<sm::Mesh::FaceEdge, uint32_t> face_instrs_idx_map;
+	std::map<uint32_t, sm::Mesh::FaceEdge>	idx_face_instrs_map;
+	std::set<std::pair<uint32_t, uint32_t>> partials;
+	std::vector<uint32_t> sequence;
+	for (auto& h : mesh.hints) {
+		if (h.type == sm::Mesh::Hint::Order) {
+			sm::Mesh::FaceEdge lhs, rhs;
+			lhs = h.lhs;
+			rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
+			//if (lhs.face == rhs.face && lhs.face != -1U) continue;
+			if (!face_instrs_idx_map.count(lhs)) face_instrs_idx_map[lhs] = face_instrs_idx_map.size();
+			if (!face_instrs_idx_map.count(rhs)) face_instrs_idx_map[rhs] = face_instrs_idx_map.size();
+			auto pr = std::make_pair(face_instrs_idx_map[lhs], face_instrs_idx_map[rhs]);
+			partials.insert(pr);
+		}
+	}
+	for (auto& pr : face_instrs_idx_map) {
+		idx_face_instrs_map[pr.second] = pr.first;
+	}
+	partial_order_to_sequence(partials, &sequence);
+	/*{//debug:
+		std::cout << "Instructions sequences: ";
+		for (auto& x : sequence) {
+			auto pr = idx_face_instrs_map[x];
+			std::cout << pr.to_string() << ",";
+		}
+		std::cout << std::endl;
+	}*/
 	for (auto const& c : mesh.connections) {
 		uint32_t c_id = &c - &mesh.connections[0];
 		// if there exists a resource hint for c.a and a resource hint for c.b and they are inconsistent
@@ -4180,30 +4210,85 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 						}
 					}
 					for (auto& e : cb.loop_edge_to_instruction_connections) {
-						if (e.first == c.a.edge) {
-							b_fe.face = c.a.face;
+						if (e.first == c.b.edge) {
+							b_fe.face = c.b.face;
 							b_fe.edge = e.second;
 						}
 					}
-					std::vector<sm::Mesh::FaceEdge> ins;
-					ins.emplace_back(a_fe);
-					{
-
+					uint32_t start = -1U; uint32_t end = -1U;
+					for (uint32_t i = 0; i < sequence.size(); ++i) {
+						auto fi = idx_face_instrs_map[sequence[i]];
+						if (fi.face == a_fe.face && fi.edge == a_fe.edge) start = i;
+						if (fi.face == b_fe.face && fi.edge == b_fe.edge) end = i;
 					}
-					// 
-				}
+					sm::BedNeedle start_bn = rhs_a;
+					if (start != -1U && end != -1U) {
+						for (uint32_t k = start + 1; k <= end; ++k) {
+							//if src k is start_bn, update start_bn to target of k
+							auto fe = idx_face_instrs_map[sequence[k]];
+							if (fe.face == -1U && fe.edge < mesh.move_instructions.size()) {
+								auto xins = mesh.move_instructions[fe.edge];
+								if (xins.src == start_bn) {
+									start_bn = xins.tgt;
+									//std::cout << "debug: applying transfer instruction " << xins.to_string() << " between " << rhs_a.to_string() << " and " << rhs_b.to_string() << std::endl;
+								}
+							}
+						}
+					}
+					rhs_a = start_bn;
+				 }
 				else {
 					// yarn connection
+					for (auto& e_ : ca.yarn_instruction_to_edge_connections) {
+						auto e = e_.second;
+						{
+							if (e.second == c.a.edge) {
+								a_fe.face = c.a.face;
+								a_fe.edge = e.first;
+							}
+						}
+					}
+					for (auto& e_ : cb.yarn_edge_to_instruction_connections) {
+						auto e = e_.second;
+						{
+							if (e.first == c.b.edge) {
+								b_fe.face = c.b.face;
+								b_fe.edge = e.second;
+							}
+						}
+					}
+					uint32_t start = -1U; uint32_t end = -1U;
+					for (uint32_t i = 0; i < sequence.size(); ++i) {
+						auto fi = idx_face_instrs_map[sequence[i]];
+						if (fi.face == a_fe.face && fi.edge == a_fe.edge) start = i;
+						if (fi.face == b_fe.face && fi.edge == b_fe.edge) end = i;
+					}
+					sm::BedNeedle start_bn = rhs_a;
+					if (start != -1U && end != -1U) {
+						for (uint32_t k = start + 1; k <= end; ++k) {
+							//if src k is start_bn, update start_bn to target of k
+							auto fe = idx_face_instrs_map[sequence[k]];
+							if (fe.face == -1U && fe.edge < mesh.move_instructions.size()) {
+								auto xins = mesh.move_instructions[fe.edge];
+								if (xins.src.bed == start_bn.bed && (xins.src.location() - start_bn.location()) <= 0.5) {
+									start_bn.bed = xins.tgt.bed;
+									start_bn.needle = xins.tgt.needle;
+									//std::cout << "debug(yarn): applying transfer instruction " << xins.to_string() << " between " << rhs_a.to_string() << " and " << rhs_b.to_string() << std::endl;
+								}
+							}
+						}
+					}
+					rhs_a = start_bn;
 				}
 			}
 
 			if (is_yarn_connection && std::abs(rhs_a.location() - rhs_b.location()) > 0.5f) {
-				std::cerr << "Slack conflict. " << std::endl;
+				std::cerr << "(Yarn)Slack conflict. Location: " << rhs_a.location() << " -> " << rhs_b.location()  << std::endl;
 				offenders.emplace_back(*ha_it);
 				offenders.emplace_back(*hb_it);
 			}
 			else if (!is_yarn_connection && (std::abs(rhs_a.location() - rhs_b.location()) > 0.5f || rhs_a.bed != rhs_b.bed)) {
-				std::cerr << "Slack conflict. " << std::endl;
+				std::cerr << "(Loop)Slack conflict. " << rhs_a.to_string() << " -> " << rhs_b.to_string() << std::endl;
 				offenders.emplace_back(*ha_it);
 				offenders.emplace_back(*hb_it);
 			}
@@ -4264,7 +4349,12 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 	}
 
 	// --------------End of hint verification -------------
-
+	//debug
+	std::cout << "Offending hints: " << std::endl;
+	for (auto& h : offenders) {
+		std::cout << h.to_string() << std::endl;
+	}
+	std::cout << "----------------- End of constraint verification ---------------- " << std::endl;
 	// if !is_fully_hinted, then true only indicates that no inconsistency exists
 	if(!offenders.empty()) return false;
 	return true;
@@ -4398,27 +4488,34 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 
 	{
 		std::vector<std::vector<uint32_t>> all_sequences;
-		if(partial_order_to_sequences(partials, all_sequences, 1)){ //DEBUG 1, else 1000
-			for(auto &order : all_sequences){
-				mesh.total_order.clear();
-				for(auto const &x : order){
-					std::pair<uint32_t, uint32_t> o; 
-					auto fe = instr_face_map[x]; o.first = fe.face; o.second = fe.edge;
-					mesh.total_order.emplace_back(o);
+		std::vector<uint32_t> _sequence;
+		bool order_is_okay = partial_order_to_sequence(partials, &_sequence);
+		if (order_is_okay) {
+			if (partial_order_to_sequences(partials, all_sequences, 1)) { //DEBUG 1, else 1000
+				for (auto& order : all_sequences) {
+					mesh.total_order.clear();
+					for (auto const& x : order) {
+						std::pair<uint32_t, uint32_t> o;
+						auto fe = instr_face_map[x]; o.first = fe.face; o.second = fe.edge;
+						mesh.total_order.emplace_back(o);
+					}
+
+					std::vector<Mesh::Hint> offenders;
+					bool strict = true;
+					bool verified = verify(mesh, library, code, &offenders, strict);
+
+					if (verified) {
+						std::cout << "Succeeded with sequence " << &order - &all_sequences[0] << " / " << all_sequences.size() << " and have order of size " << mesh.total_order.size() << std::endl;
+						return true;
+					}
+
 				}
-
-				std::vector<Mesh::Hint> offenders;
-				bool strict = true;
-				bool verified = verify(mesh, library, code, &offenders, strict);
-
-				if(verified){
-					std::cout << "Succeeded with sequence " << &order - &all_sequences[0] << " / " << all_sequences.size() << " and have order of size " << mesh.total_order.size() << std::endl;
-					return true;
-				}
-
 			}
+			std::cerr << "Tried 1000 possible total orders, need more ordering constraints.." << std::endl;
 		}
-		std::cerr << "Tried 1000 possible total orders, need more ordering constraints.." << std::endl;
+		else {
+			std::cout << "Did not succeed since partial order seem to be cyclic." << std::endl;
+		}
 	}
 
 	std::cout << "Did not succeed but has order of size " << mesh.total_order.size() << std::endl;
