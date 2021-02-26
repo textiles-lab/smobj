@@ -208,8 +208,9 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		sm::Loop prev;
 		if(find_last_loop_for_yarn(yarn, &prev)){
 			loop.prev = prev.id;
-			loop.prev_slack = std::abs(bn.needle - loops[prev.id].bn.needle);
-			if(bn.needle == loops[prev.id].bn.needle && bn.bed != loops[prev.id].bn.bed) loop.prev_slack++;
+			sm::BedNeedle current_location_of_prev_loop = loops[prev.id].sequence.back();
+			loop.prev_slack = std::abs(bn.needle - current_location_of_prev_loop.needle);
+			if(bn.needle == current_location_of_prev_loop.needle && bn.bed != current_location_of_prev_loop.bed) loop.prev_slack++;
 			loops[prev.id].post_slack = loop.prev_slack;
 		
 			// use yarn positions to also track if found where expected
@@ -523,7 +524,8 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	
 	// is slack okay for all active loops
 	{
-		//std::cout << "DEBUG: Slack info for all loops on bed." << std::endl;
+		//std::cout << "DEBUG: Slack info for all loops on bed after instruction " << instr.to_string() << std::endl;
+		print();
 		for(auto const &bn_ls : bn_loops){
 			for(auto l_id : bn_ls.second){
 				assert(loops[l_id].sequence.back() == bn_ls.first);
@@ -553,17 +555,19 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					print();
 					instr.error_info.is_error = true;
 					instr.error_info.error_string += "slack error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
-					//return false;
+					
 				}
-				/*if (slack > loops[loops[l_id].prev].post_slack) {
+				if (slack > loops[loops[l_id].prev].post_slack) {
 					std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
 					std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
 					std::cerr << "*required (post) slack: " << loops[loops[l_id].prev].post_slack << " has slack " << slack << std::endl;
 					print();
-					//return false;
-				}*/
-			}
-		}
+					instr.error_info.is_error = true;
+					instr.error_info.error_string += "slack(post) error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
+
+				}
+			} // for loops in location
+		} // for locations
 	}
 	// loop setup "b"
 	if(instr.face_instr.first == -1U){
@@ -584,10 +588,9 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 				}
 			}
 		}
-		if(invalid){
+		/*if(invalid){
 			std::cerr << "WARNING:Instruction " << instr.to_string() << " re-arranged loops" << std::endl;
-			// return false; // check on pickup ?
-		}
+		}*/
 	}
 	// maybe tracking passes is not necessary, but why not..
 	curr_pass.emplace_back(instr);
@@ -4273,7 +4276,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 								if (xins.src.bed == start_bn.bed && (xins.src.location() - start_bn.location()) <= 0.5) {
 									start_bn.bed = xins.tgt.bed;
 									start_bn.needle = xins.tgt.needle;
-									//std::cout << "debug(yarn): applying transfer instruction " << xins.to_string() << " between " << rhs_a.to_string() << " and " << rhs_b.to_string() << std::endl;
+								//	std::cout << "debug(yarn): applying transfer instruction " << xins.to_string() << " between " << rhs_a.to_string() << " and " << rhs_b.to_string() << std::endl;
 								}
 							}
 						}

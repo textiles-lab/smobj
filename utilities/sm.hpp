@@ -48,7 +48,11 @@ namespace sm {
 		}
 		std::string to_string() const{
 			int n = location();
-			return bed + std::to_string(n);
+			char b = bed;
+			if (!is_front() && !is_back()) {
+				b = 'x';
+			}
+			return std::string(1,b) + std::to_string(n);
 		}
 		bool dontcare() const{
 			return bed == 'x';
