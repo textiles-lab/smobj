@@ -525,7 +525,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	// is slack okay for all active loops
 	{
 		//std::cout << "DEBUG: Slack info for all loops on bed after instruction " << instr.to_string() << std::endl;
-		print();
+		//print();
 		for(auto const &bn_ls : bn_loops){
 			for(auto l_id : bn_ls.second){
 				assert(loops[l_id].sequence.back() == bn_ls.first);
@@ -956,6 +956,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			}
 			sm::Instr xop;
 			xop.op = sm::Instr::Xfer;
+			xop.direction = sm::Instr::Direction::None;
 			xop.src.bed = src_bed; xop.src.needle = src_needle;
 			xop.tgt.bed = tgt_bed; xop.tgt.needle = tgt_needle;
 			xop.src.nudge = xop.tgt.nudge = 0;
@@ -1854,10 +1855,11 @@ sm::Code sm::Code::load(std::string const &filename) {
 				char direction;
 				if(!(str >> direction)) throw std::runtime_error(line_info() + "xfer line without direction or bed");
 				if (direction == '+' || direction == '-'){
-					ins.direction = (direction == '+' ? sm::Instr::Right : sm::Instr::Left);
+					
 					if(!(str >> from_bed)){
 						throw std::runtime_error(line_info() + "xfer line without (from)bed");
 					}
+					//throw std::runtime_error(line_info() + "xfer line should not have direction");
 				}
 				else{
 					from_bed = direction; // no direction was specified so that must have been the from bed
