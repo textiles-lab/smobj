@@ -80,6 +80,8 @@ namespace sm {
 	struct InstrErrorInfo {
 		bool is_error = false;
 		std::string error_string="";
+		sm::BedNeedle yarn_at;
+		sm::BedNeedle yarn_to;
 	};
 
 	struct Instr{
@@ -220,7 +222,7 @@ namespace sm {
 		bool is_loop_active(Loop loop, sm::BedNeedle *bn); // if active return the location at which exists
 		bool is_yarn_active(std::string yarn);
 		
-		BedNeedle get_new_needle_at(BedNeedle in);
+		BedNeedle get_new_needle_at(BedNeedle in);//UNUSED
 
 		void print();
 	};
@@ -270,11 +272,11 @@ struct Mesh {
 	std::vector< Instr > move_instructions; //the rest of the "stream" Is maintaining this within smobj the best idea?
 	
 	// is maintaining this inside smobj the best idea?
-	struct MoveConnection {
+	/*struct MoveConnection {
 		uint32_t c_idx = -1U;
 		uint32_t i_idx = -1U;
 		Connection connection; // keep a copy for sanity checking, for now
-	};
+	};*/
 	// slightly awkward but need to maintain 2 connections-> 1 instruction 
 	//std::vector< MoveConnection > move_connections; // a mapping of connections associated with move_instructions, the same instruction can have multiple connections
 

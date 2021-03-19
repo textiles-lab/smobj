@@ -89,10 +89,21 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 
 	// update step
 	instr.step = passes.size() - 1;
-
+	// this is really "consume" loop
 	auto clear_location = [&](sm::BedNeedle bn){
+		uint32_t loop_slack = 2; // note slack should probably be float
 		assert(!bn.dontcare());
 		assert(bn.nudge == 0);
+		for (auto& li : bn_loops[bn]) {
+			loops[li].prev_slack += loop_slack;
+			loops[li].post_slack += loop_slack;
+			if (loops[li].prev != -1U) {
+				loops[loops[li].prev].post_slack += loop_slack;
+			}
+			{
+				// TODO update next as well?
+			}
+		}
 		bn_loops[bn].clear();
 	};
 	auto add_to_location = [&](sm::BedNeedle bn, uint32_t loop_idx){
@@ -115,12 +126,21 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		sm::BedNeedle a0, a1, b0,b1, c0,c1;
 		a1 = a.second;
 		a0 = loops[a.first].sequence.back();
-		b0 = loops[b.first].sequence.back();
+		b0 = loops[b.first].sequence.back(); // <-- only using this
 		b1 = loops[b.second].sequence.back();
 		c0 = loops[c.first].sequence.back();
 		c1 = loops[c.second].sequence.back();
+		
+		if (a0.bed == a1.bed && a0.bed == b0.bed &&  b.first < a.first) {
+			if (a0.needle < b0.needle && a1.needle > b0.needle ) {
+				return true;
+			}
+			else if (a0.needle > b0.needle && a1.needle < b0.needle) {
+				return true;
+			}
+		}
 		// potential overlap 
-		{
+		if(false){
 		// a crosses c?
 			glm::vec2 p0(a0.needle*2.f + ((float)a0.is_back()), a.first);
 			glm::vec2 p1(a.second.needle*2.f + ((float)a.second.is_back()), loops.size());
@@ -148,7 +168,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		assert(!bn.dontcare());
 	
 		// does adding this yarn segment create yarn tangling
-		if(true){
+		if(false){
 			sm::Loop prev;
 			std::set<std::pair<uint32_t, uint32_t>> segments;
 			if(find_last_loop_for_yarn(yarn, &prev)){
@@ -184,9 +204,10 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 							auto curr = std::make_pair(prev.id, bn);
 							
 							if(yarn_captures(curr, a,b)){
-								std::cerr << "Yarn " << yarn << " making loop at " << bn.to_string() << " captures yarns between active loop segments " << a.first << "/" << a.second << " and " << b.first << "/" << b.second << std::endl;
+								//std::cerr << "Yarn " << yarn << " making loop at " << bn.to_string() << " captures yarns between " << loops[a.first].sequence.back().to_string() << "/" << loops[a.second].sequence.back().to_string() << std::endl;
 								instr.error_info.is_error = true;
-								instr.error_info.error_string += "yarn captures making loop at " + bn.to_string() + " captures active segment";
+								instr.error_info.error_string += "\nyarn " + yarn+ " captures between  " + bn.to_string() + " and " + loops[prev.id].sequence.back().to_string() + " ~ " + loops[a.first].sequence.back().to_string();
+								std::cerr << "Yarn " << yarn << ": " << instr.error_info.error_string << std::endl;
 								//return -1U;
 							}
 						}
@@ -206,6 +227,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		auto &loop = loops.back();
 		loop.id = loops.size()-1;
 		sm::Loop prev;
+		// ---- Yarn carrier position slack  constraint --------
 		if(find_last_loop_for_yarn(yarn, &prev)){
 			loop.prev = prev.id;
 			sm::BedNeedle current_location_of_prev_loop = loops[prev.id].sequence.back();
@@ -225,9 +247,8 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					std::cerr << "ypn: " << ypn.bed << ypn.location() << " bn: " << bn.bed << bn.location() << std::endl;
 					std::cerr << "ypn(f): " <<  ypn.position_on_front(racking) << " bn: " <<  bn.position_on_front(racking) << std::endl;
 					instr.error_info.is_error = true;
-					instr.error_info.error_string += "yarn is too far away at " + ypn.to_string() + " for making loop at " + bn.to_string() ;
-					//return false;
-					//return -1U;
+					instr.error_info.error_string += "\nyarn is too far away at " + ypn.to_string() + " for making loop at " + bn.to_string() ;
+					instr.error_info.yarn_at = ypn; instr.error_info.yarn_to = bn;
 				}
 				
 			} else if (direction == sm::Instr::Right){
@@ -238,9 +259,8 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					std::cerr << "ypn(f): " <<  ypn.position_on_front(racking) << " bn: " <<  bn.position_on_front(racking) << std::endl;
 
 					instr.error_info.is_error = true;
-					instr.error_info.error_string += "yarn is too far away at " + ypn.to_string() + " for making loop at " + bn.to_string();
-					//return false;
-					//return -1U;
+					instr.error_info.error_string += "\nyarn is too far away at " + ypn.to_string() + " for making loop at " + bn.to_string();
+					instr.error_info.yarn_at = ypn; instr.error_info.yarn_to = bn;
 				}
 			}
 		}
@@ -381,7 +401,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 				}
 				max_iters--;
 				if(max_iters < 0){
-					std::cerr << "\tMax iterations reached."<< std::endl;
+					//std::cerr << "\tMax iterations reached."<< std::endl;
 					return false;
 				}
 			} // big-while
@@ -401,8 +421,10 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		// is there a loop at the src, and if so who created it 
 		if(!bn_loops.count(instr.src)){
 			// empty location: warn if operation is not a tuck
-			if(instr.op != sm::Instr::Tuck){
-				std::cerr << "[Warning]Operation " << instr.to_string() << " on empty location is not a tuck. " << std::endl;
+			if(instr.op != sm::Instr::Tuck && instr.op != sm::Instr::Miss){
+				std::cerr << "[Warning]Operation " << instr.to_string() << " on empty location is not a tuck or a miss. " << std::endl;
+				instr.error_info.is_error = true;
+				instr.error_info.error_string += "\nNo loop consumed and not tuck or miss.";
 			}
 		}
 		else{
@@ -414,11 +436,16 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					// the loop at src location was constructed by fi 
 					// is this the correct creator as expected by the knit graph 
 					if(!path_exists_between(fi, instr.face_instr)){
-						std::cerr << "Loop consumed by " << instr.face_instr.first << "," << instr.face_instr.second << " at " << instr.src.to_string() << " " << " was not meant to be constructed by " << fi.first << "," << fi.second << std::endl;
-						instr.error_info.is_error = true;
-						instr.error_info.error_string += "loop consumed by instruction is incorrect";
-						print();
-						//return false;
+						if (instr.op != sm::Instr::Miss) {
+							std::cerr << "Loop consumed by " << instr.face_instr.first << "," << instr.face_instr.second << "(" << instr.to_string() << ")  at " << instr.src.to_string() << " " << " was not meant to be constructed by " << fi.first << "," << fi.second << std::endl;
+							instr.error_info.is_error = true;
+							instr.error_info.error_string += "\nloop consumed by instruction is incorrect";
+							print();
+							//return false;
+						}
+						else {
+							// miss does not consume anything so ok..
+						}
 					}
 				}
 			}
@@ -522,12 +549,13 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 			assert(false && "unknown instruction should never be constructed.");
 	}
 	
-	// is slack okay for all active loops
+	//--------- is slack okay for all active loops----------------------
 	{
 		//std::cout << "DEBUG: Slack info for all loops on bed after instruction " << instr.to_string() << std::endl;
 		//print();
 		for(auto const &bn_ls : bn_loops){
 			for(auto l_id : bn_ls.second){
+				bool is_warning = false;
 				assert(loops[l_id].sequence.back() == bn_ls.first);
 				if (loops[l_id].prev == -1U) {
 					//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has no previous loop. " << std::endl; // debug
@@ -536,7 +564,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 				sm::BedNeedle bn2;
 				if (!is_loop_active(loops[loops[l_id].prev], &bn2)) {
 					//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has previous loop that is dropped already. " << std::endl; // debug
-					continue;
+					is_warning = true;
 				}
 				sm::BedNeedle bnc = loops[l_id].sequence.back();
 				sm::BedNeedle bnp = loops[loops[l_id].prev].sequence.back();
@@ -549,22 +577,30 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 
 				if(bnc.bed != bnp.bed && bnc.needle == bnp.needle) slack++;
 				if(slack > loops[l_id].prev_slack){
+					if (is_warning) {
+						std::cerr << "Warning (slack wrt to dropped loop) " << std::endl;
+					}
 					std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
 					std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
 					std::cerr << "required slack: " << loops[l_id].prev_slack << " has slack " << slack<< std::endl; 
 					print();
-					instr.error_info.is_error = true;
-					instr.error_info.error_string += "slack error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
-					
+					if (!is_warning) {
+						instr.error_info.is_error = true;
+						instr.error_info.error_string += "\nslack error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
+					}
 				}
 				if (slack > loops[loops[l_id].prev].post_slack) {
+					if (is_warning) {
+						std::cerr << "Warning (slack wrt to dropped loop) " << std::endl;
+					}
 					std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
 					std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
 					std::cerr << "*required (post) slack: " << loops[loops[l_id].prev].post_slack << " has slack " << slack << std::endl;
 					print();
-					instr.error_info.is_error = true;
-					instr.error_info.error_string += "slack(post) error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
-
+					if (!is_warning) {
+						instr.error_info.is_error = true;
+						instr.error_info.error_string += "\nslack(post) error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
+					}
 				}
 			} // for loops in location
 		} // for locations
@@ -2360,7 +2396,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		for (auto const &sig : mesh.library) {
 			auto f = signature_to_face.find(sig);
 			if (f == signature_to_face.end()) {
-				std::cerr << "WARNING: library is missing face with signature '" << sig << "'" << std::endl;
+				//std::cerr << "WARNING: library is missing face with signature '" << sig << "'" << std::endl;
 				mesh_library.emplace_back(nullptr);
 			} else {
 				mesh_library.emplace_back(f->second);
@@ -4178,7 +4214,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 		if (ha_it != mesh.hints.end() && hb_it != mesh.hints.end()) {
 			sm::BedNeedle rhs_a = std::get<sm::BedNeedle>(ha_it->rhs);
 			sm::BedNeedle rhs_b = std::get<sm::BedNeedle>(hb_it->rhs);
-
+			sm::BedNeedle orig_rhs_a = rhs_a;
 			bool is_yarn_connection = false;
 			{
 				std::string aname = mesh.library[mesh.faces[c.a.face].type];
@@ -4275,10 +4311,10 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 							auto fe = idx_face_instrs_map[sequence[k]];
 							if (fe.face == -1U && fe.edge < mesh.move_instructions.size()) {
 								auto xins = mesh.move_instructions[fe.edge];
-								if (xins.src.bed == start_bn.bed && (xins.src.location() - start_bn.location()) <= 0.5) {
+								if (xins.src.bed == start_bn.bed && std::abs(xins.src.location() - start_bn.location()) < 0.5) {
 									start_bn.bed = xins.tgt.bed;
 									start_bn.needle = xins.tgt.needle;
-								//	std::cout << "debug(yarn): applying transfer instruction " << xins.to_string() << " between " << rhs_a.to_string() << " and " << rhs_b.to_string() << std::endl;
+									std::cout << "debug(yarn): applying transfer instruction " << xins.to_string() << " between " << rhs_a.to_string() << " and " << rhs_b.to_string() << std::endl;
 								}
 							}
 						}
@@ -4288,12 +4324,12 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 			}
 
 			if (is_yarn_connection && std::abs(rhs_a.location() - rhs_b.location()) > 0.5f) {
-				std::cerr << "(Yarn)Slack conflict. Location: " << rhs_a.location() << " -> " << rhs_b.location()  << std::endl;
+				std::cerr << "(Yarn)Slack conflict. Location: " << rhs_a.location() << "(orig: "<< orig_rhs_a.location() <<")  -> " << rhs_b.location()  << std::endl;
 				offenders.emplace_back(*ha_it);
 				offenders.emplace_back(*hb_it);
 			}
 			else if (!is_yarn_connection && (std::abs(rhs_a.location() - rhs_b.location()) > 0.5f || rhs_a.bed != rhs_b.bed)) {
-				std::cerr << "(Loop)Slack conflict. " << rhs_a.to_string() << " -> " << rhs_b.to_string() << std::endl;
+				std::cerr << "(Loop)Slack conflict. " << rhs_a.to_string() << "(orig: " << orig_rhs_a.to_string() << ")  -> " << rhs_b.to_string() << std::endl;
 				offenders.emplace_back(*ha_it);
 				offenders.emplace_back(*hb_it);
 			}
