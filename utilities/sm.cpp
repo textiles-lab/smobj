@@ -624,6 +624,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 				}
 			}
 		}
+		(void)invalid; //suppress unused variable warning.
 		/*if(invalid){
 			std::cerr << "WARNING:Instruction " << instr.to_string() << " re-arranged loops" << std::endl;
 		}*/
@@ -4206,7 +4207,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 		std::cout << std::endl;
 	}*/
 	for (auto const& c : mesh.connections) {
-		uint32_t c_id = &c - &mesh.connections[0];
+		//unused: uint32_t c_id = &c - &mesh.connections[0];
 		// if there exists a resource hint for c.a and a resource hint for c.b and they are inconsistent
 
 		auto ha_it = std::find_if(mesh.hints.begin(), mesh.hints.end(), [&](const sm::Mesh::Hint& h)->bool {return (h.type == sm::Mesh::Hint::Resource && h.lhs == c.a); });
