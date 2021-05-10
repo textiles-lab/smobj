@@ -3,6 +3,7 @@
 #include <fstream>
 #include <vector>
 #include <set>
+#include <algorithm>
 
 // assumes that the given smobj is a single connected component...
 int main(int argc, char* argv[]){
@@ -181,6 +182,7 @@ int main(int argc, char* argv[]){
 						
 						glm::vec3 p1 = glm::vec3(la.edges[ya.begin.edge].vertex * (1.f - ya.begin.along) + ya.begin.along * la.edges[(ya.begin.edge+1)%la.edges.size()].vertex, 0.f); 
 						glm::vec3 p2 = glm::vec3((lb.edges[yb.begin.edge].vertex * (1.f - yb.begin.along) + yb.begin.along * lb.edges[(yb.begin.edge+1)%lb.edges.size()].vertex) + translate, 0.f); 
+						(void)p2;
 						// add middle point 3D 
 						
 						for(auto a_it = ya.middle.rbegin(); a_it != ya.middle.rend(); ++a_it){
@@ -204,6 +206,7 @@ int main(int argc, char* argv[]){
 						
 						glm::vec3 p1 = glm::vec3(la.edges[ya.end.edge].vertex * (1.f - ya.end.along) + ya.end.along * la.edges[(ya.end.edge+1)%la.edges.size()].vertex, 0.f); 
 						glm::vec3 p2 = glm::vec3((lb.edges[yb.end.edge].vertex * (1.f - yb.end.along) + yb.end.along * lb.edges[(yb.end.edge+1)%lb.edges.size()].vertex) + translate, 0.f); 
+						(void)p2;
 						// add middle point 3D 
 						
 						for(auto a_it = ya.middle.begin(); a_it != ya.middle.end(); ++a_it){
