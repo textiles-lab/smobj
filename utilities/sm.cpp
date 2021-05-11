@@ -2389,6 +2389,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 	//look up all mesh face types in library:
 	std::vector< sm::Library::Face const * > mesh_library;
 	{
+		std::set< std::string > warned_about_signature;
 		std::map< std::string, sm::Library::Face const * > signature_to_face;
 		for (auto const &face : library.faces) {
 			signature_to_face.insert(std::make_pair(face.key(), &face));
@@ -2397,7 +2398,9 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		for (auto const &sig : mesh.library) {
 			auto f = signature_to_face.find(sig);
 			if (f == signature_to_face.end()) {
-				//std::cerr << "WARNING: library is missing face with signature '" << sig << "'" << std::endl;
+				if (warned_about_signature.insert(sig).second) {
+					std::cerr << "WARNING: library is missing face with signature '" << sig << "'" << std::endl;
+				}
 				mesh_library.emplace_back(nullptr);
 			} else {
 				mesh_library.emplace_back(f->second);
