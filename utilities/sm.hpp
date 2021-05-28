@@ -47,12 +47,20 @@ namespace sm {
 			return std::tie(bed, loc, depth) == std::tie(rhs.bed, rloc, rhs.depth);
 		}
 		std::string to_string() const{
-			int n = location();
+			int n = needle;
 			char b = bed;
 			if (!is_front() && !is_back()) {
 				b = 'x';
 			}
 			return std::string(1,b) + std::to_string(n);
+		}
+		std::string to_string2() const {
+			int n = location();
+			char b = bed;
+			if (!is_front() && !is_back()) {
+				b = 'x';
+			}
+			return std::string(1, b) + std::to_string(n);
 		}
 		bool dontcare() const{
 			return bed == 'x';
@@ -283,24 +291,27 @@ struct Mesh {
 	std::vector< std::pair<uint32_t, uint32_t> > total_order; // face-id/instruction-id face_id = -1U, order from move_instructions
 	std::vector< Instr > total_instructions;
 	struct Hint {
-		enum HintType : char{
+		enum HintType : char {
 			Resource = 'r', // needle
 			Order = 'o', // Instruction order
 			Variant = 'v', // code face variant
+			Layer = 'l'
 		} type;
 		enum HintSource : char{
 			User = 'u',
 			Inferred = 'i',
 			Heuristic = 'h',
 		} src;
-		FaceEdge lhs;;
-		std::variant<BedNeedle,  FaceEdge, std::string> rhs;
+		FaceEdge lhs;
+		std::variant<BedNeedle,  FaceEdge, std::string, int> rhs;
 		uint32_t inferred_from = -1U; // optional index to maintain what constraint this was inferred from if at all
 		std::string to_string() const{
 			std::string type_str = "";
 			if (type == Resource) type_str = "[Resource]";
 			else if (type == Order) type_str = "[Order]";
 			else if (type == Variant) type_str = "[Variance]";
+			else if (type == Layer) type_str = "[Layer]";
+
 			std::string str = type_str + " " + std::to_string((int)lhs.face) + "/" + std::to_string((int)lhs.edge) + " ";
 			if(type == Resource){
 				BedNeedle r = std::get<BedNeedle>(rhs);
@@ -313,6 +324,10 @@ struct Mesh {
 			else if(type == Variant){
 				std::string r = std::get<std::string>(rhs);
 				str += r;
+			} 
+			else if (type == Layer) {
+				int l = std::get<int>(rhs);
+				str += std::to_string(l);
 			}
 			else{
 				str += " NONE.";
@@ -553,6 +568,7 @@ struct Yarns {
 };
 
 struct InstrGraph{
+	std::vector<glm::vec3> nodes_at;
 	std::vector<Instr> nodes; // record face instr in these
 	std::set<std::pair<uint32_t, uint32_t>> edge_loops;
 	std::set<std::pair<uint32_t, uint32_t>> edge_yarns;

@@ -933,7 +933,31 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 				else if(src == 'h') h.src =  sm::Mesh::Hint::Heuristic;
 			}
 			mesh.hints.emplace_back(h);
-		} else if (cmd == "U") { //unit definition
+		}
+		else if (cmd == "l") {
+
+		Hint h;
+		h.type = sm::Mesh::Hint::Layer;
+		h.src = sm::Mesh::Hint::User;
+		int32_t face;
+		if (!(str >> face)) {
+			throw std::runtime_error("layer hint does not have a face");
+		}
+		h.lhs.face = face - 1;
+		h.lhs.edge = -1;
+		int var;
+		if (!(str >> var)) throw std::runtime_error("layer hint does not have a layer number");
+		h.rhs = var;
+		char src;
+		if (str >> src) {
+			if (src == 'u') h.src = sm::Mesh::Hint::User;
+			else if (src == 'i') h.src = sm::Mesh::Hint::Inferred;
+			else if (src == 'h') h.src = sm::Mesh::Hint::Heuristic;
+		}
+		mesh.hints.emplace_back(h);
+		}
+		
+		else if (cmd == "U") { //unit definition
 			std::string name;
 			float length;
 			if (!(str >> name >> length)) throw std::runtime_error("expecting name and length after U");
@@ -1232,6 +1256,11 @@ void sm::Mesh::save(std::string const &filename) const {
 		out << "t " << (h.lhs.face + 1) << " " << std::get<std::string>(h.rhs) << " ";
 		out  << (char)h.src;
 		out <<"\n";
+		}
+		else if (h.type == sm::Mesh::Hint::Layer) {
+			out << "l " << (h.lhs.face + 1) << " " << std::get<int>(h.rhs) << " ";
+			out << (char)h.src;
+			out << "\n";
 		}
 	}
 
@@ -1764,7 +1793,9 @@ sm::Code sm::Code::load(std::string const &filename) {
 					if (!(str >> needle) && !edge.bn.dontcare()) throw std::runtime_error(line_info() + "edge without needle");
 					if(!edge.bn.dontcare()){
 						edge.bn.needle = needle;
-						edge.bn.nudge = (needle - edge.bn.needle)*2;
+						//edge.bn.nudge = (needle - edge.bn.needle)*2;
+						if (needle - edge.bn.needle > 0.25) edge.bn.nudge = 1;
+						if (edge.bn.needle - needle > 0.25) edge.bn.nudge = -1;
 					}
 					std::string y = "";
 					while (str >> y ){
@@ -4926,6 +4957,12 @@ bool sm::compute_code_graph(sm::Code &code){
 bool sm::compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGraph *_graph){
 	assert(_graph);
 	InstrGraph &graph = *_graph;
+	graph.nodes.clear();
+	graph.nodes_at.clear();
+	graph.edge_loops.clear();
+	graph.edge_yarns.clear();
+	graph.edge_orders.clear();
+	graph.time.clear();
 	std::map<uint32_t, std::string> face_variant;
 	std::map<std::string, uint32_t> code_name_to_idx;
 	for(auto const &f : code.faces){
@@ -4939,15 +4976,30 @@ bool sm::compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGra
 	std::map<std::pair<uint32_t, uint32_t> , uint32_t> fi_to_idx;
 	for(auto &f : mesh.faces){
 		uint32_t fi = &f - &mesh.faces[0];
+		glm::vec3 up;
 		if(face_variant.count(fi)){
 			std::string name = mesh.library[f.type] + ' ' + face_variant[fi];
 			if(!code_name_to_idx.count(name)) continue;
 			auto c = code.faces[code_name_to_idx[name]];
+
+			glm::vec3  b;
+			for (auto& ed : c.edges) {
+				uint32_t ei = &ed - &c.edges[0];
+				if (ed.direction == sm::Code::Face::Edge::Direction::Out && ed.type[0] == 'l') {
+					b = 0.5f * (mesh.vertices[f[ei]] + mesh.vertices[f[(ei + 1) % f.size()]]);
+					break;
+					
+				}
+			}
+			up = b - sm::face_centroid(fi, mesh);
+
 			for(auto &ins : c.instrs){
+				uint32_t k = &ins - &c.instrs[0];
 				auto in = ins;
 				in.face_instr = std::make_pair(fi, &ins - &c.instrs[0]);
 				fi_to_idx[in.face_instr] = graph.nodes.size();
 				graph.nodes.emplace_back(in);
+				graph.nodes_at.emplace_back(sm::face_centroid(fi, mesh) + 0.5f * k * up);
 			}
 		}
 	}
