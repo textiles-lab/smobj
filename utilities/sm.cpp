@@ -17,7 +17,111 @@
 
 //---------------------------------
 //Machine
+void sm::MachineState::shuffle_front(int layer, std::vector<sm::Instr> *_p1, std::vector<sm::Instr> *_p2) { // move loops on <= layer to front, rest to front
+	assert(_p1);
+	assert(_p2);
+	auto& pass1 = *_p1;
+	auto& pass2 = *_p2;
+	pass1.clear(); pass2.clear();
+	assert(racking == 0);
+	for (auto& bn_l : bn_loops) {
+		if (!bn_l.first.is_front()) continue;
+		for (auto l : bn_l.second) {
+			if (loops[l].in_layer(total_layers) <= layer) {
+				// XFER this loop to front
+				sm::Instr xop; xop.op = sm::Instr::Xfer;
+				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'b';
+				pass1.emplace_back(xop);
+			}
+		}
+	}
+	for (auto& bn_l : bn_loops) {
+		if (!bn_l.first.is_back()) continue;
+		for (auto l : bn_l.second) {
+			if (loops[l].in_layer(total_layers) > layer) {
+				// XFER this loop to back
+				sm::Instr xop; xop.op = sm::Instr::Xfer;
+				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'f';
+				pass2.emplace_back(xop);
+			}
+		}
+	}
+	if (!pass1.empty()) {
+		for (auto& x : pass1) {
+			for (auto it = bn_loops[x.src].rbegin(); it != bn_loops[x.src].rend(); ++it) {
+				bn_loops[x.tgt].emplace_back(*it); // move loop to back
+				loops[*it].sequence.emplace_back(x.tgt);
+				loops[*it].sources.emplace_back(x);
+				bn_loops[x.src].clear();
+			}
+		}
+		passes.emplace_back(pass1);
+	}
+	if (!pass2.empty()) {
+		for (auto& x : pass1) {
+			for (auto it = bn_loops[x.src].rbegin(); it != bn_loops[x.src].rend(); ++it) {
+				bn_loops[x.tgt].emplace_back(*it); // move loop to back
+				loops[*it].sequence.emplace_back(x.tgt);
+				loops[*it].sources.emplace_back(x);
+				bn_loops[x.src].clear();
+			}
+		}
+		passes.emplace_back(pass2);
+	}
 
+}
+
+void sm::MachineState::shuffle_back(int layer, std::vector<sm::Instr>* _p1, std::vector<sm::Instr>* _p2) { //move loops >= layer to back, rest to back
+	assert(_p1);
+	assert(_p2);
+	auto& pass1 = *_p1;
+	auto& pass2 = *_p2;
+	pass1.clear(); pass2.clear();	assert(racking == 0);
+	for (auto& bn_l : bn_loops) {
+		if (!bn_l.first.is_front()) continue;
+		for (auto l : bn_l.second) {
+			if (loops[l].in_layer(total_layers) < layer) {
+				// XFER this loop to front
+				sm::Instr xop; xop.op = sm::Instr::Xfer;
+				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'b';
+				pass1.emplace_back(xop);
+			}
+		}
+	}
+	for (auto& bn_l : bn_loops) {
+		if (!bn_l.first.is_back()) continue;
+		for (auto l : bn_l.second) {
+			if (loops[l].in_layer(total_layers) >= layer) {
+				// XFER this loop to back
+				sm::Instr xop; xop.op = sm::Instr::Xfer;
+				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'f';
+				pass2.emplace_back(xop);
+			}
+		}
+	}
+	if (!pass1.empty()) {
+		for (auto& x : pass1) {
+			for (auto it = bn_loops[x.src].rbegin(); it != bn_loops[x.src].rend(); ++it) {
+				bn_loops[x.tgt].emplace_back(*it); // move loop to back
+				loops[*it].sequence.emplace_back(x.tgt);
+				loops[*it].sources.emplace_back(x);
+				bn_loops[x.src].clear();
+			}
+		}
+		passes.emplace_back(pass1);
+	}
+	if (!pass2.empty()) {
+		for (auto& x : pass1) {
+			for (auto it = bn_loops[x.src].rbegin(); it != bn_loops[x.src].rend(); ++it) {
+				bn_loops[x.tgt].emplace_back(*it); // move loop to back
+				loops[*it].sequence.emplace_back(x.tgt);
+				loops[*it].sources.emplace_back(x);
+				bn_loops[x.src].clear();
+			}
+		}
+		passes.emplace_back(pass2);
+	}
+}
 bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code const &code){
 
 	//DEBUG
@@ -47,6 +151,10 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	bool new_pass = false;
 	if(instr.op == sm::Instr::Xfer || instr.op == sm::Instr::Split){
 		if(racking != instr.rack()){
+			if (abs(instr.rack()) > racking_limit) {
+				std::cout << "Instruction " << instr.to_string() << " exceeds racking limit." << std::endl;
+				return false;
+			}
 			//rack changed, might need to keep track of pass?
 			racking = instr.rack();
 			new_pass = true;
@@ -121,108 +229,14 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		return cross(p0,q0,q1) != cross(p1,q0,q1) && cross(p0, p1, q0) != cross(p0, p1, q1);
 	};
 
-	auto yarn_captures = [&](std::pair<uint32_t, sm::BedNeedle> a, std::pair<uint32_t, uint32_t> b, std::pair<uint32_t, uint32_t> c)->bool{
-		// if a crosses c before c was made and b crosses c after c was made, then we have a capture
-		sm::BedNeedle a0, a1, b0,b1, c0,c1;
-		a1 = a.second;
-		a0 = loops[a.first].sequence.back();
-		b0 = loops[b.first].sequence.back(); // <-- only using this
-		b1 = loops[b.second].sequence.back();
-		c0 = loops[c.first].sequence.back();
-		c1 = loops[c.second].sequence.back();
-		
-		if (a0.bed == a1.bed && a0.bed == b0.bed &&  b.first < a.first) {
-			if (a0.needle < b0.needle && a1.needle > b0.needle ) {
-				return true;
-			}
-			else if (a0.needle > b0.needle && a1.needle < b0.needle) {
-				return true;
-			}
-		}
-		// potential overlap 
-		if(false){
-		// a crosses c?
-			glm::vec2 p0(a0.needle*2.f + ((float)a0.is_back()), a.first);
-			glm::vec2 p1(a.second.needle*2.f + ((float)a.second.is_back()), loops.size());
-			glm::vec2 q0(b0.needle*2.f + ((float)b0.is_back()), b.first);
-			glm::vec2 q1(b1.needle*2.f + ((float)b1.is_back()), b.second);
-		// b crosses c? 
-			glm::vec2 r0(c0.needle*2.f + ((float)c0.is_back()), c.first);
-			glm::vec2 r1(c1.needle*2.f + ((float)c1.is_back()), c.second);
-
-			if(intersects(p0,p1,q0,q1) && intersects(q0,q1,r0,r1)) return true;
-			
-		}
-		return false;
-	};
-	(void)yarn_captures;
-	auto loop_captures = [&](uint32_t l1, uint32_t l2)->bool{
-		// ...
-		return false;
-	};
-	(void)loop_captures;
+	
 	auto make_loop = [&](std::string yarn, sm::BedNeedle bn, sm::Instr::Direction direction)->uint32_t{
 		if(!is_yarn_active(yarn)){
 			std::cerr << "Yarn " << yarn << " used before being braught in." << std::endl;
 		}
 		assert(!bn.dontcare());
 	
-		// does adding this yarn segment create yarn tangling
-		if(false){
-			sm::Loop prev;
-			std::set<std::pair<uint32_t, uint32_t>> segments;
-			if(find_last_loop_for_yarn(yarn, &prev)){
-				for(auto const &yv : yarn_loops){
-					if(yv.first.empty() || yv.first == "Y") continue; // this is an empty yarn of sort
-					if(yv.second.size() < 2) continue;
-					for(uint32_t x = yv.second.size()-1; x >= 1; x--){
-						assert(yv.second[x] < loops.size());
-						assert(yv.second[x-1] < loops.size());
-						auto l1 = loops[yv.second[x]];
-						auto l2 = loops[yv.second[x-1]];
-						sm::BedNeedle bn_temp;
-						if(!is_loop_active(l1, &bn_temp)) continue;
-						while(!is_loop_active(l2, &bn_temp)){
-							if(x == 1){
-								break;
-							}
-							x--;
-							assert(yv.second[x-1] < loops.size());
-							l2=loops[yv.second[x-1]];
-						}
-						if(!is_loop_active(l2,&bn_temp)) continue;
-						//l1->l2 is a segment
-						segments.insert(std::make_pair(l1.id, l2.id));
-					}
-				}
-				if(instr.face_instr.first != prev.face_instr.first){
-					// get all active loop segments i.e for all active loops, 
-					for(auto a : segments){
-						for(auto b : segments){
-							if(a == b) continue;
-							// if current yarn captures b using a, return -1U;
-							auto curr = std::make_pair(prev.id, bn);
-							
-							if(yarn_captures(curr, a,b)){
-								//std::cerr << "Yarn " << yarn << " making loop at " << bn.to_string() << " captures yarns between " << loops[a.first].sequence.back().to_string() << "/" << loops[a.second].sequence.back().to_string() << std::endl;
-								instr.error_info.is_error = true;
-								instr.error_info.error_string += "\nyarn " + yarn+ " captures between  " + bn.to_string() + " and " + loops[prev.id].sequence.back().to_string() + " ~ " + loops[a.first].sequence.back().to_string();
-								std::cerr << "Yarn " << yarn << ": " << instr.error_info.error_string << std::endl;
-								//return -1U;
-							}
-						}
-					}
-				}
-				else{
-					// an internal segment can do whatever it wants
-					// TODO if it captures external yarns still should be flagged
-				}
-			} else {
-				// yarn is being introduced, cannot capture anything at this point...
-			}
-		}
-
-
+	
 		loops.emplace_back();
 		auto &loop = loops.back();
 		loop.id = loops.size()-1;
@@ -241,7 +255,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 			float yslack = std::abs(ypn.position_on_front(racking) - bn.position_on_front(racking));
 			//float yslack = std::abs(ypn.location() - bn.location());
 			if(direction == sm::Instr::Left){
-				if(!(yslack >= 0.f && yslack < 1.f)){
+				if(!(yslack >= 0.f && yslack < unit_slack())){
 					std::cerr << "(A)Yarn location is too far away from where it should be used. Yslack: " << yslack  << std::endl;
 					std::cerr << "ypn: " << ypn.to_string() << " bn: " << bn.to_string() << std::endl;
 					std::cerr << "ypn: " << ypn.bed << ypn.location() << " bn: " << bn.bed << bn.location() << std::endl;
@@ -252,7 +266,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 				}
 				
 			} else if (direction == sm::Instr::Right){
-				if(!(yslack > 0.f && yslack < 1.f)){
+				if(!(yslack > 0.f && yslack < unit_slack())){
 					std::cerr << "(B)Yarn location is too far away from where it should be used. Yslack: " << yslack << std::endl;
 					std::cerr << "ypn: " << ypn.to_string() << " bn: " << bn.to_string() << std::endl;
 					std::cerr << "ypn: " << ypn.bed << ypn.location() << " bn: " << bn.bed << bn.location() << std::endl;
@@ -636,18 +650,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	//print();
 	return true;
 }
-// generate a brand new needle at location
-sm::BedNeedle sm::MachineState::get_new_needle_at(sm::BedNeedle in){
-	uint32_t max_depth = 0;
-	for(auto &bnl : bn_loops){
-		if(!bnl.second.empty() && bnl.first.needle == in.needle && bnl.first.bed == in.bed){
-			max_depth = std::max(max_depth, in.depth);
-		}
-	}
-	sm::BedNeedle out = in;
-	out.depth = max_depth;
-	return out;
-}
+
 // are there any loops left on the machine?
 bool sm::MachineState::empty(){
 	for(auto const &pr : bn_loops){
@@ -945,9 +948,9 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 		}
 		h.lhs.face = face - 1;
 		h.lhs.edge = -1;
-		int var;
-		if (!(str >> var)) throw std::runtime_error("layer hint does not have a layer number");
-		h.rhs = var;
+		int var1,var2;
+		if (!(str >> var1 >> var2)) throw std::runtime_error("layer hint does not have a layer/total number");
+		h.rhs = std::make_pair(var1,var2);
 		char src;
 		if (str >> src) {
 			if (src == 'u') h.src = sm::Mesh::Hint::User;
@@ -1258,7 +1261,7 @@ void sm::Mesh::save(std::string const &filename) const {
 		out <<"\n";
 		}
 		else if (h.type == sm::Mesh::Hint::Layer) {
-			out << "l " << (h.lhs.face + 1) << " " << std::get<int>(h.rhs) << " ";
+			out << "l " << (h.lhs.face + 1) << " " << std::get<std::pair<int,int>>(h.rhs).first << " " << std::get<std::pair<int, int>>(h.rhs).second << " ";
 			out << (char)h.src;
 			out << "\n";
 		}
@@ -3755,6 +3758,7 @@ bool sm::partial_order_to_sequence(std::set<std::pair<uint32_t, uint32_t>> parti
 	}
 	return true;
 }
+// assumes mesh->total_order exists
 // maps instruction order to actual needle bed values from resource constraints
 // maps yarns to a table of "Y0..n" style yarns
 // inserts yarn-in and yarn-out instructions (might be a bit awkward for now)
@@ -3845,14 +3849,27 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 						face_yarn_mappings[fy] = yi;
 					}
 					if(face_yarn_mappings[fy] != yi){
-						throw std::runtime_error("face yarn carrier mapping is not consistent");
+						//throw std::runtime_error("face yarn carrier mapping is not consistent");
+						std::wcout << "face yarn carrier mapping is not consistent" << std::endl;
+						return false;
 					}
 				}
 			}
 		}
 	}
 
+	// Layer hints
+	std::vector<int> layer_mapping, total_layer_mapping;
+	layer_mapping.assign(mesh.faces.size(), 0);
+	total_layer_mapping.assign(mesh.faces.size(), 1);
+	for (auto& h : mesh.hints) {
+		if (h.type == sm::Mesh::Hint::Layer) {
+			layer_mapping[h.lhs.face] = std::get<std::pair<int,int>>(h.rhs).first;
+			total_layer_mapping[h.lhs.face] = std::get<std::pair<int, int>>(h.rhs).second;
+		}
+	}
 	MachineState machine;
+	machine.total_layers = 1; 
 	mesh.total_instructions.clear();
 	// go by order, plug translate by and hint index to get knitout instruction
 	for(auto const &fi : mesh.total_order){
@@ -3884,17 +3901,19 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 					in_op.yarns = "Y" + std::to_string(face_yarn_mappings[fy]);
 
 					machine.make(in_op, mesh, code);
-                    //mesh.total_instructions.emplace_back(in_op);
+                    mesh.total_instructions.emplace_back(in_op);
                		edge_map[xmap.first] = 0;
 				}
             }
         }
         
 		if(fi.first == -1U){ // pick from instruction stream
+			//TODO: Are xfers in the intsruction stream layer agnostic? Yes, for now.
 			assert(fi.second < mesh.move_instructions.size());
 			auto xfer_op = mesh.move_instructions[fi.second];
 			assert(xfer_op.op == sm::Instr::Xfer);
 			xfer_op.face_instr = fi;
+		
 			machine.make(xfer_op, mesh, code);
 			mesh.total_instructions.emplace_back(xfer_op);
 		}
@@ -3919,8 +3938,19 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 				}
 				ins.yarns = "Y" + std::to_string(face_yarn_mappings[fy]);
 			}
+			int face_layer = layer_mapping[fi.first]; // If not annotated, always 0
+			int total_layers = total_layer_mapping[fi.first]; //if not annotated, always 1
+			machine.total_layers = total_layers;
+			std::vector<sm::Instr> p1,p2;
+			if(ins.needs_front_shuffle()) machine.shuffle_front(face_layer, &p1, &p2);
+			else if(ins.needs_back_shuffle()) machine.shuffle_back(face_layer, &p1, &p2);
+			ins = ins.in_layer(face_layer, machine.total_layers);
 			machine.make(ins, mesh, code);
+			
+			for(auto x: p1) mesh.total_instructions.emplace_back(x);
+			for(auto x: p2) mesh.total_instructions.emplace_back(x);
 			mesh.total_instructions.emplace_back(ins);
+			
 		}
         for(auto xmap : edge_map){
 			if(xmap.second != 1) continue;
@@ -3939,7 +3969,7 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 					}
 					out_op.yarns = "Y" + std::to_string(face_yarn_mappings[fy]);
 					machine.make(out_op, mesh, code);
-                    //mesh.total_instructions.emplace_back(out_op);
+                    mesh.total_instructions.emplace_back(out_op);
                		edge_map[xmap.first] = 0;
                 }
             }
@@ -4052,7 +4082,8 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 			const sm::BedNeedle bn = std::get<sm::BedNeedle>(h.rhs);
 			const sm::BedNeedle bn_template = l.edges[h.lhs.edge].bn;
 			if(bn_template.dontcare()) continue;
-			if(bn.bed != bn_template.bed){
+			
+			if(false && bn.bed != bn_template.bed){ //in the layer world, do we still care about beds lining up? Can always move loop to the right bed as long as indices line up
 				offenders.emplace_back(h); // edge resource conflicts with variant.
 				std::cerr << "Template and assigned bed don't match. Template:" << bn_template.bed << " assigned: " << bn.bed << std::endl;
 				// also find variant hint for this face and add it to offence.
@@ -4249,6 +4280,10 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 		if (ha_it != mesh.hints.end() && hb_it != mesh.hints.end()) {
 			sm::BedNeedle rhs_a = std::get<sm::BedNeedle>(ha_it->rhs);
 			sm::BedNeedle rhs_b = std::get<sm::BedNeedle>(hb_it->rhs);
+
+			// rhs_a = rhs_a.in_layer(); // from layer hint for : c.a.face
+			// rhs_b = rhs_b.in_layer(); // from layer hint for : c.b.face
+
 			sm::BedNeedle orig_rhs_a = rhs_a;
 			bool is_yarn_connection = false;
 			{
@@ -4377,7 +4412,8 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 	
 		sm::Mesh m = mesh;
 		compute_total_instructions(m, library, code);
-		MachineState machine;
+		MachineState machine; // this machine has no concept of layers
+
 		for(auto ins : m.total_instructions){
 			if(!machine.make(ins, m, code)){
 				std::cerr << "Machine could not create " << ins.to_string() << " without violating constraints" << std::endl;
@@ -4957,171 +4993,6 @@ bool sm::compute_code_graph(sm::Code &code){
 	return true;
 }
 
-bool sm::compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGraph *_graph){
-	assert(_graph);
-	InstrGraph &graph = *_graph;
-	graph.nodes.clear();
-	graph.nodes_at.clear();
-	graph.edge_loops.clear();
-	graph.edge_yarns.clear();
-	graph.edge_orders.clear();
-	graph.time.clear();
-	std::map<uint32_t, std::string> face_variant;
-	std::map<std::string, uint32_t> code_name_to_idx;
-	for(auto const &f : code.faces){
-		code_name_to_idx[f.key()] = &f - &code.faces[0];
-	}
-	for(auto const &h : mesh.hints){
-		if(h.type == sm::Mesh::Hint::Variant){
-			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
-		}
-	}
-	std::map<std::pair<uint32_t, uint32_t> , uint32_t> fi_to_idx;
-	for(auto &f : mesh.faces){
-		uint32_t fi = &f - &mesh.faces[0];
-		glm::vec3 up;
-		if(face_variant.count(fi)){
-			std::string name = mesh.library[f.type] + ' ' + face_variant[fi];
-			if(!code_name_to_idx.count(name)) continue;
-			auto c = code.faces[code_name_to_idx[name]];
-
-			glm::vec3  b;
-			for (auto& ed : c.edges) {
-				uint32_t ei = &ed - &c.edges[0];
-				if (ed.direction == sm::Code::Face::Edge::Direction::Out && ed.type[0] == 'l') {
-					b = 0.5f * (mesh.vertices[f[ei]] + mesh.vertices[f[(ei + 1) % f.size()]]);
-					break;
-					
-				}
-			}
-			up = b - sm::face_centroid(fi, mesh);
-
-			for(auto &ins : c.instrs){
-				uint32_t k = &ins - &c.instrs[0];
-				auto in = ins;
-				in.face_instr = std::make_pair(fi, &ins - &c.instrs[0]);
-				fi_to_idx[in.face_instr] = graph.nodes.size();
-				graph.nodes.emplace_back(in);
-				graph.nodes_at.emplace_back(sm::face_centroid(fi, mesh) + 0.5f * k * up);
-			}
-		}
-	}
-	for(auto const &c : mesh.connections){
-		if(face_variant.count(c.a.face) && face_variant.count(c.b.face)){
-			std::string aname = mesh.library[mesh.faces[c.a.face].type] + ' ' + face_variant[c.a.face];
-			std::string bname = mesh.library[mesh.faces[c.b.face].type] + ' ' + face_variant[c.b.face];
-			if(!code_name_to_idx.count(aname) || ! code_name_to_idx.count(bname)) continue;
-			auto ca = code.faces[code_name_to_idx[aname]];
-			auto cb = code.faces[code_name_to_idx[bname]];
-			auto fa = c.a.face;
-			auto fb = c.b.face;
-			if(ca.edges[c.a.edge].direction == sm::Code::Face::Edge::In && cb.edges[c.b.edge].direction == sm::Code::Face::Edge::Out){
-				// a is in, b is out (ulta)
-				std::swap(ca,cb);
-				std::swap(fa,fb);
-			}
-			bool is_yarn_connection = (ca.edges[c.a.edge].type[0] == 'y');
-			if(!is_yarn_connection && ca.edges[c.a.edge].type[0] != 'l'){
-				continue;
-			}
-			{
-				// a is out, b is in (typical)
-				// ca (instruction-to-edge)
-				// cb (edge-to-instruction)
-				if(!is_yarn_connection){
-					for(auto pr_a: ca.loop_instruction_to_edge_connections){
-						for(auto pr_b: cb.loop_edge_to_instruction_connections){
-							auto face_instr_1 = std::make_pair(fa, pr_a.first);
-							auto face_instr_2 = std::make_pair(fb, pr_b.second);
-							graph.edge_loops.insert(std::make_pair(fi_to_idx[face_instr_1], fi_to_idx[face_instr_2]));
-						}
-					}
-
-					// else other (instruction-to-instruction)
-					for(auto pr : ca.loop_instruction_to_instruction_connections){
-						auto i1 = std::make_pair(fa, pr.first);
-						auto i2 = std::make_pair(fa, pr.second);
-						graph.edge_loops.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
-					}
-
-					for(auto pr : cb.loop_instruction_to_instruction_connections){
-						auto i1 = std::make_pair(fb, pr.first);
-						auto i2 = std::make_pair(fb, pr.second);
-						graph.edge_loops.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
-					}
-				}
-				else{
-					for(auto pr_a_: ca.yarn_instruction_to_edge_connections){
-						for(auto pr_b_: cb.yarn_edge_to_instruction_connections){
-							auto pr_a = pr_a_.second;
-							auto pr_b = pr_b_.second;
-
-							auto face_instr_1 = std::make_pair(fa, pr_a.first);
-							auto face_instr_2 = std::make_pair(fb, pr_b.second);
-							graph.edge_yarns.insert(std::make_pair(fi_to_idx[face_instr_1], fi_to_idx[face_instr_2]));
-						}
-					}
-					for(auto pr_ : ca.yarn_instruction_to_instruction_connections){
-						auto pr = pr_.second;
-						auto i1 = std::make_pair(fa, pr.first);
-						auto i2 = std::make_pair(fa, pr.second);
-						graph.edge_yarns.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
-					}
-
-
-					for(auto pr_ : cb.yarn_instruction_to_instruction_connections){
-						auto pr = pr_.second;
-						auto i1 = std::make_pair(fb, pr.first);
-						auto i2 = std::make_pair(fb, pr.second);
-						graph.edge_yarns.insert(std::make_pair(fi_to_idx[i1], fi_to_idx[i2]));
-					}
-				}
-			}
-		}
-	}
-
-	//add connections from transfers added.
-	{
-		std::set<uint32_t> move_instructions_with_constraints;
-		for (auto& h : mesh.hints) {
-			if (h.type == sm::Mesh::Hint::Order) {
-				auto lhs = h.lhs;
-				auto rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
-				if (lhs.face != -1U && rhs.face != -1U) continue;
-				if(lhs.face == -1U && lhs.edge < mesh.move_instructions.size())
-					move_instructions_with_constraints.insert(lhs.edge);
-				if(rhs.face == -1U && rhs.edge < mesh.move_instructions.size())
-					move_instructions_with_constraints.insert(rhs.edge);
-			}
-		}
-		for (auto &ins : mesh.move_instructions) {
-			if (move_instructions_with_constraints.count(&ins - &mesh.move_instructions[0])) {
-				sm::Instr in = ins;
-				in.face_instr = std::make_pair(-1U, &ins - &mesh.move_instructions[0]);
-				fi_to_idx[in.face_instr] = graph.nodes.size();
-				
-				graph.nodes.emplace_back(in);
-			}
-		}
-		for (auto& h : mesh.hints) {
-			if (h.type == sm::Mesh::Hint::Order) {
-				auto lhs = h.lhs;
-				auto rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
-				if (lhs.face != -1U && rhs.face != -1U) continue;
-				assert(fi_to_idx.count(std::make_pair(lhs.face, lhs.edge)));
-				assert(fi_to_idx.count(std::make_pair(rhs.face, rhs.edge)));
-				uint32_t lhs_node = fi_to_idx[std::make_pair(lhs.face, lhs.edge)];
-				uint32_t rhs_node = fi_to_idx[std::make_pair(rhs.face, rhs.edge)];
-				graph.edge_orders.insert(std::make_pair(lhs_node, rhs_node));
-			}
-		}
-
-	}
-
-	graph.time.clear();
-	graph.time.assign(graph.nodes.size(), 0.);
-	return true;
-}
 
 
 // knitout from faces
@@ -5179,39 +5050,4 @@ glm::vec3 sm::face_centroid(uint32_t fid, sm::Mesh const &mesh){
 	return pos;
 }
 
-glm::vec3 sm::Instr::posMesh_start(sm::Mesh const &mesh){
-	glm::vec3 start;
-	start = face_centroid(face_instr.first, mesh);
-	return start;
-}
 
-glm::vec3 sm::Instr::posMachineBed_start(){
-	glm::vec3 start;
-	start.y = step;
-	start.z = (src.is_front() ? 1.f : -1.f);
-	start.x = src.location();
-	return start;
-}
-glm::vec3 sm::Instr::posMesh_end(sm::Mesh const &mesh){
-	glm::vec3 end = face_centroid(face_instr.first, mesh);
-	return end;
-}
-
-glm::vec3 sm::Instr::posMachineBed_end(){
-	glm::vec3 end;
-	end.y = step;
-	end.z = (tgt.is_front() ? 1.f : -1.f);
-	end.x = tgt.location();
-	return end;
-}
-
-bool sm::InstrGraph::is_monotonic() const{
-	if(time.size() != nodes.size()) return false;
-	for(auto &edge: edge_loops){
-		if(time[edge.first] >= time[edge.second]) return false;
-	}
-	for(auto &edge: edge_yarns){
-		if(time[edge.first] >= time[edge.second]) return false;
-	}
-	return true;
-}

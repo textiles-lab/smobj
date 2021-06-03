@@ -81,6 +81,13 @@ namespace sm {
 			if(is_front()) return location();
 			return (location() - racking);
 		}
+		//For layers: give bed needle location relative to layer
+		BedNeedle in_layer(int layer, int total_layers) const {
+			assert(total_layers >= 1 && layer >= 0);
+			BedNeedle ret = *this;
+			ret.needle = ret.needle * total_layers + layer;
+			return ret;
+		}
 	};
 
 	// awkward that sm.hpp seems to have more and more knitout specific information, but well...
@@ -93,6 +100,7 @@ namespace sm {
 	};
 
 	struct Instr{
+		
 		enum Operation : char {
 			In = 'i', Out = 'o', Knit = 'k', Split = 's', Xfer = 'x', Miss = 'm',  Tuck = 't', Drop = 'd', Unknown = 'u'
 		} op = Unknown;
@@ -104,6 +112,10 @@ namespace sm {
 		BedNeedle tgt2; // aux produced (only for split)
 		std::string yarns;
 		uint32_t step=-1U;
+		std::pair<uint32_t, uint32_t> face_instr = std::make_pair(-1U, -1U);
+		std::pair<int, int> layer_info = std::make_pair(-1, -1);
+		uint32_t index = -1U;
+		InstrErrorInfo error_info;
 		int rack() const {
 			//TODO enum this
 			
@@ -115,9 +127,7 @@ namespace sm {
 			}
 			return 0;
 		}
-		std::pair<uint32_t, uint32_t> face_instr = std::make_pair(-1U,-1U);
-		
-		InstrErrorInfo error_info;
+
 
 		std::string to_string(bool include_racking = false) const{
 			std::string ret = "";
@@ -190,10 +200,38 @@ namespace sm {
 			return (op == Knit || op == Tuck || op == Split || op == Drop || op == Miss);
 		}
 
-		glm::vec3 posMesh_start(sm::Mesh const &mesh);
-		glm::vec3 posMachineBed_start();
-		glm::vec3 posMesh_end(sm::Mesh const &mesh);
-		glm::vec3 posMachineBed_end();
+		// For dealing with layers:
+		bool needs_front_shuffle() const {
+			if (op == Drop || op == In || op == Out) return false;
+			if (op == Xfer) return src.is_front();
+			return tgt.is_front();
+			
+		}
+		bool needs_back_shuffle() const {
+			if (op == Drop || op == In || op == Out) return false;
+			if (op == Xfer) return src.is_back();
+			return tgt.is_back();
+		}
+		Instr in_layer(int layer, int total_layers) const {
+			// note only location mapping does not shuffle
+			Instr ret = *this;
+			ret.src = ret.src.in_layer(layer, total_layers);
+			ret.tgt = ret.tgt.in_layer(layer, total_layers);
+			ret.tgt2 = ret.tgt2.in_layer(layer, total_layers);
+			return ret;
+		}
+		uint32_t get_face_index() const {
+			return face_instr.first;
+		}
+		uint32_t get_instr_index_in_face() const {
+			return face_instr.second;
+		}
+		int get_layer() const {
+			return layer_info.first;
+		}
+		int get_total_layers() const {
+			return layer_info.second;
+		}
 	};
 
 
@@ -209,13 +247,19 @@ namespace sm {
 		std::pair<uint32_t, uint32_t> face_instr; // face_instr that made the loop
 		uint32_t prev_slack = -1U; // (maximum) distance between this loop and its (yarn-wise)previous loop during construction
 		uint32_t post_slack = -1U; // (maximum) distance between this loop and the (yarn-wise) next loop during construction
-	
+		int in_layer(int total_layers = 1) const { // what layer is this loop on? depends on how many layers exist on the machine
+			//0 1 2 3 4
+			//l0l1l2l3l0 
+			return (sequence.back().needle % total_layers);
+		}
 		bool operator<(const Loop& o)const{
 			return (id < o.id);
 		}
 	};
 	struct MachineState{
+		int total_layers = 1; // how many layers are we emulating
 		int racking = 0;
+		int racking_limit = 2;
 		int tension  = 0; // stitch value maybe
 		std::vector<Loop> loops; // holds all the loops created
 		std::map<std::string, BedNeedle> yarn_positions; // which yarn is parked where
@@ -230,9 +274,16 @@ namespace sm {
 		bool is_loop_active(Loop loop, sm::BedNeedle *bn); // if active return the location at which exists
 		bool is_yarn_active(std::string yarn);
 		
-		BedNeedle get_new_needle_at(BedNeedle in);//UNUSED
-
 		void print();
+		
+		//==for layers==
+		int unit_slack() const {
+			return total_layers;
+		}
+		
+		// for layers, total layers can be updated -- all the loops get reinterpreted
+		void shuffle_front(int layer, std::vector<sm::Instr> *pass_front, std::vector<sm::Instr> *pass_back); // move loops on <= layer to front, rest to front
+		void shuffle_back(int layer, std::vector<sm::Instr> *pass_front, std::vector<sm::Instr> *pass_back); //move loops >= layer to back, rest to back
 	};
 
 
@@ -303,7 +354,7 @@ struct Mesh {
 			Heuristic = 'h',
 		} src;
 		FaceEdge lhs;
-		std::variant<BedNeedle,  FaceEdge, std::string, int> rhs;
+		std::variant<BedNeedle,  FaceEdge, std::string, std::pair<int,int>> rhs;
 		uint32_t inferred_from = -1U; // optional index to maintain what constraint this was inferred from if at all
 		std::string to_string() const{
 			std::string type_str = "";
@@ -326,8 +377,8 @@ struct Mesh {
 				str += r;
 			} 
 			else if (type == Layer) {
-				int l = std::get<int>(rhs);
-				str += std::to_string(l);
+				auto l = std::get<std::pair<int,int>>(rhs);
+				str += std::to_string(l.first) + "/" + std::to_string(l.second);
 			}
 			else{
 				str += " NONE.";
@@ -567,24 +618,16 @@ struct Yarns {
 	std::vector< Unit > units;
 };
 
-struct InstrGraph{
-	std::vector<glm::vec3> nodes_at;
-	std::vector<Instr> nodes; // record face instr in these
-	std::set<std::pair<uint32_t, uint32_t>> edge_loops;
-	std::set<std::pair<uint32_t, uint32_t>> edge_yarns;
-	std::set<std::pair<uint32_t, uint32_t>> edge_orders; // coming from transfers, not to check loop or yarn consumption
-	std::vector<double> time; // monotonic
-	bool is_monotonic() const;
-	
-};
+
+
 
 
 //------ helper functions ------
 
+
 glm::vec3 face_centroid(uint32_t fid, sm::Mesh const &mesh);
 
 bool compute_code_graph(sm::Code &code);
-bool compute_instruction_graph(sm::Mesh mesh, sm::Code const &code, InstrGraph *graph); 
 
 
 bool compute_total_instructions(sm::Mesh &mesh, sm::Library const &library,  sm::Code const &code);

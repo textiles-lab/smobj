@@ -553,7 +553,7 @@ bool sm::constraint_assign_variant_from_resource(sm::Mesh &mesh, sm::Code const 
 // For instructions within the face, insert partial orders
 bool sm::constraint_assign_order_from_face_order(sm::Mesh &mesh, sm::Code const &code_library, sm::Library const &face_library){
 
-	
+	/*
 	std::map<uint32_t, std::pair<std::string, sm::Mesh::Hint::HintSource> > face_variants;
 	std::vector<sm::Mesh::Hint> candidates;
 	std::map<sm::Mesh::FaceEdge, uint32_t> face_instr_idx; 
@@ -649,8 +649,10 @@ bool sm::constraint_assign_order_from_face_order(sm::Mesh &mesh, sm::Code const 
 		}
 
 	}
-
+   
 	return did_update;
+    */
+        return false; // TODO move hinters to hack-stitch and out of smobj
 }
 
 bool sm::constraint_face_instruction_order(sm::Mesh &mesh, sm::Code const &code_library){
