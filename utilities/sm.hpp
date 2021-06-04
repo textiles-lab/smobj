@@ -88,6 +88,9 @@ namespace sm {
 			ret.needle = ret.needle * total_layers + layer;
 			return ret;
 		}
+		int get_layer(int total_layers) const {
+			return needle % total_layers;
+		}
 	};
 
 	// awkward that sm.hpp seems to have more and more knitout specific information, but well...
@@ -116,6 +119,7 @@ namespace sm {
 		std::pair<int, int> layer_info = std::make_pair(-1, -1);
 		uint32_t index = -1U;
 		InstrErrorInfo error_info;
+		std::string debug_info = "";
 		int rack() const {
 			//TODO enum this
 			
@@ -185,6 +189,7 @@ namespace sm {
 				default:
 					assert(false && "unknown instruction");
 			}
+			ret += " ;" + debug_info;
 			return ret;
 		}
 
@@ -284,6 +289,7 @@ namespace sm {
 		// for layers, total layers can be updated -- all the loops get reinterpreted
 		void shuffle_front(int layer, std::vector<sm::Instr> *pass_front, std::vector<sm::Instr> *pass_back); // move loops on <= layer to front, rest to front
 		void shuffle_back(int layer, std::vector<sm::Instr> *pass_front, std::vector<sm::Instr> *pass_back); //move loops >= layer to back, rest to back
+		bool occupied(sm::BedNeedle const& bn) const;
 	};
 
 

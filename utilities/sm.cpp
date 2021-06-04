@@ -23,48 +23,65 @@ void sm::MachineState::shuffle_front(int layer, std::vector<sm::Instr> *_p1, std
 	auto& pass1 = *_p1;
 	auto& pass2 = *_p2;
 	pass1.clear(); pass2.clear();
-	assert(racking == 0);
+	//assert(racking == 0);
+
 	for (auto& bn_l : bn_loops) {
-		if (!bn_l.first.is_front()) continue;
+		if (!bn_l.first.is_back()) continue;
 		for (auto l : bn_l.second) {
 			if (loops[l].in_layer(total_layers) <= layer) {
 				// XFER this loop to front
 				sm::Instr xop; xop.op = sm::Instr::Xfer;
-				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'b';
+				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'f';
+				xop.tgt.needle += racking;
+				assert(xop.src.bed == 'b');
+				xop.debug_info += "shuffle front (<= layer)";
+				if (bn_loops.count(xop.tgt) && !bn_loops[xop.tgt].empty()) {
+					std::cout << "ERROR shuffling to occupied position." << xop.to_string()<< std::endl;
+				}
 				pass1.emplace_back(xop);
 			}
 		}
 	}
 	for (auto& bn_l : bn_loops) {
-		if (!bn_l.first.is_back()) continue;
+		if (!bn_l.first.is_front()) continue;
 		for (auto l : bn_l.second) {
 			if (loops[l].in_layer(total_layers) > layer) {
 				// XFER this loop to back
 				sm::Instr xop; xop.op = sm::Instr::Xfer;
-				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'f';
+				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'b';
+				xop.tgt.needle -= racking;
+				assert(xop.src.bed == 'f');
+				xop.debug_info += "shuffle front (> layer)";
+				if (bn_loops.count(xop.tgt) && !bn_loops[xop.tgt].empty()) {
+					std::cout << "ERROR shuffling to occupied position." << xop.to_string() << std::endl;
+				}
 				pass2.emplace_back(xop);
 			}
 		}
 	}
 	if (!pass1.empty()) {
+	
 		for (auto& x : pass1) {
 			for (auto it = bn_loops[x.src].rbegin(); it != bn_loops[x.src].rend(); ++it) {
 				bn_loops[x.tgt].emplace_back(*it); // move loop to back
 				loops[*it].sequence.emplace_back(x.tgt);
 				loops[*it].sources.emplace_back(x);
-				bn_loops[x.src].clear();
+				
 			}
+			bn_loops[x.src].clear();
 		}
 		passes.emplace_back(pass1);
 	}
 	if (!pass2.empty()) {
-		for (auto& x : pass1) {
+		
+		for (auto& x : pass2) {
 			for (auto it = bn_loops[x.src].rbegin(); it != bn_loops[x.src].rend(); ++it) {
 				bn_loops[x.tgt].emplace_back(*it); // move loop to back
 				loops[*it].sequence.emplace_back(x.tgt);
 				loops[*it].sources.emplace_back(x);
-				bn_loops[x.src].clear();
+			
 			}
+			bn_loops[x.src].clear();
 		}
 		passes.emplace_back(pass2);
 	}
@@ -76,52 +93,76 @@ void sm::MachineState::shuffle_back(int layer, std::vector<sm::Instr>* _p1, std:
 	assert(_p2);
 	auto& pass1 = *_p1;
 	auto& pass2 = *_p2;
-	pass1.clear(); pass2.clear();	assert(racking == 0);
+	pass1.clear(); pass2.clear();
+
+
 	for (auto& bn_l : bn_loops) {
-		if (!bn_l.first.is_front()) continue;
+		if (!bn_l.first.is_back()) continue;
 		for (auto l : bn_l.second) {
 			if (loops[l].in_layer(total_layers) < layer) {
 				// XFER this loop to front
 				sm::Instr xop; xop.op = sm::Instr::Xfer;
-				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'b';
+				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'f';
+				xop.tgt.needle += racking;
+				assert(xop.src.bed == 'b');
+				xop.debug_info += "shuffle back (< layer)";
+				if (bn_loops.count(xop.tgt) && !bn_loops[xop.tgt].empty()) {
+					std::cout << "ERROR shuffling to occupied position." << xop.to_string() << std::endl;
+				}
 				pass1.emplace_back(xop);
 			}
 		}
 	}
 	for (auto& bn_l : bn_loops) {
-		if (!bn_l.first.is_back()) continue;
+		if (!bn_l.first.is_front()) continue;
 		for (auto l : bn_l.second) {
 			if (loops[l].in_layer(total_layers) >= layer) {
 				// XFER this loop to back
 				sm::Instr xop; xop.op = sm::Instr::Xfer;
-				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'f';
+				xop.src = bn_l.first; xop.tgt = xop.src;
+				xop.tgt.bed = 'b'; 
+				assert(xop.src.bed == 'f');
+				xop.tgt.needle -= racking;
+				xop.debug_info += "shuffle back (>= layer)";
+				if (bn_loops.count(xop.tgt) && !bn_loops[xop.tgt].empty()) {
+					std::cout << "ERROR shuffling to occupied position." << xop.to_string() << std::endl;
+				}
 				pass2.emplace_back(xop);
 			}
 		}
 	}
 	if (!pass1.empty()) {
+	
 		for (auto& x : pass1) {
 			for (auto it = bn_loops[x.src].rbegin(); it != bn_loops[x.src].rend(); ++it) {
 				bn_loops[x.tgt].emplace_back(*it); // move loop to back
 				loops[*it].sequence.emplace_back(x.tgt);
 				loops[*it].sources.emplace_back(x);
-				bn_loops[x.src].clear();
+				
 			}
+			bn_loops[x.src].clear();
 		}
 		passes.emplace_back(pass1);
 	}
 	if (!pass2.empty()) {
-		for (auto& x : pass1) {
+		
+		for (auto& x : pass2) {
 			for (auto it = bn_loops[x.src].rbegin(); it != bn_loops[x.src].rend(); ++it) {
 				bn_loops[x.tgt].emplace_back(*it); // move loop to back
 				loops[*it].sequence.emplace_back(x.tgt);
 				loops[*it].sources.emplace_back(x);
-				bn_loops[x.src].clear();
+				
 			}
+			bn_loops[x.src].clear();
 		}
 		passes.emplace_back(pass2);
 	}
 }
+bool sm::MachineState::occupied(sm::BedNeedle const& bn) const {
+	if (bn_loops.count(bn) && !bn_loops.at(bn).empty()) return true;
+	return false;
+}
+
 bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code const &code){
 
 	//DEBUG
@@ -192,6 +233,63 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	}
 	if(passes.empty() || new_pass) {
 		passes.emplace_back();
+
+		//--------- is slack okay for all active loops before new pass----------------------
+		{
+
+			for (auto const& bn_ls : bn_loops) {
+				for (auto l_id : bn_ls.second) {
+					bool is_warning = false;
+					assert(loops[l_id].sequence.back() == bn_ls.first);
+					if (loops[l_id].prev == -1U) {
+						//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has no previous loop. " << std::endl; // debug
+						continue;
+					}
+					sm::BedNeedle bn2;
+					if (!is_loop_active(loops[loops[l_id].prev], &bn2)) {
+						//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has previous loop that is dropped already. " << std::endl; // debug
+						is_warning = true;
+					}
+					sm::BedNeedle bnc = loops[l_id].sequence.back();
+					sm::BedNeedle bnp = loops[loops[l_id].prev].sequence.back();
+					//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has previous loop at " << bnp.to_string() << std::endl; // debug
+
+					//uint32_t slack = std::abs(bnc.needle - bnp.needle);
+					uint32_t slack = std::abs(bnc.position_on_front(racking) - bnp.position_on_front(racking));
+					//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has current (pre)slack " << slack << " and required slack (with prev)" << loops[l_id].prev_slack << std::endl; // debug
+					//std::cout << "Loop " << loops[l_id].prev << " at " << bnp.to_string() << " has current (post)slack " << slack << " and required slack (with next)" << loops[loops[l_id].prev].post_slack << std::endl; // debug
+
+					if (bnc.bed != bnp.bed && bnc.needle == bnp.needle) slack+= total_layers;
+					if (slack > loops[l_id].prev_slack) {
+						if (is_warning) {
+							std::cerr << "Warning (slack wrt to dropped loop) " << std::endl;
+						}
+						std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
+						std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
+						std::cerr << "required slack: " << loops[l_id].prev_slack << " has slack " << slack << std::endl;
+						print();
+						if (!is_warning) {
+							instr.error_info.is_error = true;
+							instr.error_info.error_string += "\nslack error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
+						}
+					}
+					if (slack > loops[loops[l_id].prev].post_slack) {
+						if (is_warning) {
+							std::cerr << "Warning (slack wrt to dropped loop) " << std::endl;
+						}
+						std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
+						std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
+						std::cerr << "*required (post) slack: " << loops[loops[l_id].prev].post_slack << " has slack " << slack << std::endl;
+						print();
+						if (!is_warning) {
+							instr.error_info.is_error = true;
+							instr.error_info.error_string += "\nslack(post) error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
+						}
+					}
+				} // for loops in location
+			} // for locations
+		}
+
 	}
 	auto &curr_pass = passes.back();
 
@@ -436,7 +534,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		if(!bn_loops.count(instr.src)){
 			// empty location: warn if operation is not a tuck
 			if(instr.op != sm::Instr::Tuck && instr.op != sm::Instr::Miss){
-				std::cerr << "[Warning]Operation " << instr.to_string() << " on empty location is not a tuck or a miss. " << std::endl;
+				std::cerr << "[Warning]Operation " << instr.to_string() << " on empty source location is not a tuck or a miss. " << std::endl;
 				instr.error_info.is_error = true;
 				instr.error_info.error_string += "\nNo loop consumed and not tuck or miss.";
 			}
@@ -563,62 +661,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 			assert(false && "unknown instruction should never be constructed.");
 	}
 	
-	//--------- is slack okay for all active loops----------------------
-	{
-		//std::cout << "DEBUG: Slack info for all loops on bed after instruction " << instr.to_string() << std::endl;
-		//print();
-		for(auto const &bn_ls : bn_loops){
-			for(auto l_id : bn_ls.second){
-				bool is_warning = false;
-				assert(loops[l_id].sequence.back() == bn_ls.first);
-				if (loops[l_id].prev == -1U) {
-					//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has no previous loop. " << std::endl; // debug
-					continue;
-				}
-				sm::BedNeedle bn2;
-				if (!is_loop_active(loops[loops[l_id].prev], &bn2)) {
-					//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has previous loop that is dropped already. " << std::endl; // debug
-					is_warning = true;
-				}
-				sm::BedNeedle bnc = loops[l_id].sequence.back();
-				sm::BedNeedle bnp = loops[loops[l_id].prev].sequence.back();
-				//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has previous loop at " << bnp.to_string() << std::endl; // debug
-
-				//uint32_t slack = std::abs(bnc.needle - bnp.needle);
-				uint32_t slack = std::abs(bnc.position_on_front(racking) - bnp.position_on_front(racking));
-				//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has current (pre)slack " << slack << " and required slack (with prev)" << loops[l_id].prev_slack << std::endl; // debug
-				//std::cout << "Loop " << loops[l_id].prev << " at " << bnp.to_string() << " has current (post)slack " << slack << " and required slack (with next)" << loops[loops[l_id].prev].post_slack << std::endl; // debug
-
-				if(bnc.bed != bnp.bed && bnc.needle == bnp.needle) slack++;
-				if(slack > loops[l_id].prev_slack){
-					if (is_warning) {
-						std::cerr << "Warning (slack wrt to dropped loop) " << std::endl;
-					}
-					std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
-					std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
-					std::cerr << "required slack: " << loops[l_id].prev_slack << " has slack " << slack<< std::endl; 
-					print();
-					if (!is_warning) {
-						instr.error_info.is_error = true;
-						instr.error_info.error_string += "\nslack error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
-					}
-				}
-				if (slack > loops[loops[l_id].prev].post_slack) {
-					if (is_warning) {
-						std::cerr << "Warning (slack wrt to dropped loop) " << std::endl;
-					}
-					std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
-					std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
-					std::cerr << "*required (post) slack: " << loops[loops[l_id].prev].post_slack << " has slack " << slack << std::endl;
-					print();
-					if (!is_warning) {
-						instr.error_info.is_error = true;
-						instr.error_info.error_string += "\nslack(post) error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
-					}
-				}
-			} // for loops in location
-		} // for locations
-	}
+	
 	// loop setup "b"
 	if(instr.face_instr.first == -1U){
 		bool invalid = false;
@@ -701,9 +744,10 @@ void sm::MachineState::print(){
 	for(auto const &bn_l : bn_loops){
 		auto const &bn = bn_l.first;
 		auto const &l_ids = bn_l.second;
+		if (l_ids.empty()) continue;
 		if(bn.bed == 'f'){
-			std::cout << "[" << bn.needle << ":";
-			for(auto x : l_ids) std::cout <<"(" << (int)loops[x].prev_slack << ")"<< x << "(" << (int)loops[x].post_slack <<")"<<",";
+			std::cout << "[" << bn.needle;
+				//std::cout << ":"; for(auto x : l_ids) std::cout <<"(" << (int)loops[x].prev_slack << ")"<< x << "(" << (int)loops[x].post_slack <<")"<<",";
 			std::cout <<"]_" ;
 		}
 	}
@@ -712,11 +756,10 @@ void sm::MachineState::print(){
 	for(auto const &bn_l : bn_loops){
 		auto const &bn = bn_l.first;
 		auto const &l_ids = bn_l.second;
+		if (l_ids.empty()) continue;
 		if(bn.bed == 'b'){
-			std::cout << "[" << bn.needle << ":";
-			//for(auto x : l_ids) std::cout << x <<",";
-			for (auto x : l_ids) std::cout << "(" << (int)loops[x].prev_slack << ")" << x << "(" << (int)loops[x].post_slack << ")" << ",";
-
+			std::cout << "[" << bn.needle;
+			//std::cout<< ":";for (auto x : l_ids) std::cout << "(" << (int)loops[x].prev_slack << ")" << x << "(" << (int)loops[x].post_slack << ")" << ",";
 			std::cout <<"]_" ;
 		}
 	}
