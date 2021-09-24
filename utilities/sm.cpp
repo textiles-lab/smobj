@@ -320,12 +320,13 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		loops[loop_idx].sources.emplace_back(instr);
 	};
 
+	/* unused:
 	auto cross = [&](glm::vec2 a, glm::vec2 b, glm::vec2 c)->bool{
 		return (c.y-a.y)*(b.x-a.x) > (b.y-a.y)*(c.x-a.x);
 	};
 	auto intersects = [&](glm::vec2 p0, glm::vec2 p1, glm::vec2 q0, glm::vec2 q1)->bool{
 		return cross(p0,q0,q1) != cross(p1,q0,q1) && cross(p0, p1, q0) != cross(p0, p1, q1);
-	};
+	};*/
 
 	
 	auto make_loop = [&](std::string yarn, sm::BedNeedle bn, sm::Instr::Direction direction)->uint32_t{
