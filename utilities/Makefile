@@ -11,7 +11,7 @@ endif
 all : knitout-to-smobj smobj-to-yarns text-to-smobj simplify-yarns merge-faces
 
 clean :
-	rm -f knitout-to-smobj text-to-smobj smobj-to-yarns simplify-yarns sm.o
+	rm -f knitout-to-smobj text-to-smobj smobj-to-yarns simplify-yarns merge-faces sm.o
 
 knitout-to-smobj : knitout-to-smobj.cpp
 	$(CPP) -o '$@' '$<'
