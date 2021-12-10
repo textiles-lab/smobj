@@ -2,6 +2,7 @@
 
 #include <glm/gtx/hash.hpp>
 #include <glm/gtx/norm.hpp>
+#include <glm/gtx/string_cast.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -267,44 +268,69 @@ void midpoint_bezier_to_catmull_rom(std::vector< glm::vec3 > const &yarn, std::v
 
 	//Now approximate test points with catmull-rom spline:
 
-	//helper to check distance of points in [b,c] given control points [a,b,c,d] have been selected.
+	//helper to check distance of points in [i1,i2] given control points [i0,i1,i2,i3] have been selected.
 	//special cases:
-	//  if a == -1U: (b must be 0) start of spline, point for a is reflection of c over b
-	//  if d == -1U: (c must be pts.size()-1) end of spline, point for d is reflection of b over c
-	auto check_dis2 = [&pts](uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+	//  if i0 == -1U: (i1 must be 0) start of spline, point for a is reflection of i2 over i1
+	//  if i3 == -1U: (i2 must be pts.size()-1) end of spline, point for i3 is reflection of i1 over i2
+	auto check_dis2 = [&pts](uint32_t i0, uint32_t i1, uint32_t i2, uint32_t i3) {
 		//look up control points, handling edge conditions:
-		assert(b < pts.size());
-		glm::vec3 pb = pts[b];
-		assert(c < pts.size());
-		glm::vec3 pc = pts[c];
-		glm::vec3 pa;
-		if (a == -1U) {
-			assert(b == 0);
-			pa = pb - (pc - pb);
+		assert(i1 < pts.size());
+		glm::vec3 p1 = pts[i1];
+		assert(i2 < pts.size());
+		glm::vec3 p2 = pts[i2];
+		glm::vec3 p0;
+		if (i0 == -1U) {
+			assert(i1 == 0);
+			p0 = p1 - (p2 - p1);
 		} else {
-			assert(a < pts.size());
-			pa = pts[a];
+			assert(i0 < pts.size());
+			p0 = pts[i0];
 		}
-		glm::vec3 pd;
-		if (d == -1U) {
-			assert(c == pts.size()-1);
-			pd = pc - (pb - pc);
+		glm::vec3 p3;
+		if (i3 == -1U) {
+			assert(i2 == pts.size()-1);
+			p3 = p2 - (p1 - p2);
 		} else {
-			assert(d < pts.size());
-			pd = pts[d];
+			assert(i3 < pts.size());
+			p3 = pts[i3];
 		}
 
 		float max_dis2 = 0.0f;
-		for (uint32_t i = b; i <= c; ++i) {
+		//Note: spline meets i1, i2 exactly, so only testing internal points
+		for (uint32_t i = i1 + 1; i < i2; ++i) {
+			/* pyramid method:
 			//compute point on spline as per https://en.wikipedia.org/wiki/Centripetal_Catmull%E2%80%93Rom_spline
 			//time relative to knots at 0 (pa), 1 (pb), 2 (pc), 3 (pd):
-			float t = 1.0f + float(i - b) / float(c - b);
-			glm::vec3 a1 = glm::mix(pa,pb, (t-0.0f) / (1.0f - 0.0f));
-			glm::vec3 a2 = glm::mix(pb,pc, (t-1.0f) / (2.0f - 1.0f));
-			glm::vec3 a3 = glm::mix(pc,pd, (t-2.0f) / (3.0f - 2.0f));
+			float t = 1.0f + float(i - i1) / float(i2 - i1);
+			glm::vec3 a1 = glm::mix(p0,p1, (t-0.0f) / (1.0f - 0.0f));
+			glm::vec3 a2 = glm::mix(p1,p2, (t-1.0f) / (2.0f - 1.0f));
+			glm::vec3 a3 = glm::mix(p2,p3, (t-2.0f) / (3.0f - 2.0f));
 			glm::vec3 b1 = glm::mix(a1,a2, (t-0.0f) / (2.0f - 0.0f));
 			glm::vec3 b2 = glm::mix(a2,a3, (t-1.0f) / (3.0f - 1.0f));
-			glm::vec3 at = glm::mix(b1,b2, (t-0.0f) / (4.0f - 0.0f));
+			glm::vec3 at = glm::mix(b1,b2, (t-1.0f) / (2.0f - 1.0f));
+			*/
+
+			//compute point on spline as per https://www.mvps.org/directx/articles/catmull/
+			float s = float(i-i1) / float(i2-i1);
+			glm::vec4 coefs = 0.5f * glm::vec4(1.0f, s, s*s, s*s*s);
+			/*
+			glm::vec3 at = (coefs * glm::transpose(glm::mat4(
+				 0.0f, 2.0f, 0.0f, 0.0f,
+				-1.0f, 0.0f, 1.0f, 0.0f,
+				 2.0f,-5.0f, 4.0f,-1.0f,
+				-1.0f, 3.0f,-3.0f, 1.0f
+			))) * glm::transpose(glm::mat4x3(p0, p1, p2, p3));
+			*/
+
+			//basis polynomial method (without matrices):
+			// -- seems fastest in my [very rough] tests
+			glm::vec3 at =
+				(-coefs[1] + 2.0f * coefs[2] - coefs[3]) * p0
+				+ (2.0f * coefs[0] - 5.0f * coefs[2] + 3.0f * coefs[3]) * p1
+				+ (coefs[1] + 4.0f * coefs[2] - 3.0f * coefs[3]) * p2
+				+ (-coefs[2] + coefs[3]) * p3;
+
+			//assert(glm::length2(at - at2) < 0.001f);
 
 			float dis2 = glm::length2(at - pts[i]);
 			max_dis2 = std::max(dis2, max_dis2);
