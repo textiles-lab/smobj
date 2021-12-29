@@ -31,11 +31,11 @@ knit+ 4b d 4c c
 knit+ 5 e 5c d
 knit+ 6 . 6c e
 
-drop+ 1c a . .
-drop+ 2c b . a
-drop+ 3c c . b
-drop+ 4c d . c
-drop+ 5c e . d
-drop+ 6c . . e
+drop 1c a . .
+drop 2c b . a
+drop 3c c . b
+drop 4c d . c
+drop 5c e . d
+drop 6c . . e
 
 edge) . . . E6 E5

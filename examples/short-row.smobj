@@ -3,7 +3,7 @@ L knit- -lX -yX +lX +yX
 L edge( x -y1 +y1 x x
 L knit+ -lX +yX +lX -yX
 L turn)(( -lX +lX +yX -yX
-L drop+ -l1 +y0 +l0 -y0
+L drop -l1 +y0 +l0 -y0
 L edge) x x x +y1 -y1
 v -5.27318 -3.6578 0
 v -3.24733 -3.62183 0
