@@ -13,17 +13,17 @@ The name indicates which of the existing loops is the "new" loop and how it is m
 
 Increases are named `make-`(`left`|`right`)`-`(`tuck`|`tuck-twist`|`split`)(`+`|`-`).
  - `left`|`right` indicates which loop is new (i.e., "not just knit through [or exactly] the old loop")
-  - `left`: the left loop is the new one
-  - `right`: the right loop is the new one
+   - `left`: the left loop is the new one
+   - `right`: the right loop is the new one
  - `tuck`|... indicates the method of making the new loop.
-  - `tuck`: the new loop is tucked in the same direction as the yarn is already tavelling
-  - `twisted-tuck`: the new loop is tucked on the front bed opposite the direction the yarn is already travelling. (I.e., a twisted tuck, with the direction of the twist such that the exiting yarn is behind the entering yarn.)
-  - `split`: the new loop is split through the old loop (the other loop is just the old loop)
+   - `tuck`: the new loop is tucked in the same direction as the yarn is already tavelling
+   - `twisted-tuck`: the new loop is tucked on the front bed opposite the direction the yarn is already travelling. (I.e., a twisted tuck, with the direction of the twist such that the exiting yarn is behind the entering yarn.)
+   - `split`: the new loop is split through the old loop (the other loop is just the old loop)
  - `+`|`-` indicates direction of yarn travel
-  - `+` yarn enters from the left, exits to the right
-  - `-` yarn enters from the right, exits to the left
+   - `+` yarn enters from the left, exits to the right
+   - `-` yarn enters from the right, exits to the left
 
-*NOTE* it is slightly odd that the `split` increase doesn't knit through the old loop after splitting through it, while the other increases all do this.
+*NOTE:* it is slightly odd that the `split` increase doesn't knit through the old loop after splitting through it, while the other increases all do this.
 
 ### Decreases (`decrease-*`)
 
@@ -32,13 +32,13 @@ The name indicates the stacking order of the loops and the direction of yarn tra
 
 Decreases are named `decrease-`(`left`|`right`)(`+`|`-`)
  - `left`|`right` indicates the lean of the decrease (i.e., which entering loop is stacked on top)
-  - `left`: the right loop is stacked atop the left loop. (a "left-leaning" decrease)
-  - `right`: the right loop is stacked atop the right loop. (a "right-leaning" decrease)
+   - `left`: the right loop is stacked atop the left loop. (a "left-leaning" decrease)
+   - `right`: the right loop is stacked atop the right loop. (a "right-leaning" decrease)
  - `+`|`-` direction of yarn travel
-  - `+` yarn enters from the left, exits to the right
-  - `-` yarn enters from the right, exits to the left
+   - `+` yarn enters from the left, exits to the right
+   - `-` yarn enters from the right, exits to the left
 
-*NOTE* in previous versions of this face library, the `-` versions of the decreases had the incorrect names (left vs right), such that changing from the `+` to the `-` version of a face would also change the loop stacking order.
+*NOTE:* in previous versions of this face library, the `-` versions of the decreases had the incorrect names (left vs right), such that changing from the `+` to the `-` version of a face would also change the loop stacking order.
 
 ### Turns (`turn-*`)
 
@@ -48,8 +48,8 @@ Diamond-shaped with yarns entering/exiting on two adjacent sides and loops enter
 Turns are named `turn`(`-tuck`)?(`)((`|`))(`)
  - `-tuck` indicates that the entering yarn tucks (in its direction of travel) a loop behind the entering loop. If missing, the yarn just turns around.
  - `)((`|`))(` indicates the shape
-  - `)((`: the yarn enters via the lower left edge, exits via the upper left edge; the loop enters via the lower right edge, exits via the upper right edge.
-  - `))(`: the yarn enters via the lower right edge, exits via the upper right face; the loop enters via the lower left edge, exits via the upper left edge.
+   - `)((`: the yarn enters via the lower left edge, exits via the upper left edge; the loop enters via the lower right edge, exits via the upper right edge.
+   - `))(`: the yarn enters via the lower right edge, exits via the upper right face; the loop enters via the lower left edge, exits via the upper left edge.
 
 
 ### Edges (`edge*`)
@@ -68,7 +68,7 @@ Starts are named `start`(`<`|`>`).
  - `start<` is a leftward-pointing triangle with yarn exiting to the right
  - `start>` is a rightward-pointing triangle with yarn exiting to the left
 
-*NOTE* the `.sf` format provides no way to start a yarn in the middle of a face, so the "fresh yarn" starts at the corner of the triangle.
+*NOTE:* the `.sf` format provides no way to start a yarn in the middle of a face, so the "fresh yarn" starts at the corner of the triangle.
 
 ### Ends (`end*`)
 
@@ -78,7 +78,7 @@ Ends are named `end`(`<`|`>`).
  - `end<` is a leftward-pointing triangle with yarn entering from the right
  - `end>` is a rightward-pointing triangle with yarn entering from the left
 
-*NOTE* the `.sf` format provides no way to end a yarn in the middle of a face, so the "exiting yarn" ends at the corner of the triangle.
+*NOTE:* the `.sf` format provides no way to end a yarn in the middle of a face, so the "exiting yarn" ends at the corner of the triangle.
 
 
 ### Knits (`knit*`,`purl*`)
@@ -87,18 +87,16 @@ Rectangular stitches that front- or back-bed knit a stitch. Loops enter from the
 
 Knits are named (`knit`|`purl`)(`-`|`+`)
  - `knit`|`purl` indicates the direction the new loop is pulled through the old loop.
-  - `knit`: the new loop is pulled forward (i.e., a front-bed knit)
-  - `purl`: the new loop is pulled backward (i.e., a back-bed knit)
+   - `knit`: the new loop is pulled forward (i.e., a front-bed knit)
+   - `purl`: the new loop is pulled backward (i.e., a back-bed knit)
  - `+`|`-` direction of yarn travel
-  - `+` yarn enters from the left, exits to the right
-  - `-` yarn enters from the right, exits to the left
+   - `+` yarn enters from the left, exits to the right
+   - `-` yarn enters from the right, exits to the left
 
-### Drops (`drop*`)
+### Drops (`drop`)
 Rectangular faces that drop a loop. A loop enters from the bottom, all other edges remain uncrossed.
 
-Drops are named `drop-`(`-`|`+`), but are identical (since loops don't have a yarn direction).
-
-*NOTE* we should probably remove the +/- suffix on drops.
+*NOTE:* in the past, there were both `drop+` and `drop-` variations, but these don't actually differ unless you keep track of the directions of empty edges so were removed.
 
 ### Twisted Tucks (`tuck-twist*`)
 
@@ -107,8 +105,8 @@ The bottom edge is blank, the left and right edges connect to yarns, a loop exit
 
 Twisted tucks are named `tuck-twist`(`+`|`-`)
  - `+`|`-` direction of yarn travel (also sets twist direction of tuck)
-  - `+` yarn enters from the left, exits to the right
-  - `-` yarn enters from the right, exits to the left
+   - `+` yarn enters from the left, exits to the right
+   - `-` yarn enters from the right, exits to the left
 
 ### Et Cetera
 
