@@ -8,7 +8,9 @@ face make-left-tuck+
 	yarn [2:0.725,0] (0.257785,0.276222,0.206233) (-0.0984679,0.224999,-0.276545) [3:0.275,0]
 	yarn [3:0.725,0] (-0.917159,-0.201903,0) [4:0.75,0]
 	yarn [0:0.275,0] (-0.28123,-0.0375,0.0968753) (0.0125145,0.592189,-0.0593829) (0.529687,0.375012,-0.0609375) (0.648423,-0.064061,-0.034383) (0.389042,-0.473437,0.0968753) [0:0.725,0]
+derive make-left-tuck- -lX -yX +lX +lX +yX by reverse-yarn from make-left-tuck+ -lX +yX +lX +lX -yX
 derive make-right-tuck+ -lX +yX +lX +lX -yX by mirror-x reverse-yarn from make-left-tuck+ -lX +yX +lX +lX -yX
+derive make-right-tuck- -lX -yX +lX +lX +yX by reverse-yarn from make-right-tuck+ -lX +yX +lX +lX -yX
 face make-left-tuck-twist+
 	edge (-1,-1.062) -lX
 	edge (1,-1.062) +yX
@@ -41,7 +43,9 @@ face make-left-split+
 	yarn [3:0.725,0] (0.07966,0.276222,0.279671) (0.0984075,-0.434377,-0.19217) [4:0.75,0]
 	yarn [0:0.275,0] (-0.220293,-0.14375,0.0421877) (0.137514,0.475002,-0.0593829) [2:0.725,0]
 	yarn [0:0.725,0] (0.353111,-0.510936,0.0421795) (0.63748,-0.0781246,0.0968753) [2:0.275,0]
+derive make-left-split- -lX -yX +lX +lX +yX by reverse-yarn from make-left-split+ -lX +yX +lX +lX -yX
 derive make-right-split+ -lX +yX +lX +lX -yX by mirror-x reverse-yarn from make-left-split+ -lX +yX +lX +lX -yX
+derive make-right-split- -lX -yX +lX +lX +yX by reverse-yarn from make-right-split+ -lX +yX +lX +lX -yX
 face decrease-right+
 	edge (-1.6,0) -lX
 	edge (0,-1.2) -lX
@@ -52,9 +56,9 @@ face decrease-right+
 	yarn [2:0.25,0] (0.321847,-0.0972155,-0.22033) (0.0812196,0.226562,0.378142) [3:0.275,0]
 	yarn [0:0.275,0] (-0.729667,-0.179688,0.165625) (-0.481236,0.307814,0.167179) (0,0.389074,-0.0109376) (0.442173,0.253127,0.240617) (0.371855,-0.309375,0.13125) [0:0.725,0]
 	yarn [1:0.275,0] (-0.528105,-0.309375,-0.189062) (-0.553111,0.278126,0.062492) (0,0.420324,-0.235938) (0.471861,0.284377,0.087492) (0.721855,-0.217187,-0.0124998) [1:0.725,0]
+derive decrease-right- -lX -lX -yX +lX +yX by mirror-x from decrease-left+ -lX -lX +yX +lX -yX
 derive decrease-left+ -lX -lX +yX +lX -yX by mirror-x reverse-yarn from decrease-right+ -lX -lX +yX +lX -yX
-derive decrease-right- -lX -lX -yX +lX +yX by mirror-x from decrease-right+ -lX -lX +yX +lX -yX
-derive decrease-left- -lX -lX -yX +lX +yX by mirror-x from decrease-left+ -lX -lX +yX +lX -yX
+derive decrease-left- -lX -lX -yX +lX +yX by mirror-x from decrease-right+ -lX -lX +yX +lX -yX
 face turn-tuck)((
 	edge (-0.792,-1.22) -lX
 	edge (0.792,0) +lX
@@ -82,6 +86,14 @@ face edge(
 	edge (-0.5,1.22) x
 	yarn [1:0.25,0] (0.123438,-0.785937,0) (0.09375,0.198438,0) [2:0.25,0]
 derive edge) x x x +y1 -y1 by mirror-x from edge( x -y1 +y1 x x
+face start>
+	edge (-0.952,-0.61) -lX
+	edge (0.952,0) +lX
+	edge (-0.952,0.61) +yX
+	yarn [0:0.275,0] (-0.606716,-0.149663,0.169228) (-0.759235,0.151189,-0.050332) (0.378368,0.186132,-0.0941806) [0:0.725,0]
+	yarn [1:0,0] (0.891181,-0.085622,-0.19533) (0.0831026,-0.153897,-0.371019) (0.00638064,0.242545,0.324701) [1:0.275,0]
+	yarn [2:0.75,0] (-0.524186,-0.123972,-0.0761219) (-0.395259,0.277524,0.19289) [1:0.725,0]
+derive start< -lX +yX +lX by mirror-x from start> -lX +lX +yX
 face end<
 	edge (-0.952,0) -lX
 	edge (0.952,-0.61) -yX
@@ -90,14 +102,6 @@ face end<
 	yarn [1:0.25,0] (0.321847,-0.211278,-0.19533) (0.295282,0.207812,0.135955) [2:0.275,0]
 	yarn [0:0.275,0] (-0.129667,-0.109375,0.0968753) (-0.196861,0.159377,-0.137508) (0.203125,0.307824,-0.0890625) (0.632798,0.150001,-0.137508) (0.578105,-0.196875,0.0968753) [0:0.725,0]
 derive end> -lX +lX -yX by mirror-x from end< -lX -yX +lX
-face start<
-	edge (-0.952,-0.61) -lX
-	edge (0.952,0) +lX
-	edge (-0.952,0.61) +yX
-	yarn [0:0.275,0] (-0.606716,-0.149663,0.169228) (-0.759235,0.151189,-0.050332) (0.378368,0.186132,-0.0941806) [0:0.725,0]
-	yarn [1:0,0] (0.891181,-0.085622,-0.19533) (0.0831026,-0.153897,-0.371019) (0.00638064,0.242545,0.324701) [1:0.275,0]
-	yarn [2:0.75,0] (-0.524186,-0.123972,-0.0761219) (-0.395259,0.277524,0.19289) [1:0.725,0]
-derive start> -lX +yX +lX by mirror-x from start< -lX +lX +yX
 face knit+
 	edge (-1,-0.61) -lX
 	edge (1,-0.61) +yX
@@ -159,13 +163,15 @@ face knit+.2111
 	yarn [1:0.25,0] (0.321847,-0.211278,-0.303142) (0.295282,0.207812,0.203142) [2:0.275,0]
 	yarn [0:0.275,0] (-0.528105,-0.309375,0.246875) (-0.551548,0.129689,0.0453044) (0,0.307824,-0.123438) (0.523423,0.129689,0.0531169) (0.528105,-0.309375,0.19375) [0:0.725,0]
 	yarn [0:0.265,-0.2] (-0.528105,-0.309375,0.110937) (-0.532798,0.129689,-0.184383) (0,0.217199,-0.301562) (0.585923,0.129689,-0.140633) (0.528105,-0.309375,0) [0:0.735,-0.2]
-face drop+
+face drop
 	edge (-1,-0.61) -l1
 	edge (1,-0.61) +y0
 	edge (1,0.61) +l0
 	edge (-1,0.61) -y0
 	yarn [0:0.275,0] (-0.528105,-0.309375,0.0968753) (-0.632798,0.129689,-0.137508) (0,0.307824,0) (0.632798,0.129689,-0.137508) (0.528105,-0.309375,0.0968753) [0:0.725,0]
-derive drop- -l1 -y0 +l0 +y0 by mirror-x from drop+ -l1 +y0 +l0 -y0
+
+#it doesn't make sense to have directional drops given they have empty yarn edges anyway
+#derive drop- -l1 -y0 +l0 +y0 by mirror-x from drop+ -l1 +y0 +l0 -y0
 
 face knittuck+
 	edge (-1,-0.61) -lX
