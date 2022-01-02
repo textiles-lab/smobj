@@ -280,6 +280,9 @@ struct Mesh {
 	// slightly awkward but need to maintain 2 connections-> 1 instruction 
 	//std::vector< MoveConnection > move_connections; // a mapping of connections associated with move_instructions, the same instruction can have multiple connections
 
+  std::vector<uint32_t> total_face_order;
+  std::vector< std::pair<uint32_t, uint32_t> > face_order_hints;
+
 	std::vector< std::pair<uint32_t, uint32_t> > total_order; // face-id/instruction-id face_id = -1U, order from move_instructions
 	std::vector< Instr > total_instructions;
 	struct Hint {

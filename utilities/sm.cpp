@@ -4403,19 +4403,49 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 }
 
 bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library const &library){
-	std::cout << "Computing total order..." << std::endl;
-	mesh.total_order.clear();
-	std::vector<uint32_t> sequence;
-	std::map<sm::Mesh::FaceEdge, uint32_t> face_instr_idx;
-	std::map<uint32_t, sm::Mesh::FaceEdge> instr_face_map;
-	std::set<std::pair<uint32_t, uint32_t>> partials;
-	//check for consistency independent of total order for verification purposes
-	
-	// go through all the faces and just add them as-is
-	// process all the hints into easy to access formats
-	std::map<std::string, uint32_t> name_to_code_idx;
-	std::map<uint32_t, std::string> face_variant;
+  printf("computing total face order! (topological sort)\n");
 
+  // TODO: Add an interface to add face order hints
+  mesh.face_order_hints.push_back(std::make_pair(0, 3));
+
+  std::vector<int> results;
+  for (;;) {
+    if (results.size() == mesh.faces.size()) break;
+    bool tmp[mesh.faces.size()] = {};
+    for (auto c : mesh.connections) {
+      if (std::find(results.begin(), results.end(), c.a.face) != results.end()) {
+        continue;
+      } else {
+        tmp[c.b.face] = true;
+      }
+    }
+    // Handle partial order from hints
+    for (auto h : mesh.face_order_hints) {
+      if (std::find(results.begin(), results.end(), h.first) != results.end()) {
+        continue;
+      } else {
+        tmp[h.second] = true;
+      }
+    }
+    // push one result each time
+    for (int i=0; i < (int)mesh.faces.size(); i++) {
+      if (tmp[i] == false && (std::find(results.begin(), results.end(), i) == results.end())) {
+        results.push_back(i);
+      }
+    }
+  }
+
+  printf("printing total face order: \n");
+  for (auto id : results) {
+    printf("%d ", id);
+  }
+  printf("done\n");
+
+  return false;
+
+
+
+  /*
 	for(auto const &c : code.faces){
 		name_to_code_idx[c.key()] = &c - &code.faces[0];
 	}
@@ -4428,14 +4458,18 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
 		}
 	}
+  */
 
 
+  /*
 	for(uint32_t fid = 0; fid < mesh.faces.size(); ++fid){
 		if(face_variant.count(fid) == 0){
 			std::cout << "Variant missing for face " << fid << std::endl;
 			return false;
 		}
 	}
+  */
+  /*
 	for(uint32_t fid = 0; fid < mesh.faces.size(); ++fid){
 		std::string name = mesh.library[mesh.faces[fid].type] + " " + face_variant[fid];
 		if(!name_to_code_idx.count(name)){
@@ -4453,15 +4487,19 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 			}
 		}
 	}
+  */
 
 	// add instructions from the xfer stream
+  /*
 	for(uint32_t i = 0; i < mesh.move_instructions.size(); ++i){
 		sm::Mesh::FaceEdge fe; fe.face = -1U; fe.edge = i;
 		uint32_t idx = face_instr_idx.size();
 		face_instr_idx[fe] = idx; 
 		instr_face_map[idx] = fe;
 	}
+  */
 
+  /*
 	{
 		for(auto const &h : mesh.hints){
 			if(h.type == sm::Mesh::Hint::Order){
@@ -4488,7 +4526,9 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 			}
 		}
 	}
+  */
 	// also use the dependency order
+  /*
 	if(false){
 		int count = partials.size();
 		int tcount = 0;
@@ -4527,13 +4567,29 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 		std::cout << "Added " << partials.size() - count << " partial constraints from dependencies and total insertions : " << tcount << std::endl;
 
 	}
+  */
+
+  /*
+	std::cout << "Computing total order..." << std::endl;
+	mesh.total_order.clear();
+	//std::vector<uint32_t> sequence;
+	//std::map<sm::Mesh::FaceEdge, uint32_t> face_instr_idx;
+	std::map<uint32_t, sm::Mesh::FaceEdge> instr_face_map;
+	std::set<std::pair<uint32_t, uint32_t>> partials;
+	//check for consistency independent of total order for verification purposes
+	
+	// go through all the faces and just add them as-is
+	// process all the hints into easy to access formats
+	//std::map<std::string, uint32_t> name_to_code_idx;
+	//std::map<uint32_t, std::string> face_variant;
 
 	{
 		std::vector<std::vector<uint32_t>> all_sequences;
 		std::vector<uint32_t> _sequence;
 		bool order_is_okay = partial_order_to_sequence(partials, &_sequence);
 		if (order_is_okay) {
-			if (partial_order_to_sequences(partials, all_sequences, 1)) { //DEBUG 1, else 1000
+			if (partial_order_to_sequences(partials, all_sequences, 1000)) { //DEBUG 1, else 1000
+        printf("all_sequences.size(): %ld\n", all_sequences.size());
 				for (auto& order : all_sequences) {
 					mesh.total_order.clear();
 					for (auto const& x : order) {
@@ -4564,6 +4620,7 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 	// not verified..
 
 	return false;
+  */
 }
 
 
