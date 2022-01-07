@@ -98,13 +98,13 @@ face in+
 	edge (-0.5,0.0) x
 	edge (0.5,-0.61) +yX
 	edge (0.5,0.61) x
-	yarn [0:0,0] (0.1,-0.2,0.0) (0.1,0.0,0.0) [1:0.275,0]
+	yarn [0:0,0] (0.1,-0.2,0.0) (0.1,0.0,0.0) [1:0.25,0]
 derive in- x x +yX by mirror-x from in+ x +yX x
 face out-
 	edge (-0.5,0.0) x
 	edge (0.5,-0.61) -yX
 	edge (0.5,0.61) x
-	yarn [0:0,0] (0.1, 0.2,0.0) (0.1,0.0,0.0) [1:0.275,0]
+	yarn [0:0,0] (0.1, 0.2,0.0) (0.1,0.0,0.0) [1:0.25,0]
 derive out+ x x -yX by mirror-x from out- x -yX x
 face end<
 	edge (-0.952,0) -lX

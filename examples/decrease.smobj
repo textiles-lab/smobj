@@ -28,6 +28,13 @@ L edge( x -y1 +y1 x x
 L decrease-right- -lX -lX -yX +lX +yX
 L decrease-right+ -lX -lX +yX +lX -yX
 L decrease-left+ -lX -lX +yX +lX -yX
+L out+ x x -yX
+L out- x -yX x
+L start< -lX +yX +lX
+L start> -lX +lX +yX
+L in- x x +yX
+L in+ x +yX x
+L end> -lX +lX -yX
 v -1 -0.61 0
 v 1 -0.61 0
 v 1 0.61 0
@@ -79,6 +86,12 @@ v -3.325 3.48126 0
 v -1.325 3.48126 0
 v -1.325 4.70126 0
 v -3.325 4.70126 0
+v 3.43888 2.16347 0
+v 4.59233 2.75944 0
+v 3.43888 3.36791 0
+v -3.61959 -0.61 0
+v -3.61959 0.61 0
+v -4.77691 -0.0835095 0
 f 1 2 3 4
 T 12
 N 0
@@ -115,6 +128,12 @@ N 0
 f 48 49 50 51
 T 22
 N 0
+f 52 53 54
+T 31
+N 0
+f 57 55 56
+T 36
+N 0
 e 1/4 3/-2
 e 1/2 2/-4
 e 2/3 6/-1
@@ -132,3 +151,5 @@ e 8/3 9/-4
 e 10/4 11/-1
 e 9/3 12/-1
 e 4/3 9/-1
+e 10/3 13/-3
+e 3/4 14/-2
