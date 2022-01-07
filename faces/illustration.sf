@@ -94,6 +94,18 @@ face start>
 	yarn [1:0,0] (0.891181,-0.085622,-0.19533) (0.0831026,-0.153897,-0.371019) (0.00638064,0.242545,0.324701) [1:0.275,0]
 	yarn [2:0.75,0] (-0.524186,-0.123972,-0.0761219) (-0.395259,0.277524,0.19289) [1:0.725,0]
 derive start< -lX +yX +lX by mirror-x from start> -lX +lX +yX
+face in+
+	edge (-0.5,0.0) x
+	edge (0.5,-0.61) +yX
+	edge (0.5,0.61) x
+	yarn [0:0,0] (0.1,-0.2,0.0) (0.1,0.0,0.0) [1:0.275,0]
+derive in- x x +yX by mirror-x from in+ x +yX x
+face out-
+	edge (-0.5,0.0) x
+	edge (0.5,-0.61) -yX
+	edge (0.5,0.61) x
+	yarn [0:0,0] (0.1, 0.2,0.0) (0.1,0.0,0.0) [1:0.275,0]
+derive out+ x x -yX by mirror-x from out- x -yX x
 face end<
 	edge (-0.952,0) -lX
 	edge (0.952,-0.61) -yX
@@ -210,6 +222,7 @@ face xfer+1
 	edge (-1,0.61) x
 	yarn [0:0.275,0] [2:0.725,0]
 	yarn [0:0.725,0] [2:0.275,0]
+
 face spacer4+
 	edge (-7,-0.61) -lX
 	edge (-5,-0.61) -lX

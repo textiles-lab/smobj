@@ -80,6 +80,9 @@ Ends are named `end`(`<`|`>`).
 
 *NOTE:* the `.sf` format provides no way to end a yarn in the middle of a face, so the "exiting yarn" ends at the corner of the triangle.
 
+### Ins / Outs (`in*`, `out*`)
+
+Faces that just take a yarn in or out. Triangular with only one yarn in/out edge. The `+` variety is for yarns travelling right, the `-` variety is for yarns travelling left.
 
 ### Knits (`knit*`,`purl*`)
 
