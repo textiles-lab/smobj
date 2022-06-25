@@ -5,7 +5,7 @@ UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
 	CPP=g++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2
 else
-	CPP=clang++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2
+	CPP=clang++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2 -I/opt/homebrew/include
 endif
 
 all : knitout-to-smobj smobj-to-yarns text-to-smobj simplify-yarns merge-faces yarns-to-bccx yarn-units

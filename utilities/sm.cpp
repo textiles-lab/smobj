@@ -3112,7 +3112,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		);
 	};
 
-	float mismatch = 0.0f;
+	[[maybe_unused]] float mismatch = 0.0f;
 	float max_mismatch = 0.0f;
 	for (auto const &chain : chains) {
 		yarns.yarns.emplace_back();
