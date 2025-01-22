@@ -3,6 +3,7 @@
 #include <glm/gtx/hash.hpp>
 #include <glm/gtx/norm.hpp>
 
+#include <algorithm>
 #include <iostream>
 #include <unordered_map>
 #include <map>

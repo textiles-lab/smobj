@@ -4,6 +4,7 @@
 #include <glm/gtx/norm.hpp>
 #include <glm/gtx/string_cast.hpp>
 
+#include <algorithm>
 #include <iostream>
 #include <fstream>
 #include <cstring>
