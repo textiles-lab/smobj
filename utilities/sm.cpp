@@ -969,7 +969,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 				throw std::runtime_error("variant hint does not have a face");
 			}
 			h.lhs.face = face-1;
-			h.lhs.edge = -1;
+			h.lhs.edge = -1u;
 			std::string var;
 			if(!(str >> var)) throw std::runtime_error("variant hint does not have a variant name");
 			h.rhs = var;
@@ -991,7 +991,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			throw std::runtime_error("layer hint does not have a face");
 		}
 		h.lhs.face = face - 1;
-		h.lhs.edge = -1;
+		h.lhs.edge = -1u;
 		int var1,var2;
 		if (!(str >> var1 >> var2)) throw std::runtime_error("layer hint does not have a layer/total number");
 		h.rhs = std::make_pair(var1,var2);
@@ -4127,7 +4127,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 			const sm::BedNeedle bn_template = l.edges[h.lhs.edge].bn;
 			if(bn_template.dontcare()) continue;
 			
-			if(false && bn.bed != bn_template.bed){ //in the layer world, do we still care about beds lining up? Can always move loop to the right bed as long as indices line up
+			if constexpr(false && bn.bed != bn_template.bed){ //in the layer world, do we still care about beds lining up? Can always move loop to the right bed as long as indices line up
 				offenders.emplace_back(h); // edge resource conflicts with variant.
 				std::cerr << "Template and assigned bed don't match. Template:" << bn_template.bed << " assigned: " << bn.bed << std::endl;
 				// also find variant hint for this face and add it to offence.
