@@ -255,7 +255,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has previous loop at " << bnp.to_string() << std::endl; // debug
 
 					//uint32_t slack = std::abs(bnc.needle - bnp.needle);
-					uint32_t slack = std::abs(bnc.position_on_front(racking) - bnp.position_on_front(racking));
+					uint32_t slack = uint32_t(std::round(std::abs(bnc.position_on_front(racking) - bnp.position_on_front(racking)))); //NOTE: this is technically a float because of fractional rackings.
 					//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has current (pre)slack " << slack << " and required slack (with prev)" << loops[l_id].prev_slack << std::endl; // debug
 					//std::cout << "Loop " << loops[l_id].prev << " at " << bnp.to_string() << " has current (post)slack " << slack << " and required slack (with next)" << loops[loops[l_id].prev].post_slack << std::endl; // debug
 
@@ -294,7 +294,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	auto &curr_pass = passes.back();
 
 	// update step
-	instr.step = passes.size() - 1;
+	instr.step = uint32_t(passes.size() - 1);
 	// this is really "consume" loop
 	auto clear_location = [&](sm::BedNeedle bn){
 		uint32_t loop_slack = 2; // note slack should probably be float
@@ -338,7 +338,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 	
 		loops.emplace_back();
 		auto &loop = loops.back();
-		loop.id = loops.size()-1;
+		loop.id = uint32_t(loops.size()-1);
 		sm::Loop prev;
 		// ---- Yarn carrier position slack  constraint --------
 		if(find_last_loop_for_yarn(yarn, &prev)){
@@ -379,7 +379,7 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 		}
 		loop.bn = bn;
 		loop.yarn = yarn;
-		loop.step = passes.size()-1;
+		loop.step = uint32_t(passes.size()-1);
 		loop.face_instr = instr.face_instr;
 		assert(loop.bn.nudge == 0);
 		yarn_loops[yarn].emplace_back(loop.id);
@@ -453,18 +453,18 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					}
 				}
 			}
-			int max_iters = mesh.faces.size()*10; // heuristic
+			int max_iters = int(mesh.faces.size())*10; // heuristic
 			//std::cout << "Starting with " << candidates.size() << " candidates and " << up_candidates.size() << " up_candidates." << std::endl;
 			while(true){
 				while(!up_candidates.empty()){
 					auto next = *up_candidates.begin();
 					//std::cout << "\tup-candidates: " << next.first << "/" << next.second << std::endl;
 					//cue the next candidates from the next upward face 
-					uint32_t cid = get_code_for_face(next.first);
+					uint32_t n_cid = get_code_for_face(next.first);
 					up_candidates.erase(next);
-					if(cid == -1U) continue;
+					if(n_cid == -1U) continue;
 
-					auto nc = code.faces[cid];
+					auto nc = code.faces[n_cid];
 					for(auto x : nc.loop_edge_to_instruction_connections){
 						if(x.first == next.second){
 							candidates.insert(std::make_pair(next.first, x.second));
@@ -489,9 +489,9 @@ bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code con
 					//std::cout << "\tCandidate: " << next.first << "/" << next.second << std::endl;
 					if(next == ins2) return true;
 					candidates.erase(next);
-					uint32_t cid = get_code_for_face(next.first);
-					if(cid == -1U) continue;
-					auto nc = code.faces[cid];
+					uint32_t n_cid = get_code_for_face(next.first);
+					if(n_cid == -1U) continue;
+					auto nc = code.faces[n_cid];
 					// add next 
 					for(auto x : nc.loop_instruction_to_instruction_connections){
 						if(x.first == next.second) candidates.insert(std::make_pair(next.first, x.second));
@@ -917,7 +917,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 				}
 				float needle;
 				if(str2 >> needle){
-					bn.needle = needle;
+					bn.needle = int(std::round(needle));
 					if(needle - bn.needle > 0.25) bn.nudge = 1;
 					if(bn.needle - needle > 0.25) bn.nudge = -1;
 				}
@@ -1142,7 +1142,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 
 				library.emplace_back(empty_signature);
 				mesh.library.emplace_back(empty_signature.key());
-				key_type[empty_signature.key()] = key_type.size();
+				key_type[empty_signature.key()] = uint32_t(key_type.size());
 				std::cout << "Added empty string to library (" << library.size() << ")" << std::endl;
 			}
 			types[&f-&mesh.faces[0]] = key_type[empty_signature.key()];
@@ -1357,7 +1357,7 @@ void sm::Mesh::rip(uint32_t fixed_id){
 			n += glm::cross(this->vertices[f[i]] - this->vertices[f[(i+1)%f.size()]], -this->vertices[f[(f.size()+i-1)%f.size()]] + this->vertices[f[i]]);
 		}
 		normals.emplace_back(glm::normalize(n));
-		count+= f.size();
+		count += uint32_t(f.size());
 	}
 
 	avg_len /= count;
@@ -1367,7 +1367,7 @@ void sm::Mesh::rip(uint32_t fixed_id){
 
 	for(auto &f : this->faces){
 		for(uint32_t i = 0; i < f.size(); ++i){
-			edge_to_face[std::make_pair(f[i], f[(i+1)%f.size()])] = &f - &this->faces[0];
+			edge_to_face[std::make_pair(f[i], f[(i+1)%f.size()])] = uint32_t(&f - &this->faces[0]);
 		}
 	}
 	// figure out what the appropriate face for rotation should be given a face with known rotation
@@ -1457,8 +1457,8 @@ void sm::Mesh::rip(uint32_t fixed_id){
 			assert(offset_a == offset_a);
 			assert(offset_b == offset_b);
 			updated_vertices.emplace_back(this->vertices[v]+offset_a - offset_b);
-			old_to_new_facevertex[std::make_pair(&f- &this->faces[0],v)] = (updated_vertices.size()-1);
-			v = updated_vertices.size()-1;
+			old_to_new_facevertex[std::make_pair(uint32_t(&f- &this->faces[0]),v)] = uint32_t(updated_vertices.size()-1);
+			v = uint32_t(updated_vertices.size()-1);
 
 
 		}
@@ -1583,32 +1583,32 @@ sm::Library sm::Library::load(std::string const &filename) {
 
 			if (!(by_or_from == "by" || by_or_from == "from")) throw std::runtime_error(line_info() + "derive line should have face name and edge labels followed by 'by' or 'from'");
 			if (by_or_from == "by") {
-				std::string tok;
-				while (str >> tok) {
-					if (tok == "from") {
+				std::string tok2;
+				while (str >> tok2) {
+					if (tok2 == "from") {
 						break;
-					} else if (tok == "mirror-x") {
+					} else if (tok2 == "mirror-x") {
 						if (derive.by & sm::Library::Face::Derive::MirrorXBit) throw std::runtime_error(line_info() + "derive shouldn't mention mirror-x twice.");
 						derive.by |= sm::Library::Face::Derive::MirrorXBit;
-					} else if (tok == "mirror-z") {
+					} else if (tok2 == "mirror-z") {
 						if (derive.by & sm::Library::Face::Derive::MirrorZBit) throw std::runtime_error(line_info() + "derive shouldn't mention mirror-z twice.");
 						derive.by |= sm::Library::Face::Derive::MirrorZBit;
-					} else if (tok == "reverse-yarn") {
+					} else if (tok2 == "reverse-yarn") {
 						if (derive.by & sm::Library::Face::Derive::ReverseYarnBit) throw std::runtime_error(line_info() + "derive shouldn't mention reverse-yarn twice.");
 						derive.by |= sm::Library::Face::Derive::ReverseYarnBit;
 					} else {
-						throw std::runtime_error(line_info() + "unknown derivation operation '" + tok + "'");
+						throw std::runtime_error(line_info() + "unknown derivation operation '" + tok2 + "'");
 					}
 				}
-				if (tok != "from") throw std::runtime_error(line_info() + "derive line should have 'from' after operations");
+				if (tok2 != "from") throw std::runtime_error(line_info() + "derive line should have 'from' after operations");
 			} else {
 				assert(by_or_from == "from");
 			}
 			{ //read source:
-				std::string tok;
-				while (str >> tok) {
+				std::string tok2;
+				while (str >> tok2) {
 					if (derive.from != "") derive.from += ' ';
-					derive.from += tok;
+					derive.from += tok2;
 				}
 			}
 			library.faces.emplace_back();
@@ -1782,7 +1782,6 @@ void sm::Library::save(std::string const &filename) const{
 
 sm::Code sm::Code::load(std::string const &filename) {
 	sm::Code code_library;
-	std::ifstream in(filename, std::ios::binary);
 	sm::Code::Face *current = nullptr;
 	std::vector< sm::Instr > *current_instrs = nullptr;
 	{
@@ -1839,7 +1838,7 @@ sm::Code sm::Code::load(std::string const &filename) {
 					float needle;
 					if (!(str >> needle) && !edge.bn.dontcare()) throw std::runtime_error(line_info() + "edge without needle");
 					if(!edge.bn.dontcare()){
-						edge.bn.needle = needle;
+						edge.bn.needle = int(std::round(needle));
 						//edge.bn.nudge = (needle - edge.bn.needle)*2;
 						if (needle - edge.bn.needle > 0.25) edge.bn.nudge = 1;
 						if (edge.bn.needle - needle > 0.25) edge.bn.nudge = -1;
@@ -2382,7 +2381,7 @@ sm::Yarns sm::Yarns::load(std::string const &filename) {
 template< typename T >
 static void write(std::ostream &out, std::string magic, std::vector< T > const &data) {
 	assert(magic.size() == 4);
-	uint32_t size = sizeof(T) * data.size();
+	uint32_t size = uint32_t(sizeof(T) * data.size());
 	out.write(magic.c_str(), 4);
 	out.write(reinterpret_cast< const char * >(&size), sizeof(uint32_t));
 	out.write(reinterpret_cast< const char * >(data.data()), sizeof(T)*data.size());
@@ -2405,9 +2404,9 @@ void sm::Yarns::save(std::string const &filename) const {
 	for (auto const &unit : units) {
 		//PERHAPS: if (&unit == &units[0]) assert(unit.name == "1" && unit.length == 1.0f);
 		out_units.emplace_back();
-		out_units.back().name_begin = out_strings.size();
+		out_units.back().name_begin = uint32_t(out_strings.size());
 		out_strings.insert(out_strings.end(), unit.name.begin(), unit.name.end());
-		out_units.back().name_end = out_strings.size();
+		out_units.back().name_end = uint32_t(out_strings.size());
 		out_units.back().length = unit.length;
 	}
 
@@ -2418,15 +2417,15 @@ void sm::Yarns::save(std::string const &filename) const {
 			assert(cp.unit < units.size());
 
 			out_checkpoints.emplace_back();
-			out_checkpoints.back().point = cp.point + out_points.size();
+			out_checkpoints.back().point = uint32_t(cp.point + out_points.size());
 			out_checkpoints.back().length = cp.length;
 			out_checkpoints.back().unit = cp.unit;
 		}
 		out_yarns.emplace_back();
-		out_yarns.back().point_begin = out_points.size();
+		out_yarns.back().point_begin = uint32_t(out_points.size());
 		out_points.insert(out_points.end(), yarn.points.begin(), yarn.points.end());
 		out_sources.insert(out_sources.end(), yarn.sources.begin(), yarn.sources.end());
-		out_yarns.back().point_end = out_points.size();
+		out_yarns.back().point_end = uint32_t(out_points.size());
 		out_yarns.back().radius = yarn.radius;
 		out_yarns.back().color = yarn.color;
 	}
@@ -2559,9 +2558,9 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 					to.z = inv_along(to.z);
 				}
 
-				auto ret = forward.insert(std::make_pair(from, std::make_pair(to, segs.size()-1)));
+				auto ret = forward.insert(std::make_pair(from, std::make_pair(to, uint32_t(segs.size()-1))));
 				assert(ret.second);
-				ret = reverse.insert(std::make_pair(to, std::make_pair(from, segs.size()-1)));
+				ret = reverse.insert(std::make_pair(to, std::make_pair(from, uint32_t(segs.size()-1))));
 				assert(ret.second);
 			}
 		}
@@ -2754,7 +2753,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		{ //show chain sizes breakdown:
 			std::map< uint32_t, uint32_t > hist;
 			for (auto const &chain : chains) {
-				hist.insert(std::make_pair(chain.size(), 0)).first->second += 1;
+				hist.insert(std::make_pair(uint32_t(chain.size()), 0)).first->second += 1;
 			}
 			//std::cout << "Have " << chains.size() << " chains:\n";
 			//for (auto const &sc : hist) {
@@ -2769,10 +2768,10 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		auto &fe_to_y = *fe_to_yarn_index;
 		std::map<std::string, uint32_t> name_to_idx;
 		for(auto const &lf : library.faces){
-			name_to_idx[lf.key()] = &lf - &library.faces[0];
+			name_to_idx[lf.key()] = uint32_t(&lf - &library.faces[0]);
 		}
 		for(auto &segments: chains){
-			uint32_t segment_id = &segments - &chains[0];
+			uint32_t segment_id = uint32_t(&segments - &chains[0]);
 			for(auto &seg: segments){
 				assert(seg.face);
 				assert(seg.yarn != -1U);
@@ -2788,14 +2787,14 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 					if(lface.edges[yarn.begin.edge].type[0] == 'y'){
 						// assign segment id to face/edge
 						sm::Mesh::FaceEdge fe;
-						fe.face = seg.face - &mesh.faces[0];
+						fe.face = uint32_t(seg.face - &mesh.faces[0]);
 						fe.edge = yarn.begin.edge;
 						fe_to_y[fe] = segment_id;
 					}
 					if(lface.edges[yarn.end.edge].type[0] == 'y'){
 						// assign segment id to face/edge
 						sm::Mesh::FaceEdge fe;
-						fe.face = seg.face - &mesh.faces[0];
+						fe.face = uint32_t(seg.face - &mesh.faces[0]);
 						fe.edge = yarn.end.edge;
 						fe_to_y[fe] = segment_id;
 
@@ -2832,7 +2831,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 				float total_coord = 0.0f;
 				coords.reserve(face.edges.size());
 				for (uint32_t i = 0; i < face.edges.size(); ++i) {
-					uint32_t pi = (i > 0 ? i - 1 : face.edges.size() - 1);
+					uint32_t pi = uint32_t(i > 0 ? i - 1 : face.edges.size() - 1);
 					glm::vec2 const &prev = face.edges[pi].vertex;
 					glm::vec2 const &cur = face.edges[i].vertex;
 					glm::vec2 const &next = face.edges[(i + 1 < face.edges.size() ? i + 1 : 0)].vertex;
@@ -3146,7 +3145,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			}
 
 			{ //add checkpoints for beginning of chain segment
-				uint32_t point = ( yarns.yarns.back().points.empty() ? 0 : yarns.yarns.back().points.size() - 1);
+				uint32_t point = uint32_t(yarns.yarns.back().points.empty() ? 0 : yarns.yarns.back().points.size() - 1);
 				auto r = fec_to_checkpoints.equal_range(begin_fec);
 				for (auto i = r.first; i != r.second; /* later */ ) {
 					//assign checkpoint based on yarn point:
@@ -3185,7 +3184,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 
 			{ //add checkpoints for end of chain segment
 				assert(!yarns.yarns.back().points.empty());
-				uint32_t point = yarns.yarns.back().points.size() - 1;
+				uint32_t point = uint32_t(yarns.yarns.back().points.size() - 1);
 				auto r = fec_to_checkpoints.equal_range(end_fec);
 				for (auto i = r.first; i != r.second; /* later */ ) {
 					//assign checkpoint based on yarn point:
@@ -3234,7 +3233,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 
 				std::reverse(checkpoints.begin(), checkpoints.end());
 				for (auto &pc : checkpoints) {
-					pc.first = yarns.yarns.back().points.size() - 1 - pc.first;
+					pc.first = uint32_t(yarns.yarns.back().points.size()) - 1 - pc.first;
 				}
 
 				//PARANOIA: check that flipping worked
@@ -3341,8 +3340,8 @@ void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs 
 	Circle.reserve(Angles);
 	for (uint32_t a = 0; a < Angles; ++a) {
 		double ang = M_PI * 2.0 * double(a) / double(Angles);
-		Circle[a].x = std::cos(ang);
-		Circle[a].y = std::sin(ang);
+		Circle[a].x = float(std::cos(ang));
+		Circle[a].y = float(std::sin(ang));
 	}
 
 	for (auto const &yarn_struct : yarns.yarns) {
@@ -3558,10 +3557,10 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 
 		for (uint32_t i = 0; i < face2.edges.size(); ++i) {
 			//vertices should appear in reversed order, and should start with 'r':
-			uint32_t v = (r + face.edges.size() - i) % face.edges.size();
+			uint32_t v = uint32_t( (r + face.edges.size() - i) % face.edges.size() );
 			face2.edges[i].vertex = glm::vec2(-face.edges[v].vertex.x, face.edges[v].vertex.y);
 			//edge info gets copied from previous edge:
-			uint32_t e = (v + face.edges.size() - 1) % face.edges.size();
+			uint32_t e = uint32_t( (v + face.edges.size() - 1) % face.edges.size() );
 			face2.edges[i].direction = face.edges[e].direction;
 			face2.edges[i].type = face.edges[e].type;
 		}
@@ -3587,7 +3586,7 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 		auto copy_end = [&](sm::Library::Face::EdgePoint const &from, sm::Library::Face::EdgePoint &to) {
 			if (by_bits & sm::Library::Face::Derive::MirrorXBit) {
 				// e = (r - i - 1) -> r - e - 1 = i
-				to.edge = (r + face.edges.size() - from.edge - 1) % face.edges.size();
+				to.edge = uint32_t( (r + face.edges.size() - from.edge - 1) % face.edges.size() );
 				to.along = 1.0f - from.along;
 			} else {
 				to.edge = from.edge;
@@ -3625,14 +3624,14 @@ bool sm::can_order_faces(sm::Mesh const &mesh, sm::Library const &library, std::
 	sm::Mesh out = mesh;
 	std::map<std::string, uint32_t> name_to_lib_idx;
 	for(auto const &l : library.faces){
-		name_to_lib_idx[l.key()] = &l-&library.faces[0];
+		name_to_lib_idx[l.key()] = uint32_t( &l-&library.faces[0] );
 	}
 	uint32_t iterations = 0;
 	std::unordered_set<uint32_t> completed_faces;
 	// Build up candidate faces instead of this ridiculousness...but works
 	while(true){
 		for(auto const &f : mesh.faces){
-			uint32_t fid = &f - &mesh.faces[0];
+			uint32_t fid = uint32_t( &f - &mesh.faces[0] );
 			if(completed_faces.count(fid)) continue;
 			if(name_to_lib_idx.count(mesh.library[f.type]) == 0) {
 				// probably not a throw?
@@ -3643,7 +3642,7 @@ bool sm::can_order_faces(sm::Mesh const &mesh, sm::Library const &library, std::
 			// does it have an "in", is the "in" connection done?
 			bool ins_available = true;
 			for(auto &e : l.edges){
-				auto eid = &e - &l.edges[0];
+				uint32_t eid = uint32_t( &e - &l.edges[0] );
 				if(e.direction == sm::Library::Face::Edge::In){
 					sm::Mesh::FaceEdge fe; fe.face = fid; fe.edge = eid;
 					for(auto c : mesh.connections){
@@ -3657,8 +3656,8 @@ bool sm::can_order_faces(sm::Mesh const &mesh, sm::Library const &library, std::
 				}
 			}
 			if (ins_available){
-				completed_faces.insert(&f - &mesh.faces[0]);
-				order.emplace_back(&f - &mesh.faces[0]);
+				completed_faces.insert(uint32_t( &f - &mesh.faces[0] ));
+				order.emplace_back(uint32_t( &f - &mesh.faces[0] ));
 			}
 		}
 		if(completed_faces.size() == mesh.faces.size()) break;
@@ -3671,15 +3670,15 @@ bool sm::can_order_faces(sm::Mesh const &mesh, sm::Library const &library, std::
 			out.faces[i] = mesh.faces[order[i]];
 		}
 		for(auto &c : out.connections){
-			c.a.face = std::distance(order.begin(), std::find(order.begin(), order.end(), c.a.face));
-			c.b.face = std::distance(order.begin(), std::find(order.begin(), order.end(), c.b.face));
+			c.a.face = uint32_t( std::distance(order.begin(), std::find(order.begin(), order.end(), c.a.face)) );
+			c.b.face = uint32_t( std::distance(order.begin(), std::find(order.begin(), order.end(), c.b.face)) );
 		}
 		for(auto &h : out.hints){
-			h.lhs.face = std::distance(order.begin(), std::find(order.begin(), order.end(), h.lhs.face));
+			h.lhs.face = uint32_t( std::distance(order.begin(), std::find(order.begin(), order.end(), h.lhs.face)) );
 		}
 		for(auto &c : out.checkpoints){
 			if(c.face != -1U)
-				c.face = std::distance(order.begin(), std::find(order.begin(), order.end(), c.face));
+				c.face = uint32_t( std::distance(order.begin(), std::find(order.begin(), order.end(), c.face)) );
 		}
 	} else{
 		
@@ -3757,8 +3756,8 @@ bool sm::partial_order_to_sequences(std::set<std::pair<uint32_t, uint32_t>> part
 			}
 		}
 	}
-	uint32_t  t = 10;
-	if(sequences.size() < t) t = sequences.size();
+	uint32_t t = 10;
+	if(sequences.size() < t) t = uint32_t(sequences.size());
 	for(uint32_t i = 0; i < t; ++i){
 		for(auto s : sequences[i]){
 			std::cout << s << " ";
@@ -3779,7 +3778,7 @@ bool sm::partial_order_to_sequence(std::set<std::pair<uint32_t, uint32_t>> parti
 	}
 	std::set<uint32_t> done;
 	while(!instructions.empty()){
-		uint32_t old = sequence.size();
+		uint32_t old = uint32_t(sequence.size());
 		for(auto x : instructions){
 			if(done.count(x)) continue;
 			bool valid = true;
@@ -3817,7 +3816,7 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 	std::map<sm::Mesh::FaceEdge, uint8_t> edge_map; 
     for(auto &fi : mesh.faces){
 		for(uint32_t i = 0; i < fi.size(); ++i){
-			sm::Mesh::FaceEdge fe; fe.face = &fi - &mesh.faces[0]; fe.edge = i;
+			sm::Mesh::FaceEdge fe; fe.face = uint32_t(&fi - &mesh.faces[0]); fe.edge = i;
 			edge_map[fe] += 1;
 		}
 	}
@@ -3832,8 +3831,8 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 
 	auto face_to_code_key = [&](const sm::Mesh::Face &f)->std::string{
 		std::string variant = "";
-		if(face_variant.count(&f- &mesh.faces[0])){
-			variant = face_variant[&f - &mesh.faces[0]];
+		if(face_variant.count(uint32_t(&f - &mesh.faces[0]))){
+			variant = face_variant[uint32_t(&f - &mesh.faces[0])];
 		}
 		std::string signature = mesh.library[f.type] + ' ' + variant;
 		return signature;
@@ -3841,7 +3840,7 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 
 
 	for(auto const &c : code.faces){
-		name_to_code_idx[c.key()] = &c - &code.faces[0];
+		name_to_code_idx[c.key()] = uint32_t(&c - &code.faces[0]);
 	}
 	for(auto h : mesh.hints){
 		if(h.type == sm::Mesh::Hint::Variant){
@@ -3862,7 +3861,7 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 			const sm::BedNeedle bn = std::get<sm::BedNeedle>(h.rhs);
 			const sm::BedNeedle bn_template = l.edges[h.lhs.edge].bn;
 			if(bn_template.dontcare()) continue;
-			int offset = bn.location() - bn_template.location();
+			int offset = int(bn.location() - bn_template.location());
 			// verify checks that these are indeed valid.
 			face_translation[h.lhs.face] = offset;
 		}
@@ -3875,7 +3874,7 @@ bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library, 
 	std::map<std::pair<uint32_t, std::string>, uint32_t> face_yarn_mappings;
 
 	for(auto &f : mesh.faces){
-		uint32_t fid = &f - &mesh.faces[0];
+		uint32_t fid = uint32_t(&f - &mesh.faces[0]);
 		std::string name = mesh.library[f.type] + ' ' + face_variant[fid];
 		if(name_to_code_idx.count(name)){
 			auto &cf = code.faces[name_to_code_idx[name]];
@@ -4041,10 +4040,10 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 	std::map<uint32_t, std::string> face_variant;
 	std::map<int32_t, int32_t> face_translation;
 	for(auto const &c : code.faces){
-		name_to_code_idx[c.key()] = &c - &code.faces[0];
+		name_to_code_idx[c.key()] = uint32_t(&c - &code.faces[0]);
 	}
 	for(auto const &f : library.faces){
-		name_to_lib_idx[f.key()] = &f - &library.faces[0];
+		name_to_lib_idx[f.key()] = uint32_t(&f - &library.faces[0]);
 	}
 
 
@@ -4072,8 +4071,8 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 	
 	auto face_to_code_key = [&](const sm::Mesh::Face &f)->std::string{
 		std::string variant = "";
-		if(face_variant.count(&f- &mesh.faces[0])){
-			variant = face_variant[&f - &mesh.faces[0]];
+		if(face_variant.count(uint32_t(&f- &mesh.faces[0]))){
+			variant = face_variant[uint32_t(&f - &mesh.faces[0])];
 		}
 		std::string signature = mesh.library[f.type] + ' ' + variant;
 		return signature;
@@ -4138,7 +4137,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 					}
 				}
 			}
-			int offset = bn.location() - bn_template.location();
+			int offset = int(bn.location() - bn_template.location());
 			if( face_translation.count(h.lhs.face) && face_translation[h.lhs.face] != offset){
 				std::cerr <<"Resource hints are not consistent!" << h.lhs.face << "/" << h.lhs.edge<< std::endl;
 				std::cerr <<"\tOld translation: " << face_translation[h.lhs.face] << " new translation: " << offset << std::endl;
@@ -4152,7 +4151,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 	}
 	// all faces have a resource hint
 	for(auto &f : mesh.faces){
-		if(!face_translation.count(&f - &mesh.faces[0]) && is_fully_hinted){
+		if(!face_translation.count(uint32_t(&f - &mesh.faces[0])) && is_fully_hinted){
 			// no offenders, missing hints
 			std::cerr << "All faces have not been hinted. "<< &f - &mesh.faces[0] << std::endl;
 			//return false;
@@ -4201,12 +4200,12 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 					if(face_instr_idx.count(h.lhs)){
 					}
 					else{
-						face_instr_idx[h.lhs] = face_instr_idx.size();
+						face_instr_idx[h.lhs] = uint32_t(face_instr_idx.size());
 					}
 					if(face_instr_idx.count(rhs)){
 					}
 					else{
-						face_instr_idx[rhs] = face_instr_idx.size();
+						face_instr_idx[rhs] = uint32_t(face_instr_idx.size());
 					}
 				}
 			}
@@ -4275,7 +4274,7 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 			std::string signature = face_to_code_key(f);
 			auto const &l = code.faces[name_to_code_idx[signature]];
 			for(uint32_t i = 0; i < l.instrs.size(); ++i){
-				const std::pair<uint32_t, uint32_t> fi = std::make_pair(&f - &mesh.faces[0], i);
+				const std::pair<uint32_t, uint32_t> fi = std::make_pair(uint32_t(&f - &mesh.faces[0]), i);
 				auto it = std::find(mesh.total_order.begin(), mesh.total_order.end(), fi);
 				if(it == mesh.total_order.end() && is_fully_hinted){
 					std::cerr << "Total order is incomplete, does not feature face/instr : "<< &f - &mesh.faces[0] << "/" << i << " ." << std::endl;
@@ -4297,8 +4296,8 @@ bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const
 			lhs = h.lhs;
 			rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
 			//if (lhs.face == rhs.face && lhs.face != -1U) continue;
-			if (!face_instrs_idx_map.count(lhs)) face_instrs_idx_map[lhs] = face_instrs_idx_map.size();
-			if (!face_instrs_idx_map.count(rhs)) face_instrs_idx_map[rhs] = face_instrs_idx_map.size();
+			if (!face_instrs_idx_map.count(lhs)) face_instrs_idx_map[lhs] = uint32_t(face_instrs_idx_map.size());
+			if (!face_instrs_idx_map.count(rhs)) face_instrs_idx_map[rhs] = uint32_t(face_instrs_idx_map.size());
 			auto pr = std::make_pair(face_instrs_idx_map[lhs], face_instrs_idx_map[rhs]);
 			partials.insert(pr);
 		}
@@ -4531,7 +4530,7 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 	std::map<uint32_t, std::string> face_variant;
 
 	for(auto const &c : code.faces){
-		name_to_code_idx[c.key()] = &c - &code.faces[0];
+		name_to_code_idx[c.key()] = uint32_t(&c - &code.faces[0]);
 	}
 	for(auto h : mesh.hints){
 		if(h.type == sm::Mesh::Hint::Variant){
@@ -4561,7 +4560,7 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 		if(!c.instrs.empty()){
 			for(uint32_t k  = 0; k < c.instrs.size(); ++k){
 				sm::Mesh::FaceEdge fe; fe.face = fid; fe.edge = k;
-				uint32_t idx = face_instr_idx.size();
+				uint32_t idx = uint32_t(face_instr_idx.size());
 				face_instr_idx[fe] = idx;
 				instr_face_map[idx] = fe;
 			}
@@ -4571,7 +4570,7 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 	// add instructions from the xfer stream
 	for(uint32_t i = 0; i < mesh.move_instructions.size(); ++i){
 		sm::Mesh::FaceEdge fe; fe.face = -1U; fe.edge = i;
-		uint32_t idx = face_instr_idx.size();
+		uint32_t idx = uint32_t(face_instr_idx.size());
 		face_instr_idx[fe] = idx; 
 		instr_face_map[idx] = fe;
 	}
@@ -4604,7 +4603,7 @@ bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library c
 	}
 	// also use the dependency order
 	if(false){
-		int count = partials.size();
+		int count = int(partials.size());
 		int tcount = 0;
 		std::vector<uint32_t> order;
 		if (can_order_faces(mesh, library, &order)) {
@@ -4744,7 +4743,7 @@ bool sm::compute_code_graph(sm::Code &code){
 			for(auto const &edge : face.edges){
 				if(edge.type[0] == 'y') continue;
 				if(edge.direction != sm::Code::Face::Edge::In) continue;
-				if(edge.bn == bn) return (&edge - &face.edges[0]);
+				if(edge.bn == bn) return uint32_t(&edge - &face.edges[0]);
 			}
 			return -1U;
 		};
@@ -4752,7 +4751,7 @@ bool sm::compute_code_graph(sm::Code &code){
 			for(auto const &edge : face.edges){
 				if(edge.type[0] == 'y') continue;
 				if(edge.direction != sm::Code::Face::Edge::Out) continue;
-				if(edge.bn == bn) return (&edge - &face.edges[0]);
+				if(edge.bn == bn) return uint32_t(&edge - &face.edges[0]);
 			}
 			return -1U;
 		};
@@ -4774,7 +4773,7 @@ bool sm::compute_code_graph(sm::Code &code){
 			for(auto const &edge : face.edges){
 				if(edge.type[0] == 'l') continue;
 				if(edge.direction != sm::Code::Face::Edge::In) continue;
-				if(has_common_yarns(yarns, edge.yarns)) return (&edge - &face.edges[0]);
+				if(has_common_yarns(yarns, edge.yarns)) return uint32_t(&edge - &face.edges[0]);
 			}
 			return -1U;
 		};
@@ -4784,7 +4783,7 @@ bool sm::compute_code_graph(sm::Code &code){
 			for(auto const &edge : face.edges){
 				if(edge.type[0] == 'l') continue;
 				if(edge.direction != sm::Code::Face::Edge::Out) continue;
-				if(has_common_yarns(yarns, edge.yarns)) return (&edge - &face.edges[0]);
+				if(has_common_yarns(yarns, edge.yarns)) return uint32_t(&edge - &face.edges[0]);
 			}
 
 			return -1U;
@@ -4805,7 +4804,7 @@ bool sm::compute_code_graph(sm::Code &code){
 							// input resource has already been tested
 							std::cerr << "Input resource missing?" << std::endl;
 						}
-						edge_to_instructions_connections.insert(std::make_pair(e_id, &ins - &face.instrs[0]));
+						edge_to_instructions_connections.insert(std::make_pair(e_id, uint32_t(&ins - &face.instrs[0])));
 					}
 					
 					incoming.erase(ins.src);
@@ -4814,7 +4813,7 @@ bool sm::compute_code_graph(sm::Code &code){
 					// 3.instruction to instruction (but which one)
 					// track back from the last instruction, pick the one whose tgt/tgt2 is ins.src
 					{
-						uint32_t i_id = &ins - &face.instrs[0];
+						uint32_t i_id = uint32_t(&ins - &face.instrs[0]);
 						assert(i_id >= 1 && "First instruction must not use a temporary, right?");
 						uint32_t i_id2 = -1U;
 						for(int k = i_id-1; k >= 0; k--){
@@ -4850,7 +4849,7 @@ bool sm::compute_code_graph(sm::Code &code){
 					// does this make sense for drops? (yes, because otherwise doesn't exist in outgoing?
 					// find the last instruction that produced this outgoing
 					if(!face.instrs.empty()){
-						for(int k = face.instrs.size()-1; k >= 0; k--){
+						for(int k = int(face.instrs.size()-1); k >= 0; k--){
 							auto ins =face.instrs[k];
 							if(ins.tgt == bn || ins.tgt2 == bn){
 								i_id = k;
@@ -4903,15 +4902,15 @@ bool sm::compute_code_graph(sm::Code &code){
 				}
 				else if(ins.op == sm::Instr::Out){
 					for(auto y : ins_yarns){
-						uint32_t prev_id = find_ins_with_yarn_before(&ins - &face.instrs[0], y);
+						uint32_t prev_id = find_ins_with_yarn_before(uint32_t(&ins - &face.instrs[0]), y);
 						yarn_used.erase(y);
 						if(prev_id != -1U){
-							yarn_instructions_to_instructions_connections.insert(std::make_pair(y,std::make_pair(prev_id, &ins - &face.instrs[0])));
+							yarn_instructions_to_instructions_connections.insert(std::make_pair(y,std::make_pair(prev_id, uint32_t(&ins - &face.instrs[0]))));
 						}
 						else if(yarn_incoming.count(y)){
 							auto eid = get_yarn_in_edge_id(y);
 							if(eid != -1U){
-							yarn_edge_to_instructions_connections.insert(std::make_pair(y,std::make_pair(eid, &ins - &face.instrs[0])));
+							yarn_edge_to_instructions_connections.insert(std::make_pair(y,std::make_pair(eid, uint32_t(&ins - &face.instrs[0]))));
 							}
 							yarn_incoming.erase(y);
 						}
@@ -4940,7 +4939,7 @@ bool sm::compute_code_graph(sm::Code &code){
 								assert(false);
 							}
 							// Yarn edge to instructions
-							yarn_edge_to_instructions_connections.insert(std::make_pair(y, std::make_pair(eid, &ins - &face.instrs[0])));
+							yarn_edge_to_instructions_connections.insert(std::make_pair(y, std::make_pair(eid, uint32_t(&ins - &face.instrs[0]))));
 						}
 						else if(yarn_used.count(y)){
 							if(ins.direction == sm::Instr::Left){
@@ -4955,7 +4954,7 @@ bool sm::compute_code_graph(sm::Code &code){
 							yarn_used.insert(y);
 							// Instruction to Instruction
 							// find the last instruction that used this yarns
-							uint32_t i_id = &ins - &face.instrs[0];
+							uint32_t i_id = uint32_t(&ins - &face.instrs[0]);
 							uint32_t prev_id = find_ins_with_yarn_before(i_id, y);
 							
 							assert(prev_id != -1U); //found it somewhere, right?
@@ -4971,7 +4970,7 @@ bool sm::compute_code_graph(sm::Code &code){
 					// add a yarn_instructions_to_edge connection 
 					auto eid = get_yarn_out_edge_id(yo);
 
-					uint32_t i_id = find_ins_with_yarn_before(face.instrs.size(), yo);
+					uint32_t i_id = find_ins_with_yarn_before(uint32_t(face.instrs.size()), yo);
 					if(i_id != -1U){
 					yarn_instructions_to_edge_connections.insert(std::make_pair(yo,std::make_pair(i_id, eid)));
 					}

@@ -30,8 +30,8 @@ namespace sm {
 			bed = b; needle = n;
 		}
 		BedNeedle (char b, float n) {
-			bed = b; needle = n;
-			nudge = (n - needle)*2;
+			bed = b; needle = int(std::round(n));
+			nudge = int8_t(std::round((n - needle)*2));
 		}
 		float location() const{
 			return 0.5f*nudge + needle;
@@ -55,7 +55,7 @@ namespace sm {
 			return std::string(1,b) + std::to_string(n);
 		}
 		std::string to_string2() const {
-			int n = location();
+			float n = location();
 			char b = bed;
 			if (!is_front() && !is_back()) {
 				b = 'x';
@@ -570,7 +570,7 @@ struct Code {
 			}
 			// concatenate all instructions
 			for(auto const &i_ : instrs){
-				int32_t idx = &i_ - &instrs[0];
+				int32_t idx = uint32_t(&i_ - &instrs[0]);
 				auto i = i_;
 				if(index >= 0 && index != idx) continue;  // get instruction by index
 				i.src.needle += translate_to;
