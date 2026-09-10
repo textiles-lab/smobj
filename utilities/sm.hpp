@@ -1,6 +1,7 @@
 #pragma once
+#include "glm/glm/glm.hpp"
 
-#include <glm/glm.hpp>
+
 
 #include <map>
 #include <string>
@@ -83,6 +84,7 @@ struct Library {
 	//----- library stores faces -----
 	struct Face {
 		std::string name; //descriptive name for type
+		std::string shorthand; //the shorthand name for text input
 
 		struct EdgePoint {
 			EdgePoint(uint32_t edge_ = 0, float along_ = 0.5f, float z_ = 0.0f) : edge(edge_), along(along_), z(z_) { }

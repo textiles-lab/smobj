@@ -1,8 +1,8 @@
 #ifndef GLM_ENABLE_EXPERIMENTAL
 #define GLM_ENABLE_EXPERIMENTAL
 #endif
-#include <glm/glm.hpp>
-#include <glm/gtx/hash.hpp>
+#include "glm/glm/glm.hpp"
+#include "glm/glm/gtx/hash.hpp"
 
 #include <iostream>
 #include <fstream>

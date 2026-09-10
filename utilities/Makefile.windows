@@ -1,0 +1,22 @@
+CPP=g++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -D_USE_MATH_DEFINES -O2
+
+
+
+all : \
+    simple-text-to-smobj-util \
+    knitout-to-smobj \
+    text-to-smobj \
+
+
+
+knitout-to-smobj : 
+	$(CPP) -o $@ knitout-to-smobj.cpp
+
+sm.o : sm.cpp sm.hpp
+	$(CPP) -c -o $@ sm.cpp
+
+simple-text-to-smobj-util : simple-text-to-smobj-util.cpp sm.hpp sm.o
+	$(CPP) -o $@ simple-text-to-smobj-util.cpp sm.o
+
+text-to-smobj : text-to-smobj.cpp sm.hpp sm.o
+	$(CPP) -o $@ text-to-smobj.cpp sm.o

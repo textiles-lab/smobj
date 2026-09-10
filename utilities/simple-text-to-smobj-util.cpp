@@ -6,6 +6,7 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <list>
 
 
 
@@ -57,25 +58,39 @@ int main(int argc, char **argv) {
 	// AD: change the map to work with the new datastruture 
 	// map of string to list of FaceWithDirections
 	// the string is the input, the list is the potential interpertations.
-	std::unordered_map< std::string, std::list<FaceWithDirection> const * > name_to_face;
+	std::unordered_map< std::string, std::list<FaceWithDirection> * > shorthand_to_face;
 	for (auto const &f : library.faces) {
 		FaceWithDirection face_to_add;
 		//add the face, if it wasnt made from a derive, it goes to the left and faces forward
 		//if made from a derive, then calculate which side it is.
 		face_to_add.face = f;
+		if (f.derive.from != ""){
+
+		}
 		//the first two characters as the alias
-		std::string alias = face_to_add.face.name.substr(0,2);
+		std::string shorthand = face_to_add.face.shorthand;
 		
 		//
 
 		// if the lookup fails, we will create a list
-		if (name_to_face.find(face_to_add.face.name) != name_to_face.end()){
+		
+  		std::unordered_map<std::string,std::list<FaceWithDirection> *>::const_iterator got = shorthand_to_face.find(shorthand);
+		std::cout << shorthand << std::endl;
+		if (got == shorthand_to_face.end()){
+			std::cout << "lookup failed" << std::endl;
+			std::list<FaceWithDirection> face_list;
+			face_list.emplace_back(face_to_add);
+			auto ret = shorthand_to_face.insert({shorthand, &(face_list)});
+			// shorthand_to_face.find(f.n)
+			assert(ret.second && "No duplicate face shorthand names.");
 
 		}
-		// if the lookup is sucessful, we add it to the list. 
-		auto ret = name_to_face.insert(std::make_pair(f.name, &(face_to_add)));
+		else { 	// if the lookup is successful, we add it to the list. 
+			std::cout << "lookup successful" << std::endl;
+			std::list<FaceWithDirection>  *face_list = got->second;
+			face_list->emplace_back(face_to_add);
+		}
 
-		assert(ret.second && "No duplicate face names.");
 	}
 
 	//library templates, to be used in layout:
@@ -129,12 +144,14 @@ int main(int argc, char **argv) {
 			std::string stitch_token = toks[0];
 			toks.erase(toks.begin());
 
-			auto f = name_to_face.find(face_name);
-			if (f == name_to_face.end()) {
-				std::cerr << "ERROR: face '" << face_name << "' does not appear in library." << std::endl;
+			auto f = shorthand_to_face.find(stitch_token);
+			if (f == shorthand_to_face.end()) {
+				std::cerr << "ERROR: face '" << stitch_token << "' does not appear in library." << std::endl;
 				return 1;
 			}
-			sm::Library::Face const &face = *f->second;
+			// sm::Library::Face const &face = *f->second;
+			sm::Library::Face const &face = f->second->front().face;
+
 
 			if (toks.size() != face.edges.size()) {
 				std::cerr << "ERROR: face '" << face.name << "' has " << face.edges.size() << " edges, but only lists " << toks.size() << " attachments." << std::endl;

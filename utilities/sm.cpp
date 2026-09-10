@@ -1,6 +1,8 @@
 #include "sm.hpp"
 
-#include <glm/gtx/hash.hpp>
+#include "glm/glm/glm.hpp"
+#include "glm/glm/gtx/hash.hpp"
+
 
 #include <algorithm>
 #include <fstream>
@@ -514,6 +516,7 @@ sm::Library sm::Library::load(std::string const &filename) {
 
 			std::string name;
 			if (!(str >> name)) throw std::runtime_error(line_info() + "Failed to read name field from face line");
+
 			sm::Library::Face::Derive derive;
 
 			std::string by_or_from;
@@ -614,6 +617,14 @@ sm::Library sm::Library::load(std::string const &filename) {
 				expect_char(']');
 			}
 			current->yarns.emplace_back(yarn);
+		} else if (tok == "shorthand"){
+			if (!current) throw std::runtime_error(line_info() + "shorthand line without face line");
+			std::string shorthand;
+			if (!(str >> shorthand)) throw std::runtime_error(line_info() + "Failed to read name field from shorthand line");
+			std::string temp;
+			if (str >> temp) throw std::runtime_error(line_info() + "Trailing junk (" + temp + "...) in shorthand line");
+
+			current->shorthand = shorthand; 
 		} else {
 			throw std::runtime_error(line_info() + "Unrecognized line-start token '" + tok + "'");
 		}
@@ -1960,6 +1971,7 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 	
 	assert(face2_);
 	auto &face2 = *face2_;
+	face2.shorthand = face.shorthand;
 
 	face2.derive.from = face.key();
 	face2.derive.by = by_bits;

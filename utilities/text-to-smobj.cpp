@@ -33,6 +33,7 @@ int main(int argc, char **argv) {
 	std::unordered_map< std::string, sm::Library::Face const * > name_to_face;
 	for (auto const &f : library.faces) {
 		auto ret = name_to_face.insert(std::make_pair(f.name, &f));
+		std::cout << f.name << std::endl;
 		assert(ret.second && "No duplicate face names.");
 	}
 

@@ -5,7 +5,7 @@ UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
 	CPP=g++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2
 else
-	CPP=clang++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2
+	CPP=g++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2
 endif
 
 all : knitout-to-smobj smobj-to-yarns text-to-smobj
@@ -17,6 +17,9 @@ knitout-to-smobj : knitout-to-smobj.cpp
 	$(CPP) -o '$@' '$<'
 
 text-to-smobj : text-to-smobj.cpp sm.hpp sm.o
+	$(CPP) -o '$@' '$<' sm.o
+
+simple-text-to-smobj : simple-text-to-smobj.cpp sm.hpp sm.o
 	$(CPP) -o '$@' '$<' sm.o
 
 smobj-to-yarns : smobj-to-yarns.cpp sm.hpp sm.o
