@@ -58,15 +58,14 @@ int main(int argc, char **argv) {
 	// AD: change the map to work with the new datastruture 
 	// map of string to list of FaceWithDirections
 	// the string is the input, the list is the potential interpertations.
-	std::unordered_map< std::string, std::list<FaceWithDirection> * > shorthand_to_face;
+	std::unordered_map< std::string, std::list<FaceWithDirection> > shorthand_to_face;
+	
 	for (auto const &f : library.faces) {
 		FaceWithDirection face_to_add;
 		//add the face, if it wasnt made from a derive, it goes to the left and faces forward
 		//if made from a derive, then calculate which side it is.
 		face_to_add.face = f;
-		if (f.derive.from != ""){
 
-		}
 		//the first two characters as the alias
 		std::string shorthand = face_to_add.face.shorthand;
 		
@@ -74,24 +73,38 @@ int main(int argc, char **argv) {
 
 		// if the lookup fails, we will create a list
 		
-  		std::unordered_map<std::string,std::list<FaceWithDirection> *>::const_iterator got = shorthand_to_face.find(shorthand);
-		std::cout << shorthand << std::endl;
+  		std::unordered_map<std::string,std::list<FaceWithDirection>>::iterator got = shorthand_to_face.find(shorthand);
+		// std::cout << shorthand << std::endl;
 		if (got == shorthand_to_face.end()){
-			std::cout << "lookup failed" << std::endl;
-			std::list<FaceWithDirection> face_list;
-			face_list.emplace_back(face_to_add);
-			auto ret = shorthand_to_face.insert({shorthand, &(face_list)});
-			// shorthand_to_face.find(f.n)
+			
+			auto ret = shorthand_to_face.emplace(shorthand, std::list<FaceWithDirection>{});
 			assert(ret.second && "No duplicate face shorthand names.");
+
+			ret.first->second.emplace_back(face_to_add);
 
 		}
 		else { 	// if the lookup is successful, we add it to the list. 
-			std::cout << "lookup successful" << std::endl;
-			std::list<FaceWithDirection>  *face_list = got->second;
-			face_list->emplace_back(face_to_add);
+			std::list<FaceWithDirection>  face_list = got->second;
+			face_list.emplace_back(face_to_add);
+			got->second = face_list;
+			std::cout << "face name: " << face_to_add.face.name << "face sh: " << face_to_add.face.shorthand << " amount: " << face_list.size() << std::endl;
+
+
+		
 		}
 
 	}
+	std::cout << "library load successful" << std::endl;
+  	std::unordered_map<std::string,std::list<FaceWithDirection> >::iterator got = shorthand_to_face.find("dc");
+	if (got != shorthand_to_face.end()){
+		
+		for (auto f : got->second){
+			std::cout << f.face.name << std::endl;
+			
+
+		}
+	}
+
 
 	//library templates, to be used in layout:
 	std::vector< std::vector< glm::vec2 > > templates;
@@ -150,7 +163,7 @@ int main(int argc, char **argv) {
 				return 1;
 			}
 			// sm::Library::Face const &face = *f->second;
-			sm::Library::Face const &face = f->second->front().face;
+			sm::Library::Face const face = f->second.front().face;
 
 
 			if (toks.size() != face.edges.size()) {
