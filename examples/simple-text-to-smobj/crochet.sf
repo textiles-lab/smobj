@@ -216,7 +216,7 @@ derive ch-d+ by mirror-z from ch-u+ x +ly x -ly
 
 # one-loop-out version:
 face ch-u+
-	shorthand chAttach
+	shorthand ch
 	edge (-1.0,-1.0) x
 	edge ( 1.0,-1.0) +ly
 	edge ( 1.0, 1.0) +l1

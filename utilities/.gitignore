@@ -6,5 +6,5 @@ text-to-smobj.dSYM
 text-to-smobj
 sm.o
 knitout-to-smobj.exe
-simple-text-to-smobj.exe
+simple-text-to-smobj-util.exe
 text-to-smobj.exe

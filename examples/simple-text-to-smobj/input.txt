@@ -1,0 +1,9 @@
+# BLOCK:={sc sc sc
+#         sc sc sc
+#         sc sc sc}
+# BLOCK BLOCK 
+
+
+sc sc sc
+sc sc sc 
+ch ch ch ch

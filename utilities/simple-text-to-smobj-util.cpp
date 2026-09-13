@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <list>
+#include <iterator>
 
 
 
@@ -62,9 +63,29 @@ int main(int argc, char **argv) {
 	
 	for (auto const &f : library.faces) {
 		FaceWithDirection face_to_add;
-		//add the face, if it wasnt made from a derive, it goes to the left and faces forward
+		//add the face, if it wasnt made from a derive, it goes to the right and faces forward
 		//if made from a derive, then calculate which side it is.
 		face_to_add.face = f;
+		if (f.derive.from == "") { //no derivation
+			face_to_add.direction = Direction::right;
+			face_to_add.flip = Flipped::front;
+		}
+		else { // there is a derivation
+			if (f.derive.by & 001) {
+				face_to_add.direction = Direction::left;
+				face_to_add.flip = Flipped::front;
+			}
+			if (f.derive.by & 010) {
+				face_to_add.direction = Direction::right;
+				face_to_add.flip = Flipped::back;
+			}
+			if (f.derive.by & 011) {
+				face_to_add.direction = Direction::left;
+				face_to_add.flip = Flipped::back;
+			}
+			
+
+		}
 
 		//the first two characters as the alias
 		std::string shorthand = face_to_add.face.shorthand;
@@ -112,10 +133,6 @@ int main(int argc, char **argv) {
 	sm::Mesh mesh;
 
 	
-	{	//conversion of python to cpp
-
-
-	}
 
 	//----------------------------
 
@@ -136,72 +153,70 @@ int main(int argc, char **argv) {
 		std::unordered_map< std::string, uint32_t > open_edges;
 		
 		
-
+		// the first line is the last set of stitches,
+		// so reverse the line order for building from the bottom up
 		std::ifstream text(in_text);
 		std::string line;
-		int rowIndex = 1; 
-		while (std::getline(text, line)) {
+		std::list<std::list<std::string>> reverse_lines;
+		// std::vector< std::string > toks;
+		while (std::getline(text,line)){
 			{ //trim comments:
 				auto idx = line.find('#');
 				if (idx != std::string::npos) line = line.substr(0,idx);
 			}
 			std::vector< std::string > toks;
+			std::list<std::string> l;
 			{
 				std::string tok;
 				std::istringstream str(line);
-				while (str >> tok) toks.emplace_back(tok);
-			}
-			if (toks.empty()) continue; //row is empty, so we skip
-
-			//capture the stitch
-			std::string stitch_token = toks[0];
-			toks.erase(toks.begin());
-
-			auto f = shorthand_to_face.find(stitch_token);
-			if (f == shorthand_to_face.end()) {
-				std::cerr << "ERROR: face '" << stitch_token << "' does not appear in library." << std::endl;
-				return 1;
-			}
-			// sm::Library::Face const &face = *f->second;
-			sm::Library::Face const face = f->second.front().face;
-
-
-			if (toks.size() != face.edges.size()) {
-				std::cerr << "ERROR: face '" << face.name << "' has " << face.edges.size() << " edges, but only lists " << toks.size() << " attachments." << std::endl;
-				return 1;
-			}
-
-			mesh.faces.emplace_back();
-			sm::Mesh::Face &m_face = mesh.faces.back();
-			m_face.type = get_L(face);
-
-			for (uint32_t i = 0; i < face.edges.size(); ++i) {
-				m_face.emplace_back(mesh.vertices.size());
-				mesh.vertices.emplace_back(std::numeric_limits< float >::quiet_NaN());
-			}
-
-			for (uint32_t i = 0; i < face.edges.size(); ++i) {
-				auto c = open_edges.find(toks[i]);
-				if (c != open_edges.end()) {
-					assert(c->second < mesh.connections.size());
-					sm::Mesh::Connection &con = mesh.connections[c->second];
-					assert(con.b.face == -1U);
-					assert(con.b.edge == -1U);
-					con.b.face = mesh.faces.size() - 1;
-					con.b.edge = i;
-					open_edges.erase(c);
-				} else if (toks[i] != ".") {
-					mesh.connections.emplace_back();
-					sm::Mesh::Connection &con = mesh.connections.back();
-					con.a.face = mesh.faces.size() - 1;
-					con.a.edge = i;
-					con.flip = true; //by default, flat connections
-					auto ret = open_edges.insert(std::make_pair(toks[i], mesh.connections.size()-1));
-					assert(ret.second);
+				while (str >> tok) {
+					l.emplace_back(tok);
 				}
 			}
-			rowIndex++;
+			if (l.size() == 0) continue; //row is empty, so we skip
+			// for (std::string tok : toks)
+			reverse_lines.emplace_front(l);
+		}
+		for (std::list<std::string> line: reverse_lines){
+			for (std::string sh : line){
+				std::cout << sh << std::endl;
 
+			}
+		}
+
+		
+		unsigned int rowIndex = 1; 
+		for (; rowIndex <= reverse_lines.size(); rowIndex++) {
+			auto l = std::next(reverse_lines.begin(),rowIndex-1);
+			std::list<std::string> line(*l);
+			for(unsigned int i = 0; i < line.size(); i++) {
+				//capture the stitch
+				std::string stitch_token = *line.begin();
+				line.erase(line.begin());
+
+				auto f = shorthand_to_face.find(stitch_token);
+				if (f == shorthand_to_face.end()) {
+					std::cerr << "ERROR: face '" << stitch_token << "' does not appear in library." << std::endl;
+					return 1;
+				}
+				// sm::Library::Face const &face = *f->second;
+				// AD: from the face with direction list, find the right face based on the state
+				// if a right handed crocheter: 
+				// the 
+				std::list<FaceWithDirection> const face_with_direction_list = f->second;
+
+				//we will do only one type of face for now
+				sm::Library::Face const face = f->second.front().face;
+
+				mesh.faces.emplace_back();
+				sm::Mesh::Face &m_face = mesh.faces.back();
+				m_face.type = get_L(face);
+
+				for (uint32_t i = 0; i < face.edges.size(); ++i) {
+					m_face.emplace_back(mesh.vertices.size());
+					mesh.vertices.emplace_back(std::numeric_limits< float >::quiet_NaN());
+				}
+			}	
 		}
 
 		if (!open_edges.empty()) {
