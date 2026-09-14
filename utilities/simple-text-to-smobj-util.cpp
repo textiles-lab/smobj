@@ -194,7 +194,7 @@ int main(int argc, char **argv) {
 			std::cout << "line size " << line.size() << std::endl; 
 			uint32_t previous_face = -1U;
 			uint32_t previous_right_edge = -1U;
-			uint32_t previous_left_edge = -1U;
+			// uint32_t previous_left_edge = -1U;
 			current_row_top_connections.clear();
 			
 
@@ -235,43 +235,43 @@ int main(int argc, char **argv) {
 				uint32_t right_edge = 1; 
 				uint32_t top_edge = 2;
 				uint32_t bottom_edge = 0;
+				if (previous_face != -1U) {
+					mesh.connections.emplace_back();
+					sm::Mesh::Connection &con = mesh.connections.back();
 
-
-				if (rowIndex % 2 == 1){ // odd
-					if (previous_face != -1U) {
-						mesh.connections.emplace_back();
-						sm::Mesh::Connection &con = mesh.connections.back();
-
-						con.a.face = previous_face;
-						con.a.edge = previous_right_edge;
-						con.b.face = current_face;
-						con.b.edge = left_edge;
-						con.flip = true;
-					}
-					previous_face = current_face;
-					previous_right_edge = right_edge; 
-
+					con.a.face = previous_face;
+					con.a.edge = previous_right_edge;
+					con.b.face = current_face;
+					con.b.edge = left_edge;
+					con.flip = true;
 				}
-				else { //even
-					if (previous_face != -1U) {
-						mesh.connections.emplace_back();
-						sm::Mesh::Connection &con = mesh.connections.back();
+				previous_face = current_face;
+				previous_right_edge = right_edge; 
 
-						con.a.face = previous_face;
-						con.a.edge = previous_left_edge;
-						con.b.face = current_face;
-						con.b.edge = right_edge;
 
-						con.flip = true;
-					}
-					previous_face = current_face;
-					previous_left_edge = left_edge; 
-				}
+				// if (rowIndex % 2 == 1){ // odd
+					
+
+				// }
+				// else { //even
+				// 	if (previous_face != -1U) {
+				// 		mesh.connections.emplace_back();
+				// 		sm::Mesh::Connection &con = mesh.connections.back();
+
+				// 		con.a.face = previous_face;
+				// 		con.a.edge = previous_left_edge;
+				// 		con.b.face = current_face;
+				// 		con.b.edge = right_edge;
+
+				// 		con.flip = true;
+				// 	}
+				// 	previous_face = current_face;
+				// 	previous_left_edge = left_edge; 
+				// }
 				current_row_top_connections.emplace_back();
 				sm::Mesh::Connection &con_top = current_row_top_connections.back();
 				con_top.a.face = current_face;
 				con_top.a.edge = top_edge;
-
 				con_top.flip = true;
 
 				if (rowIndex >= 2 && !previous_row_top_connections.empty()){ //its not the first row so we should connect to the row below. 
