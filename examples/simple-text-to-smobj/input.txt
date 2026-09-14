@@ -3,7 +3,8 @@
 #         sc sc sc}
 # BLOCK BLOCK 
 
-sc sc
+sc sc sc sc sc sc sc
+sc sc sc dc sc sc sc 
 sc sc sc sc sc sc sc
 
 # sc sc sc 
