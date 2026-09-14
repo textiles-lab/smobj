@@ -186,10 +186,21 @@ int main(int argc, char **argv) {
 
 		
 		unsigned int rowIndex = 1; 
+		std::list< sm::Mesh::Connection> previous_row_top_connections;
+		std::list< sm::Mesh::Connection> current_row_top_connections;
 		for (; rowIndex <= reverse_lines.size(); rowIndex++) {
 			auto l = std::next(reverse_lines.begin(),rowIndex-1);
 			std::list<std::string> line(*l);
-			for(unsigned int i = 0; i < line.size(); i++) {
+			std::cout << "line size " << line.size() << std::endl; 
+			uint32_t previous_face = -1U;
+			uint32_t previous_right_edge = -1U;
+			uint32_t previous_left_edge = -1U;
+			current_row_top_connections.clear();
+			
+
+
+
+			for(unsigned int i = 0; i < l->size(); i++) {
 				//capture the stitch
 				std::string stitch_token = *line.begin();
 				line.erase(line.begin());
@@ -216,7 +227,70 @@ int main(int argc, char **argv) {
 					m_face.emplace_back(mesh.vertices.size());
 					mesh.vertices.emplace_back(std::numeric_limits< float >::quiet_NaN());
 				}
-			}	
+				uint32_t current_face = mesh.faces.size()-1;
+				//edge 1 is right
+				//edge 3 is left
+				//maybe theres a better way to get this? 
+				uint32_t left_edge = 3;
+				uint32_t right_edge = 1; 
+				uint32_t top_edge = 2;
+				uint32_t bottom_edge = 0;
+
+
+				if (rowIndex % 2 == 1){ // odd
+					if (previous_face != -1U) {
+						mesh.connections.emplace_back();
+						sm::Mesh::Connection &con = mesh.connections.back();
+
+						con.a.face = previous_face;
+						con.a.edge = previous_right_edge;
+						con.b.face = current_face;
+						con.b.edge = left_edge;
+						con.flip = true;
+					}
+					previous_face = current_face;
+					previous_right_edge = right_edge; 
+
+				}
+				else { //even
+					if (previous_face != -1U) {
+						mesh.connections.emplace_back();
+						sm::Mesh::Connection &con = mesh.connections.back();
+
+						con.a.face = previous_face;
+						con.a.edge = previous_left_edge;
+						con.b.face = current_face;
+						con.b.edge = right_edge;
+
+						con.flip = true;
+					}
+					previous_face = current_face;
+					previous_left_edge = left_edge; 
+				}
+				current_row_top_connections.emplace_back();
+				sm::Mesh::Connection &con_top = current_row_top_connections.back();
+				con_top.a.face = current_face;
+				con_top.a.edge = top_edge;
+
+				con_top.flip = true;
+
+				if (rowIndex >= 2 && !previous_row_top_connections.empty()){ //its not the first row so we should connect to the row below. 
+
+	
+					sm::Mesh::Connection &con_bot = previous_row_top_connections.front();
+
+					con_bot.b.face = current_face;
+					con_bot.b.edge = bottom_edge;
+					// con.flip = true;
+					std::cout << "A: "<< con_bot.a.face << " B: "<<con_bot.b.face <<std::endl;
+					mesh.connections.emplace_back(con_bot);
+					previous_row_top_connections.erase(previous_row_top_connections.begin());
+
+				}
+			}
+			previous_row_top_connections = current_row_top_connections;
+	
+			
 		}
 
 		if (!open_edges.empty()) {
@@ -259,7 +333,7 @@ int main(int argc, char **argv) {
 	}
 
 
-	{ //basic (2d) position/orientation relaxation for positions:
+		{ //basic (2d) position/orientation relaxation for positions:
 		assert(templates.size() == mesh.library.size());
 
 		std::vector< glm::vec2 > pts;
@@ -333,85 +407,107 @@ int main(int argc, char **argv) {
 		} //end of setup
 
 		//brain-dead iterative solve:
-		for (uint32_t iter = 0; iter < 1000; ++iter) {
+		for (uint32_t pass = 0; pass < 2; ++pass) {
+			std::vector< glm::vec2 > old_pts = pts;
+			bool converged = false;
 
-			//update point positions:
-			std::vector< glm::vec3 > votes(pts.size(), glm::vec3(0.0f));
-			for (auto &f : faces) {
-				//regularization:
-				if (iter < 10) {
-					f.angle = 0.0f; //<-- HACK: ignore rotation during first iterations
-				}
-				f.angle *= 0.999f;
+			for (uint32_t iter = 0; iter < 100000; ++iter) {
 
-				glm::vec2 right = glm::vec2(std::cos(f.angle), std::sin(f.angle));
-				glm::vec2 up = glm::vec2(-right.y, right.x);
-				std::vector< glm::vec2 > const &t = templates[f.type];
-				assert(t.size() == f.size());
-				for (uint32_t i = 0; i < t.size(); ++i) {
-					votes[f[i]] += glm::vec3(right * t[i].x + up * t[i].y + f.center, 1.0f);
-				}
-			}
-			glm::vec2 pts_center = glm::vec2(0.0f);
-			for (uint32_t i = 0; i < pts.size(); ++i) {
-				pts[i] = glm::vec2(votes[i]) / votes[i].z;
-				pts_center += pts[i];
-			}
-			pts_center /= pts.size();
-			for (auto &p : pts) {
-				p -= pts_center;
-			}
-
-			for (auto &f : faces) {
-				//update face centers:
-				glm::vec2 avg = glm::vec2(0.0f);
-				for (auto i : f) {
-					avg += pts[i];
-				}
-				f.center = avg /= f.size();
-
-				//determine angles:
-				//Port of (javascript) code I used in a lunch talk once:
-				float coefCos = 0.0;
-				float coefSin = 0.0;
-				float coefSinCos = 0.0;
-				float coefCos2 = 0.0;
-				float coefSin2 = 0.0;
-				auto addDeriv = [&](float c, float s, float o) {
-					//add derivative of (c * cos(t) + s * sin(t) + o * 1)^2
-					//==  2 * (c * cos(t) + s * sin(t) + o * 1) * (c *-sin(t) + s * cos(t))
-					coefCos += o * s;
-					coefSin += o * -c;
-					coefCos2 += c * s;
-					coefSin2 += s * -c;
-					coefSinCos += (c * -c + s * s);
-				};
-				std::vector< glm::vec2 > const &t = templates[f.type];
-				for (uint32_t i = 0; i < f.size(); ++i) {
-					// (offsets[i].x * cos(t) + offsets[i].y *-sin(t) - [real offset].x)^2
-					//+(offsets[i].x * sin(t) + offsets[i].y * cos(t) - [real offset].y)^2
-					addDeriv(t[i].x, -t[i].y, -pts[f[i]].x + f.center.x);
-					addDeriv(t[i].y,  t[i].x, -pts[f[i]].y + f.center.y);
-				}
-				//end up with *just* coefCos, coefSin.
-				if (std::abs(coefSinCos) > 1e-6 || std::abs(coefCos2) > 1e-6 || std::abs(coefSin2) > 1e-6) {
-					std::cout << "Unexpected coefs: " << coefCos << " " << coefSin << " " << coefSinCos << " " << coefCos2 << " " << coefSin2 << std::endl;
-				}
-				if (coefCos == 0.0 && coefSin == 0.0) {
-					f.angle = 0.0f;
-				} else {
-					//Want:
-					//coefCos * cos + coefSin * sin = 0.0 [deriv == 0]
-					//also:
-					//coefSin * cos + -coefCos * sin > 0 [second deriv > 0]
+				//update point positions:
+				std::vector< glm::vec3 > votes(pts.size(), glm::vec3(0.0f));
+				for (auto &f : faces) {
+					//regularization:
+					if (pass == 0) {
+						f.angle = 0.0f; //<-- HACK: ignore rotation during first pass
+					} else {
+						f.angle *= 0.999f;
+					}
 	
-					//let len = Math.sqrt(coefCos * coefCos + coefSin * coefSin);
-					//f.right.x = coefSin / len;
-					//f.right.y =-coefCos / len;
-					f.angle = std::atan2(-coefCos, coefSin);
+					glm::vec2 right = glm::vec2(std::cos(f.angle), std::sin(f.angle));
+					glm::vec2 up = glm::vec2(-right.y, right.x);
+					std::vector< glm::vec2 > const &t = templates[f.type];
+					assert(t.size() == f.size());
+					for (uint32_t i = 0; i < t.size(); ++i) {
+						votes[f[i]] += glm::vec3(right * t[i].x + up * t[i].y + f.center, 1.0f);
+					}
 				}
+
+				std::swap(old_pts, pts); //store old point positions
+
+				glm::vec2 pts_center = glm::vec2(0.0f);
+				for (uint32_t i = 0; i < pts.size(); ++i) {
+					pts[i] = glm::vec2(votes[i]) / votes[i].z;
+					pts_center += pts[i];
+				}
+				pts_center /= pts.size();
+				for (auto &p : pts) {
+					p -= pts_center;
+				}
+				double absolute_movement = 0.0;
+				for (uint32_t i = 0; i < pts.size(); ++i) {
+					absolute_movement += std::abs(pts[i].x - old_pts[i].x);
+					absolute_movement += std::abs(pts[i].y - old_pts[i].y);
+				}
+				if (absolute_movement < 1e-4) {
+					std::cout << "Pass " << (pass+1) << " converged at iteration " << iter << "." << std::endl;
+					converged = true;
+					break;
+				}
+	
+				for (auto &f : faces) {
+					//update face centers:
+					glm::vec2 avg = glm::vec2(0.0f);
+					for (auto i : f) {
+						avg += pts[i];
+					}
+					f.center = avg /= f.size();
+	
+					//determine angles:
+					//Port of (javascript) code I used in a lunch talk once:
+					float coefCos = 0.0;
+					float coefSin = 0.0;
+					float coefSinCos = 0.0;
+					float coefCos2 = 0.0;
+					float coefSin2 = 0.0;
+					auto addDeriv = [&](float c, float s, float o) {
+						//add derivative of (c * cos(t) + s * sin(t) + o * 1)^2
+						//==  2 * (c * cos(t) + s * sin(t) + o * 1) * (c *-sin(t) + s * cos(t))
+						coefCos += o * s;
+						coefSin += o * -c;
+						coefCos2 += c * s;
+						coefSin2 += s * -c;
+						coefSinCos += (c * -c + s * s);
+					};
+					std::vector< glm::vec2 > const &t = templates[f.type];
+					for (uint32_t i = 0; i < f.size(); ++i) {
+						// (offsets[i].x * cos(t) + offsets[i].y *-sin(t) - [real offset].x)^2
+						//+(offsets[i].x * sin(t) + offsets[i].y * cos(t) - [real offset].y)^2
+						addDeriv(t[i].x, -t[i].y, -pts[f[i]].x + f.center.x);
+						addDeriv(t[i].y,  t[i].x, -pts[f[i]].y + f.center.y);
+					}
+					//end up with *just* coefCos, coefSin.
+					if (std::abs(coefSinCos) > 1e-6 || std::abs(coefCos2) > 1e-6 || std::abs(coefSin2) > 1e-6) {
+						std::cout << "Unexpected coefs: " << coefCos << " " << coefSin << " " << coefSinCos << " " << coefCos2 << " " << coefSin2 << std::endl;
+					}
+					if (coefCos == 0.0 && coefSin == 0.0) {
+						f.angle = 0.0f;
+					} else {
+						//Want:
+						//coefCos * cos + coefSin * sin = 0.0 [deriv == 0]
+						//also:
+						//coefSin * cos + -coefCos * sin > 0 [second deriv > 0]
+		
+						//let len = Math.sqrt(coefCos * coefCos + coefSin * coefSin);
+						//f.right.x = coefSin / len;
+						//f.right.y =-coefCos / len;
+						f.angle = std::atan2(-coefCos, coefSin);
+					}
+				}
+			} //for (iteration)
+			if (!converged) {
+				std::cout << "Pass " << (pass+1) << " did not converge; continuing anyway." << std::endl;
 			}
-		}
+		} //for (pass)
 
 		//copy results back to mesh:
 		assert(faces.size() == mesh.faces.size());
@@ -423,6 +519,7 @@ int main(int argc, char **argv) {
 		}
 
 	}
+
 
 	std::cout << "Writing '" << out_smobj << "'." << std::endl;
 	mesh.save(out_smobj);
