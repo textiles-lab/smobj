@@ -5,16 +5,17 @@ UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
 	CPP=g++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2
 else
-	CPP=g++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2
+	CPP=clang++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2 -I/opt/homebrew/include
 endif
 
-all : knitout-to-smobj smobj-to-yarns text-to-smobj
+all : knitout-to-smobj smobj-to-yarns text-to-smobj simplify-yarns merge-faces yarns-to-bccx yarn-units
 
 clean :
-	rm -f knitout-to-smobj text-to-smobj smobj-to-yarns sm.o
+	rm -f knitout-to-smobj text-to-smobj smobj-to-yarns simplify-yarns merge-faces sm.o
 
 knitout-to-smobj : knitout-to-smobj.cpp
 	$(CPP) -o '$@' '$<'
+
 
 text-to-smobj : text-to-smobj.cpp sm.hpp sm.o
 	$(CPP) -o '$@' '$<' sm.o
@@ -25,8 +26,26 @@ simple-text-to-smobj : simple-text-to-smobj.cpp sm.hpp sm.o
 smobj-to-yarns : smobj-to-yarns.cpp sm.hpp sm.o
 	$(CPP) -o '$@' '$<' sm.o
 
+simplify-yarns : simplify-yarns.cpp sm.hpp sm.o
+	$(CPP) -o '$@' '$<' sm.o
+
+yarn-units : yarn-units.cpp sm.hpp sm.o
+	$(CPP) -o '$@' '$<' sm.o
+
+yarns-to-bccx : yarns-to-bccx.cpp sm.hpp sm.o
+	$(CPP) -o '$@' '$<' sm.o
+
 sm.o : sm.cpp sm.hpp
 	$(CPP) -c -o '$@' '$<'
+
+hinters.o : hinters.cpp hinters.hpp
+	$(CPP) -c -o '$@' '$<'
+
+merge-faces : merge-faces.cpp sm.hpp sm.o
+	$(CPP) -o '$@' '$<' sm.o
+
+test-code : test-code.cpp hinters.hpp sm.hpp sm.o hinters.o
+	$(CPP) -o '$@' '$<'  hinters.o sm.o
 
 #generic rules for knitout -> smobj -> yarns
 

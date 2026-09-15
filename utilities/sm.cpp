@@ -1,7 +1,7 @@
 #include "sm.hpp"
 
-#include "glm/glm/glm.hpp"
-#include "glm/glm/gtx/hash.hpp"
+#include <glm/glm.hpp>
+#include <glm/gtx/hash.hpp>
 
 
 #include <algorithm>
@@ -12,11 +12,770 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <deque>
+#include <queue>
 #include <random>
+#include <iterator>
 
 
 //---------------------------------
+//Machine
+void sm::MachineState::shuffle_front(int layer, std::vector<sm::Instr> *_p1, std::vector<sm::Instr> *_p2) { // move loops on <= layer to front, rest to front
+	assert(_p1);
+	assert(_p2);
+	auto& pass1 = *_p1;
+	auto& pass2 = *_p2;
+	pass1.clear(); pass2.clear();
+	//assert(racking == 0);
+
+	for (auto& bn_l : bn_loops) {
+		if (!bn_l.first.is_back()) continue;
+		for (auto l : bn_l.second) {
+			if (loops[l].in_layer(total_layers) <= layer) {
+				// XFER this loop to front
+				sm::Instr xop; xop.op = sm::Instr::Xfer;
+				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'f';
+				xop.tgt.needle += racking;
+				assert(xop.src.bed == 'b');
+				xop.debug_info += "shuffle front (<= layer)";
+				if (bn_loops.count(xop.tgt) && !bn_loops[xop.tgt].empty()) {
+					std::cout << "ERROR shuffling to occupied position." << xop.to_string()<< std::endl;
+				}
+				pass1.emplace_back(xop);
+			}
+		}
+	}
+	for (auto& bn_l : bn_loops) {
+		if (!bn_l.first.is_front()) continue;
+		for (auto l : bn_l.second) {
+			if (loops[l].in_layer(total_layers) > layer) {
+				// XFER this loop to back
+				sm::Instr xop; xop.op = sm::Instr::Xfer;
+				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'b';
+				xop.tgt.needle -= racking;
+				assert(xop.src.bed == 'f');
+				xop.debug_info += "shuffle front (> layer)";
+				if (bn_loops.count(xop.tgt) && !bn_loops[xop.tgt].empty()) {
+					std::cout << "ERROR shuffling to occupied position." << xop.to_string() << std::endl;
+				}
+				pass2.emplace_back(xop);
+			}
+		}
+	}
+	if (!pass1.empty()) {
+	
+		for (auto& x : pass1) {
+			for (auto it = bn_loops[x.src].rbegin(); it != bn_loops[x.src].rend(); ++it) {
+				bn_loops[x.tgt].emplace_back(*it); // move loop to back
+				loops[*it].sequence.emplace_back(x.tgt);
+				loops[*it].sources.emplace_back(x);
+				
+			}
+			bn_loops[x.src].clear();
+		}
+		passes.emplace_back(pass1);
+	}
+	if (!pass2.empty()) {
+		
+		for (auto& x : pass2) {
+			for (auto it = bn_loops[x.src].rbegin(); it != bn_loops[x.src].rend(); ++it) {
+				bn_loops[x.tgt].emplace_back(*it); // move loop to back
+				loops[*it].sequence.emplace_back(x.tgt);
+				loops[*it].sources.emplace_back(x);
+			
+			}
+			bn_loops[x.src].clear();
+		}
+		passes.emplace_back(pass2);
+	}
+
+}
+
+void sm::MachineState::shuffle_back(int layer, std::vector<sm::Instr>* _p1, std::vector<sm::Instr>* _p2) { //move loops >= layer to back, rest to back
+	assert(_p1);
+	assert(_p2);
+	auto& pass1 = *_p1;
+	auto& pass2 = *_p2;
+	pass1.clear(); pass2.clear();
+
+
+	for (auto& bn_l : bn_loops) {
+		if (!bn_l.first.is_back()) continue;
+		for (auto l : bn_l.second) {
+			if (loops[l].in_layer(total_layers) < layer) {
+				// XFER this loop to front
+				sm::Instr xop; xop.op = sm::Instr::Xfer;
+				xop.src = bn_l.first; xop.tgt = xop.src; xop.tgt.bed = 'f';
+				xop.tgt.needle += racking;
+				assert(xop.src.bed == 'b');
+				xop.debug_info += "shuffle back (< layer)";
+				if (bn_loops.count(xop.tgt) && !bn_loops[xop.tgt].empty()) {
+					std::cout << "ERROR shuffling to occupied position." << xop.to_string() << std::endl;
+				}
+				pass1.emplace_back(xop);
+			}
+		}
+	}
+	for (auto& bn_l : bn_loops) {
+		if (!bn_l.first.is_front()) continue;
+		for (auto l : bn_l.second) {
+			if (loops[l].in_layer(total_layers) >= layer) {
+				// XFER this loop to back
+				sm::Instr xop; xop.op = sm::Instr::Xfer;
+				xop.src = bn_l.first; xop.tgt = xop.src;
+				xop.tgt.bed = 'b'; 
+				assert(xop.src.bed == 'f');
+				xop.tgt.needle -= racking;
+				xop.debug_info += "shuffle back (>= layer)";
+				if (bn_loops.count(xop.tgt) && !bn_loops[xop.tgt].empty()) {
+					std::cout << "ERROR shuffling to occupied position." << xop.to_string() << std::endl;
+				}
+				pass2.emplace_back(xop);
+			}
+		}
+	}
+	if (!pass1.empty()) {
+	
+		for (auto& x : pass1) {
+			for (auto it = bn_loops[x.src].rbegin(); it != bn_loops[x.src].rend(); ++it) {
+				bn_loops[x.tgt].emplace_back(*it); // move loop to back
+				loops[*it].sequence.emplace_back(x.tgt);
+				loops[*it].sources.emplace_back(x);
+				
+			}
+			bn_loops[x.src].clear();
+		}
+		passes.emplace_back(pass1);
+	}
+	if (!pass2.empty()) {
+		
+		for (auto& x : pass2) {
+			for (auto it = bn_loops[x.src].rbegin(); it != bn_loops[x.src].rend(); ++it) {
+				bn_loops[x.tgt].emplace_back(*it); // move loop to back
+				loops[*it].sequence.emplace_back(x.tgt);
+				loops[*it].sources.emplace_back(x);
+				
+			}
+			bn_loops[x.src].clear();
+		}
+		passes.emplace_back(pass2);
+	}
+}
+bool sm::MachineState::occupied(sm::BedNeedle const& bn) const {
+	if (bn_loops.count(bn) && !bn_loops.at(bn).empty()) return true;
+	return false;
+}
+
+bool sm::MachineState::make(sm::Instr &instr, sm::Mesh const &mesh, sm::Code const &code){
+
+	//DEBUG
+	{
+		//std::cout << "Making: " << instr.to_string() << " generated from " << instr.face_instr.first << "," << instr.face_instr.second << " at rack: " << racking << std::endl;
+	}
+	
+	// loop setup "a"
+	std::set<sm::Loop> lefts, rights, actives;
+	if(instr.face_instr.first == -1U){
+		for(auto loop: loops){
+			sm::BedNeedle bn;
+			if(is_loop_active(loop, &bn)){
+				float p = bn.position_on_front(racking);
+				if(p >= instr.src.position_on_front(racking)){
+					rights.insert(loop);
+					actives.insert(loop);
+				}
+				if(p <= instr.src.position_on_front(racking)){
+					lefts.insert(loop);
+					actives.insert(loop);
+				}
+			}
+		}
+	}
+
+	bool new_pass = false;
+	if(instr.op == sm::Instr::Xfer || instr.op == sm::Instr::Split){
+		if(racking != instr.rack()){
+			if (abs(instr.rack()) > racking_limit) {
+				std::cout << "Instruction " << instr.to_string() << " exceeds racking limit." << std::endl;
+				return false;
+			}
+			//rack changed, might need to keep track of pass?
+			racking = instr.rack();
+			new_pass = true;
+		}
+	} else {
+		racking = 0; // TODO should we allow independent racking or knitting at rack?
+	}
+	if(!passes.empty() && !passes.back().empty()){
+		auto last = passes.back().back();
+		if (instr.is_loop() && last.is_loop() && last.direction != instr.direction) {
+			new_pass = true; // direction changed
+		}
+		if (last.yarns != instr.yarns) {
+			new_pass = true; // yarn setup changed
+		}
+		if (last.is_move() && instr.is_loop()) {
+			new_pass = true;
+		}
+		if (last.is_loop() && instr.is_move()) {
+			new_pass = true;
+		}
+		if (last.is_move() && last.src.is_front() && instr.src.is_back()) {
+			new_pass = true;
+		}
+		if (last.is_move() && last.src.is_back() && instr.src.is_front()) {
+			new_pass = true;
+		}
+		//if(last.tgt.needle == instr.tgt.needle /*&& not racking 0.25*/) new_pass = true;
+		for (auto& prev : passes.back()) {
+			if (!prev.tgt.dontcare() && !instr.tgt.dontcare() && prev.tgt == instr.tgt) new_pass = true; // needs the same target as what was already used in the current pass
+		}
+		if(!instr.tgt.dontcare() && instr.is_loop() && last.tgt.needle >= instr.tgt.needle && instr.direction == sm::Instr::Right) new_pass = true;
+		if(!instr.tgt.dontcare() && instr.is_loop() && last.tgt.needle <= instr.tgt.needle && instr.direction == sm::Instr::Left) new_pass = true;
+		
+	}
+	if(passes.empty() || new_pass) {
+		passes.emplace_back();
+
+		//--------- is slack okay for all active loops before new pass----------------------
+		{
+
+			for (auto const& bn_ls : bn_loops) {
+				for (auto l_id : bn_ls.second) {
+					bool is_warning = false;
+					assert(loops[l_id].sequence.back() == bn_ls.first);
+					if (loops[l_id].prev == -1U) {
+						//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has no previous loop. " << std::endl; // debug
+						continue;
+					}
+					sm::BedNeedle bn2;
+					if (!is_loop_active(loops[loops[l_id].prev], &bn2)) {
+						//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has previous loop that is dropped already. " << std::endl; // debug
+						is_warning = true;
+					}
+					sm::BedNeedle bnc = loops[l_id].sequence.back();
+					sm::BedNeedle bnp = loops[loops[l_id].prev].sequence.back();
+					//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has previous loop at " << bnp.to_string() << std::endl; // debug
+
+					//uint32_t slack = std::abs(bnc.needle - bnp.needle);
+					uint32_t slack = uint32_t(std::round(std::abs(bnc.position_on_front(racking) - bnp.position_on_front(racking)))); //NOTE: this is technically a float because of fractional rackings.
+					//std::cout << "Loop " << l_id << " at " << bn_ls.first.to_string() << " has current (pre)slack " << slack << " and required slack (with prev)" << loops[l_id].prev_slack << std::endl; // debug
+					//std::cout << "Loop " << loops[l_id].prev << " at " << bnp.to_string() << " has current (post)slack " << slack << " and required slack (with next)" << loops[loops[l_id].prev].post_slack << std::endl; // debug
+
+					if (bnc.bed != bnp.bed && bnc.needle == bnp.needle) slack+= total_layers;
+					if (slack > loops[l_id].prev_slack) {
+						if (is_warning) {
+							std::cerr << "Warning (slack wrt to dropped loop) " << std::endl;
+						}
+						std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
+						std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
+						std::cerr << "required slack: " << loops[l_id].prev_slack << " has slack " << slack << std::endl;
+						print();
+						if (!is_warning) {
+							instr.error_info.is_error = true;
+							instr.error_info.error_string += "\nslack error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
+						}
+					}
+					if (slack > loops[loops[l_id].prev].post_slack) {
+						if (is_warning) {
+							std::cerr << "Warning (slack wrt to dropped loop) " << std::endl;
+						}
+						std::cerr << "slack is not respected between " << l_id << " and its prev loop " << loops[l_id].prev << std::endl;
+						std::cerr << loops[l_id].sequence.back().to_string() << " " << loops[loops[l_id].prev].sequence.back().to_string() << std::endl;
+						std::cerr << "*required (post) slack: " << loops[loops[l_id].prev].post_slack << " has slack " << slack << std::endl;
+						print();
+						if (!is_warning) {
+							instr.error_info.is_error = true;
+							instr.error_info.error_string += "\nslack(post) error between " + loops[l_id].sequence.back().to_string() + " " + loops[loops[l_id].prev].sequence.back().to_string();
+						}
+					}
+				} // for loops in location
+			} // for locations
+		}
+
+	}
+	auto &curr_pass = passes.back();
+
+	// update step
+	instr.step = uint32_t(passes.size() - 1);
+	// this is really "consume" loop
+	auto clear_location = [&](sm::BedNeedle bn){
+		uint32_t loop_slack = 2; // note slack should probably be float
+		assert(!bn.dontcare());
+		assert(bn.nudge == 0);
+		for (auto& li : bn_loops[bn]) {
+			loops[li].prev_slack += loop_slack;
+			loops[li].post_slack += loop_slack;
+			if (loops[li].prev != -1U) {
+				loops[loops[li].prev].post_slack += loop_slack;
+			}
+			{
+				// TODO update next as well?
+			}
+		}
+		bn_loops[bn].clear();
+	};
+	auto add_to_location = [&](sm::BedNeedle bn, uint32_t loop_idx){
+		assert(bn.nudge == 0);
+		assert(!bn.dontcare());
+		bn_loops[bn].emplace_back(loop_idx);
+		loops[loop_idx].sequence.emplace_back(bn);
+		loops[loop_idx].sources.emplace_back(instr);
+	};
+
+	/* unused:
+	auto cross = [&](glm::vec2 a, glm::vec2 b, glm::vec2 c)->bool{
+		return (c.y-a.y)*(b.x-a.x) > (b.y-a.y)*(c.x-a.x);
+	};
+	auto intersects = [&](glm::vec2 p0, glm::vec2 p1, glm::vec2 q0, glm::vec2 q1)->bool{
+		return cross(p0,q0,q1) != cross(p1,q0,q1) && cross(p0, p1, q0) != cross(p0, p1, q1);
+	};*/
+
+	
+	auto make_loop = [&](std::string yarn, sm::BedNeedle bn, sm::Instr::Direction direction)->uint32_t{
+		if(!is_yarn_active(yarn)){
+			std::cerr << "Yarn " << yarn << " used before being braught in." << std::endl;
+		}
+		assert(!bn.dontcare());
+	
+	
+		loops.emplace_back();
+		auto &loop = loops.back();
+		loop.id = uint32_t(loops.size()-1);
+		sm::Loop prev;
+		// ---- Yarn carrier position slack  constraint --------
+		if(find_last_loop_for_yarn(yarn, &prev)){
+			loop.prev = prev.id;
+			sm::BedNeedle current_location_of_prev_loop = loops[prev.id].sequence.back();
+			loop.prev_slack = std::abs(bn.needle - current_location_of_prev_loop.needle);
+			if(bn.needle == current_location_of_prev_loop.needle && bn.bed != current_location_of_prev_loop.bed) loop.prev_slack++;
+			loops[prev.id].post_slack = loop.prev_slack;
+		
+			// use yarn positions to also track if found where expected
+			// TODO this will penalize not having misses inside a face as well, but that is okay for now
+			sm::BedNeedle ypn = yarn_positions[yarn];
+			float yslack = std::abs(ypn.position_on_front(racking) - bn.position_on_front(racking));
+			//float yslack = std::abs(ypn.location() - bn.location());
+			if(direction == sm::Instr::Left){
+				if(!(yslack >= 0.f && yslack < unit_slack())){
+					std::cerr << "(A)Yarn location is too far away from where it should be used. Yslack: " << yslack  << std::endl;
+					std::cerr << "ypn: " << ypn.to_string() << " bn: " << bn.to_string() << std::endl;
+					std::cerr << "ypn: " << ypn.bed << ypn.location() << " bn: " << bn.bed << bn.location() << std::endl;
+					std::cerr << "ypn(f): " <<  ypn.position_on_front(racking) << " bn: " <<  bn.position_on_front(racking) << std::endl;
+					instr.error_info.is_error = true;
+					instr.error_info.error_string += "\nyarn is too far away at " + ypn.to_string() + " for making loop at " + bn.to_string() ;
+					instr.error_info.yarn_at = ypn; instr.error_info.yarn_to = bn;
+				}
+				
+			} else if (direction == sm::Instr::Right){
+				if(!(yslack > 0.f && yslack < unit_slack())){
+					std::cerr << "(B)Yarn location is too far away from where it should be used. Yslack: " << yslack << std::endl;
+					std::cerr << "ypn: " << ypn.to_string() << " bn: " << bn.to_string() << std::endl;
+					std::cerr << "ypn: " << ypn.bed << ypn.location() << " bn: " << bn.bed << bn.location() << std::endl;
+					std::cerr << "ypn(f): " <<  ypn.position_on_front(racking) << " bn: " <<  bn.position_on_front(racking) << std::endl;
+
+					instr.error_info.is_error = true;
+					instr.error_info.error_string += "\nyarn is too far away at " + ypn.to_string() + " for making loop at " + bn.to_string();
+					instr.error_info.yarn_at = ypn; instr.error_info.yarn_to = bn;
+				}
+			}
+		}
+		loop.bn = bn;
+		loop.yarn = yarn;
+		loop.step = uint32_t(passes.size()-1);
+		loop.face_instr = instr.face_instr;
+		assert(loop.bn.nudge == 0);
+		yarn_loops[yarn].emplace_back(loop.id);
+		return loop.id;
+	};
+
+	auto get_code_for_face = [&](uint32_t fid)->uint32_t{
+		std::string variant = "";
+		for(auto const &h : mesh.hints){
+			if(h.type == sm::Mesh::Hint::Variant && h.lhs.face == fid){
+				variant = std::get<std::string>(h.rhs);
+			}
+		}
+		if(variant != ""){
+			for(uint32_t i = 0; i < code.faces.size(); ++i){
+				auto &c = code.faces[i];
+				if(c.variant == variant && c.key_library() == mesh.library[mesh.faces[fid].type]){
+					return i;
+				}
+			}
+		}
+		return -1U;
+	};
+	auto path_exists_between = [&](std::pair<uint32_t, uint32_t> ins1, std::pair<uint32_t, uint32_t> ins2)->bool{
+		// is there a path between the instruction that created ins 1 and ins 2
+		assert(ins1.first != -1U); assert(ins2.first != -1U);
+		//std::cout << "Checking path between " << ins1.first <<"/"<<ins1.second << " and " << ins2.first << "/" << ins2.second << " : "<< std::endl;
+		if(ins1.first == ins2.first){
+			uint32_t cid = get_code_for_face(ins1.first);
+			if(cid == -1U) return false;
+			auto const &l  = code.faces[cid];
+			std::set<uint32_t> candidates;
+			for(auto x : l.loop_instruction_to_instruction_connections){
+				if(x.first == ins1.second) candidates.insert(x.second);
+			}
+			while(!candidates.empty()){
+				auto next = *candidates.begin();
+				if(next == ins2.second) return true;
+				candidates.erase(next);
+				// add next 
+				for(auto x : l.loop_instruction_to_instruction_connections){
+				if(x.first == next) candidates.insert(x.second);
+				}
+			}
+			return false;
+			
+		} else {
+			
+			uint32_t cid = get_code_for_face(ins1.first);
+			if(cid == -1U) {
+				std::cerr << "Could not find code face for face " << ins1.first << std::endl;
+				return false;
+			}
+			auto const &l  = code.faces[cid];
+			std::set<std::pair<uint32_t, uint32_t>> candidates, up_candidates;
+			for(auto x : l.loop_instruction_to_instruction_connections){
+				if(x.first == ins1.second) candidates.insert(std::make_pair(ins1.first, x.second));
+			}
+			{
+				for(auto x : l.loop_instruction_to_edge_connections){
+					// find the connection for ins1.face, x.second
+					if(x.first == ins1.second){
+						for(auto const &c : mesh.connections){
+							if(c.a.face == ins1.first && c.a.edge == x.second){
+								up_candidates.insert(std::make_pair(c.b.face, c.b.edge));
+							}
+							if(c.b.face == ins1.first && c.b.edge == x.second){
+								up_candidates.insert(std::make_pair(c.a.face, c.a.edge));
+							}
+						}
+					}
+				}
+			}
+			int max_iters = int(mesh.faces.size())*10; // heuristic
+			//std::cout << "Starting with " << candidates.size() << " candidates and " << up_candidates.size() << " up_candidates." << std::endl;
+			while(true){
+				while(!up_candidates.empty()){
+					auto next = *up_candidates.begin();
+					//std::cout << "\tup-candidates: " << next.first << "/" << next.second << std::endl;
+					//cue the next candidates from the next upward face 
+					uint32_t n_cid = get_code_for_face(next.first);
+					up_candidates.erase(next);
+					if(n_cid == -1U) continue;
+
+					auto nc = code.faces[n_cid];
+					for(auto x : nc.loop_edge_to_instruction_connections){
+						if(x.first == next.second){
+							candidates.insert(std::make_pair(next.first, x.second));
+						}
+					}
+					//cue the next up-candidates from the next upward face as well
+					for(auto x : nc.loop_edge_to_edge_connections){
+						// find the next connection where next.first/x.second is involved
+						for(auto const &c : mesh.connections){
+							if(c.a.face == next.first && c.a.edge == x.second){
+								up_candidates.insert(std::make_pair(c.b.face, c.b.edge));
+							}
+							if(c.b.face == next.first && c.b.edge == x.second){
+								up_candidates.insert(std::make_pair(c.a.face, c.a.edge));
+							}
+						}
+					}
+				}
+				
+				while(!candidates.empty()){
+					auto next = *candidates.begin();
+					//std::cout << "\tCandidate: " << next.first << "/" << next.second << std::endl;
+					if(next == ins2) return true;
+					candidates.erase(next);
+					uint32_t n_cid = get_code_for_face(next.first);
+					if(n_cid == -1U) continue;
+					auto nc = code.faces[n_cid];
+					// add next 
+					for(auto x : nc.loop_instruction_to_instruction_connections){
+						if(x.first == next.second) candidates.insert(std::make_pair(next.first, x.second));
+					}
+					// add next up
+					for(auto x : nc.loop_instruction_to_edge_connections){
+						// find the connection for ins1.face, x.second
+						if(x.first == next.second){
+							// find the correspondence for next.first, x.second
+							for(auto const &c : mesh.connections){
+								if(c.a.face == next.first && c.a.edge == x.second){
+									up_candidates.insert(std::make_pair(c.b.face, c.b.edge));
+								}
+								if(c.b.face == next.first && c.b.edge == x.second){
+									up_candidates.insert(std::make_pair(c.a.face, c.a.edge));
+								}
+							}
+						}
+					}
+				}
+				max_iters--;
+				if(max_iters < 0){
+					//std::cerr << "\tMax iterations reached."<< std::endl;
+					return false;
+				}
+			} // big-while
+
+		}
+
+		return false;
+	};
+
+	std::istringstream stream(instr.yarns);
+	std::vector<std::string> tokens{std::istream_iterator<std::string>{stream},
+                      std::istream_iterator<std::string>{}};
+	
+	// track all yarns being inserted and taken out
+	
+	if(!instr.src.dontcare()){
+		// is there a loop at the src, and if so who created it 
+		if(!bn_loops.count(instr.src)){
+			// empty location: warn if operation is not a tuck
+			if(instr.op != sm::Instr::Tuck && instr.op != sm::Instr::Miss){
+				std::cerr << "[Warning]Operation " << instr.to_string() << " on empty source location is not a tuck or a miss. " << std::endl;
+				instr.error_info.is_error = true;
+				instr.error_info.error_string += "\nNo loop consumed and not tuck or miss.";
+			}
+		}
+		else{
+
+			for(auto loop_id : bn_loops[instr.src]){
+				assert(loops[loop_id].sequence.back() == instr.src);
+				auto fi = loops[loop_id].face_instr;
+				if(fi.first != -1U && instr.face_instr.first != -1U){
+					// the loop at src location was constructed by fi 
+					// is this the correct creator as expected by the knit graph 
+					if(!path_exists_between(fi, instr.face_instr)){
+						if (instr.op != sm::Instr::Miss) {
+							std::cerr << "Loop consumed by " << instr.face_instr.first << "," << instr.face_instr.second << "(" << instr.to_string() << ")  at " << instr.src.to_string() << " " << " was not meant to be constructed by " << fi.first << "," << fi.second << std::endl;
+							instr.error_info.is_error = true;
+							instr.error_info.error_string += "\nloop consumed by instruction is incorrect";
+							print();
+							//return false;
+						}
+						else {
+							// miss does not consume anything so ok..
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	switch( instr.op ){
+		case sm::Instr::Xfer:
+			for(auto it = bn_loops[instr.src].rbegin(); it != bn_loops[instr.src].rend(); ++it){
+				// if the last made location for any yarn was instr.src, move it to instr.tgt 
+				// if the last made loop for a yarn was the loop getting transfered
+				for(auto yp : yarn_positions){
+					sm::BedNeedle ybn = loops[*it].sequence.back();
+					uint32_t last_loop_by_yarn_id = yarn_loops[yp.first].back();
+					if(!yp.second.dontcare()  && last_loop_by_yarn_id == *it && std::abs(ybn.location() - yp.second.location()) <= 0.5f){
+					//if(!yp.second.dontcare() && ybn == instr.src && std::abs(ybn.location() - yp.second.location()) <= 0.5f){
+						sm::BedNeedle obn = yp.second;
+						float loc = instr.src.location() - yp.second.location();
+						assert(loc != 0.f);
+						yarn_positions[yp.first] = instr.tgt;
+						if(loc > 0) yarn_positions[yp.first].nudge = -1; 
+						else yarn_positions[yp.first].nudge = 1;
+						std::cout << "yarn moved along with xfer op from " << obn.bed << obn.location()  << " to " << yarn_positions[yp.first].bed << yarn_positions[yp.first].location() << " op " << instr.to_string() << std::endl;
+					}
+				}
+				add_to_location(instr.tgt, *it);
+			}
+			clear_location(instr.src);
+			break;
+		case sm::Instr::Drop:
+			assert(instr.tgt.dontcare());
+			clear_location(instr.src);
+			break;
+		case sm::Instr::Tuck:
+			for(auto yarn : tokens){
+				auto l = make_loop(yarn, instr.tgt, instr.direction);
+				//if(l == -1U) return false;
+				add_to_location(instr.tgt, l);
+				yarn_positions[yarn] = instr.tgt;
+				if(instr.direction == sm::Instr::Left) yarn_positions[yarn].nudge = -1;
+				else if(instr.direction == sm::Instr::Right) yarn_positions[yarn].nudge = 1;
+			}
+			break;
+		case sm::Instr::Knit:
+			clear_location(instr.src);
+			for(auto yarn : tokens){
+				auto l = make_loop(yarn, instr.tgt, instr.direction);
+				//if(l == -1U) return false;
+				add_to_location(instr.tgt, l);
+				yarn_positions[yarn] = instr.tgt;
+				if(instr.direction == sm::Instr::Left) yarn_positions[yarn].nudge = -1;
+				else if(instr.direction == sm::Instr::Right) yarn_positions[yarn].nudge = 1;
+			}
+			assert(instr.src == instr.tgt);
+			break;
+		case sm::Instr::Miss:
+			for(auto yarn: tokens){
+				yarn_positions[yarn] = instr.tgt;
+				if(instr.direction == sm::Instr::Left) yarn_positions[yarn].nudge = -1;
+				else if(instr.direction == sm::Instr::Right) yarn_positions[yarn].nudge = 1;
+			}
+			break;
+		case sm::Instr::Split:
+			for(auto it = bn_loops[instr.src].rbegin(); it != bn_loops[instr.src].rend(); ++it){
+				add_to_location(instr.tgt2, *it);
+			}
+			clear_location(instr.src);
+			for(auto yarn : tokens){
+				auto l = make_loop(instr.yarns, instr.tgt, instr.direction);
+				//if(l == -1U) return false;
+				add_to_location(instr.tgt, l);
+				yarn_positions[yarn] = instr.tgt;
+				if(instr.direction == sm::Instr::Left) yarn_positions[yarn].nudge = -1;
+				else if(instr.direction == sm::Instr::Right) yarn_positions[yarn].nudge = 1;
+			}
+			assert(instr.src == instr.tgt);
+			break;
+		case sm::Instr::In:
+			for(auto yarn: tokens){
+				if(yarn_positions.count(yarn) && !yarn_positions[yarn].dontcare()){
+					//print();
+					std::cerr << "[Warning] Bringing yarn that is already in, in again. Yarn: " << yarn << std::endl;
+					//return false;
+				}
+				sm::BedNeedle start;
+				yarn_positions[yarn] = start;
+			}
+			break;
+		case sm::Instr::Out:
+			for(auto yarn : tokens){
+				if(!yarn_positions.count(yarn) || yarn_positions[yarn].dontcare()){
+					//print();
+					std::cerr << "[Warning] Taking yarn out that wasn't in. Yarn: " << yarn << std::endl;
+					//return false;
+				}
+				yarn_positions[yarn].bed = 'x'; // yarn is out
+			}
+			break;
+		case sm::Instr::Unknown:
+		default:
+			assert(false && "unknown instruction should never be constructed.");
+	}
+	
+	
+	// loop setup "b"
+	if(instr.face_instr.first == -1U){
+		bool invalid = false;
+		for(auto loop: loops){
+			sm::BedNeedle bn;
+			if(is_loop_active(loop, &bn)){
+				float p = bn.position_on_front(racking);
+				if(p >= instr.tgt.position_on_front(racking)){
+					if(!rights.count(loop)){
+						invalid = true;
+					}
+				}
+				if(p <= instr.tgt.position_on_front(racking)){
+					if(!rights.count(loop)){
+						invalid = true;
+					}
+				}
+			}
+		}
+		(void)invalid; //suppress unused variable warning.
+		/*if(invalid){
+			std::cerr << "WARNING:Instruction " << instr.to_string() << " re-arranged loops" << std::endl;
+		}*/
+	}
+	// maybe tracking passes is not necessary, but why not..
+	curr_pass.emplace_back(instr);
+
+	//debug
+	//print();
+	return true;
+}
+
+// are there any loops left on the machine?
+bool sm::MachineState::empty(){
+	for(auto const &pr : bn_loops){
+		if(!pr.second.empty()) return false;
+	}
+	return true;
+}
+bool sm::MachineState::find_loop_at_location(sm::BedNeedle const &bn, sm::Loop *loop){
+	assert(loop);
+	for(auto l_it  = loops.rbegin(); l_it != loops.rend(); ++l_it){
+		if(l_it->bn == bn){
+			*loop = *l_it;
+			return true;
+		}
+	}
+	return false;
+}
+bool sm::MachineState::find_last_loop_for_yarn(std::string yarn, Loop *loop){
+	assert(loop);
+	for(auto l_it  = loops.rbegin(); l_it != loops.rend(); ++l_it){
+		if(l_it->yarn == yarn){
+			*loop = *l_it;
+			return true;
+		}
+	}
+	return false;
+}
+bool sm::MachineState::is_loop_active(sm::Loop loop, sm::BedNeedle *bn){
+	assert(bn);
+	for(auto const &bn_loop : bn_loops){
+		for(auto const &lp : bn_loop.second){
+			if(loop.id == lp){
+				*bn = bn_loop.first;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+bool sm::MachineState::is_yarn_active(std::string yarn){
+	if(yarn_positions.count(yarn) && !yarn_positions[yarn].dontcare()) return true;
+	return false;
+}
+void sm::MachineState::print(){
+
+	std::cout <<"--------------------------------------" << std::endl;
+	std::cout << "front:";
+	for(auto const &bn_l : bn_loops){
+		auto const &bn = bn_l.first;
+		auto const &l_ids = bn_l.second;
+		if (l_ids.empty()) continue;
+		if(bn.bed == 'f'){
+			std::cout << "[" << bn.needle;
+				//std::cout << ":"; for(auto x : l_ids) std::cout <<"(" << (int)loops[x].prev_slack << ")"<< x << "(" << (int)loops[x].post_slack <<")"<<",";
+			std::cout <<"]_" ;
+		}
+	}
+	std::cout << std::endl;
+	std::cout <<" back:";
+	for(auto const &bn_l : bn_loops){
+		auto const &bn = bn_l.first;
+		auto const &l_ids = bn_l.second;
+		if (l_ids.empty()) continue;
+		if(bn.bed == 'b'){
+			std::cout << "[" << bn.needle;
+			//std::cout<< ":";for (auto x : l_ids) std::cout << "(" << (int)loops[x].prev_slack << ")" << x << "(" << (int)loops[x].post_slack << ")" << ",";
+			std::cout <<"]_" ;
+		}
+	}
+	std::cout << std::endl;
+	std::cout <<"--------------------------------------" << std::endl;
+}
+
+//---------------------------------
 //Mesh
+
+//glm::vec3 sm::Mesh::instr_to_pos(sm::Instr const &ins){
+//
+//}
 
 sm::Mesh sm::Mesh::load(std::string const &filename) {
 	sm::Mesh mesh;
@@ -136,7 +895,118 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 
 			std::string temp;
 			if (str >> temp) throw std::runtime_error("trailing junk (" + temp + "...) in e line");
-		} else if (cmd == "U") { //unit definition
+		} else if (cmd == "h"){
+			char slash;
+			int32_t face, edge;
+			if( !(str >> face >> slash >> edge) || slash != '/') throw std::runtime_error("h line doesn't begin like 1/2.");
+			Hint h;
+			h.type = sm::Mesh::Hint::Resource;
+			h.src = sm::Mesh::Hint::User;
+			if( face < 1 || face > int32_t(mesh.faces.size())) throw std::runtime_error("face out of range in h line.");
+			if( edge < 1 || edge > int32_t(mesh.faces[face-1].size())) throw std::runtime_error("edge out of range in h line.");
+
+			h.lhs.face = face - 1;
+			h.lhs.edge = edge -1;
+
+			sm::BedNeedle bn;
+			std::string next;
+			if (str >> next){
+				std::istringstream str2(next);
+				if(std::isalpha(next[0])){
+					char bed;
+					str2 >> bed;
+					bn.bed = bed;
+				}
+				float needle;
+				if(str2 >> needle){
+					bn.needle = int(std::round(needle));
+					if(needle - bn.needle > 0.25) bn.nudge = 1;
+					if(bn.needle - needle > 0.25) bn.nudge = -1;
+				}
+				h.rhs = bn;
+			}
+
+			char src;
+			if(str >> src){
+				if(src == 'u') h.src =  sm::Mesh::Hint::User;
+				else if(src == 'i') h.src =  sm::Mesh::Hint::Inferred;
+				else if(src == 'h') h.src =  sm::Mesh::Hint::Heuristic;
+			}
+
+			mesh.hints.emplace_back(h);
+
+		} else if(cmd == "o"){
+
+			Hint h;
+			h.type = sm::Mesh::Hint::Order;
+			h.src  = sm::Mesh::Hint::User;
+			char slash;
+			int32_t face1, face2, edge1, edge2;
+			if(!(str >> face1 >> slash >> edge1) || slash != '/'){
+				throw std::runtime_error("order hint not as expected f/i");
+			}
+			if(!(str >> face2 >> slash >> edge2) || slash != '/'){
+				throw std::runtime_error("order hint not as expected f/i");
+			}
+			h.lhs.face = face1-1; h.lhs.edge = edge1-1;
+			FaceEdge rhs; rhs.face = face2-1; rhs.edge  = edge2-1;
+			h.rhs = rhs;
+
+			char src;
+			if(str >> src){
+				if(src == 'u') h.src =  sm::Mesh::Hint::User;
+				else if(src == 'i') h.src =  sm::Mesh::Hint::Inferred;
+				else if(src == 'h') h.src =  sm::Mesh::Hint::Heuristic;
+			}
+			std::cout << "Hint: " << h.to_string() << std::endl;
+			mesh.hints.emplace_back(h);
+
+		} else if(cmd == "t"){
+
+			Hint h;
+			h.type = sm::Mesh::Hint::Variant;
+			h.src  = sm::Mesh::Hint::User;
+			int32_t face;
+			if(!(str >> face)){
+				throw std::runtime_error("variant hint does not have a face");
+			}
+			h.lhs.face = face-1;
+			h.lhs.edge = -1u;
+			std::string var;
+			if(!(str >> var)) throw std::runtime_error("variant hint does not have a variant name");
+			h.rhs = var;
+			char src;
+			if(str >> src){
+				if(src == 'u') h.src =  sm::Mesh::Hint::User;
+				else if(src == 'i') h.src =  sm::Mesh::Hint::Inferred;
+				else if(src == 'h') h.src =  sm::Mesh::Hint::Heuristic;
+			}
+			mesh.hints.emplace_back(h);
+		}
+		else if (cmd == "l") {
+
+		Hint h;
+		h.type = sm::Mesh::Hint::Layer;
+		h.src = sm::Mesh::Hint::User;
+		int32_t face;
+		if (!(str >> face)) {
+			throw std::runtime_error("layer hint does not have a face");
+		}
+		h.lhs.face = face - 1;
+		h.lhs.edge = -1u;
+		int var1,var2;
+		if (!(str >> var1 >> var2)) throw std::runtime_error("layer hint does not have a layer/total number");
+		h.rhs = std::make_pair(var1,var2);
+		char src;
+		if (str >> src) {
+			if (src == 'u') h.src = sm::Mesh::Hint::User;
+			else if (src == 'i') h.src = sm::Mesh::Hint::Inferred;
+			else if (src == 'h') h.src = sm::Mesh::Hint::Heuristic;
+		}
+		mesh.hints.emplace_back(h);
+		}
+		
+		else if (cmd == "U") { //unit definition
 			std::string name;
 			float length;
 			if (!(str >> name >> length)) throw std::runtime_error("expecting name and length after U");
@@ -179,7 +1049,42 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 
 			std::string temp;
 			if (str >> temp) throw std::runtime_error("trailing junk (" + temp + "...) in c line");
-		} 
+		}
+		else if(cmd == "I"){
+			uint32_t f, i;
+			char slash;
+			if(!(str >> f >> slash >> i) || slash != '/'){
+				throw std::runtime_error("Instruction order is not in expected format face/instruction");
+			}
+			mesh.total_order.emplace_back(std::make_pair(f-1, i-1));
+		}
+		else if(cmd == "xfer"){
+			char src_bed, tgt_bed;
+			int src_needle, tgt_needle;
+			if(!(str >> src_bed >> src_needle >> tgt_bed >> tgt_needle)){
+			throw std::runtime_error("xfer* instruction is not in expected format xfer src_bed_needle tgt_bed_needle");
+			}
+			sm::Instr xop;
+			xop.op = sm::Instr::Xfer;
+			xop.direction = sm::Instr::Direction::None;
+			xop.src.bed = src_bed; xop.src.needle = src_needle;
+			xop.tgt.bed = tgt_bed; xop.tgt.needle = tgt_needle;
+			xop.src.nudge = xop.tgt.nudge = 0;
+			mesh.move_instructions.emplace_back(xop);
+		}
+		else if(cmd == "ci"){
+			//ignore
+			/*uint32_t c, i;
+			char slash;
+			if(!(str >> c >> slash >> i) || slash != '/'){
+				throw std::runtime_error("Instruction order is not in expected format face/instruction");
+			}
+			MoveConnection mc;
+			mc.c_idx = c-1;
+			mc.i_idx = i-1;
+			mesh.move_connections.emplace_back(mc);
+			*/
+		}
 		else if(cmd == "vn"){
 			//ignore
 		}
@@ -206,6 +1111,15 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			throw std::runtime_error("Multiple connection to edge " + std::to_string(c.b.face+1) + "/" + std::to_string(c.b.edge+1) + ".");
 		}
 	}
+	/*for(auto &mc: mesh.move_connections){
+		
+		if(mc.c_idx < mesh.connections.size()){
+			mc.connection = mesh.connections[mc.c_idx];
+		}
+		else{
+			throw std::runtime_error("Move connection associated with invalid connection index.");
+		}
+	}*/
 
 	std::unordered_set< std::string > keys;
 	for (auto const &s : library) {
@@ -227,10 +1141,10 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 				empty_signature.edges.emplace_back("-");
 			}
 			if(!key_type.count(empty_signature.key())){
-			
+
 				library.emplace_back(empty_signature);
 				mesh.library.emplace_back(empty_signature.key());
-				key_type[empty_signature.key()] = key_type.size();
+				key_type[empty_signature.key()] = uint32_t(key_type.size());
 				std::cout << "Added empty string to library (" << library.size() << ")" << std::endl;
 			}
 			types[&f-&mesh.faces[0]] = key_type[empty_signature.key()];
@@ -250,7 +1164,7 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 			mesh.faces[i].source = sources[i];
 		}
 	}
-	std::vector< glm::vec3 > normals(mesh.vertices.size(), glm::vec3(0.0f));
+	std::vector< glm::vec3 > normals(mesh.vertices.size(), glm::vec3(std::numeric_limits< float >::quiet_NaN()));
 
 	for (auto const &face : mesh.faces) {
 		for (uint32_t vi = 0; vi < face.size(); ++vi) {
@@ -259,17 +1173,92 @@ sm::Mesh sm::Mesh::load(std::string const &filename) {
 				glm::vec3 const &a = mesh.vertices[face[(vi+i)%face.size()]];
 				glm::vec3 const &b = mesh.vertices[face[(vi+i+1)%face.size()]];
 				//lazy area-weighted normals:
+				//note: doing this "init-to-zero" thing here so that stray vertices can be recognized and assigned arbitrary normals:
+				if (!(normals[face[vi]].x == normals[face[vi]].x)) {
+					normals[face[vi]] = glm::vec3(0.0f);
+				}
 				normals[face[vi]] += glm::cross(b-a, v-a);
 			}
 		}
 	}
+
+	uint32_t stray_vertices = 0;
 	for (auto &n : normals) {
-		if (n == glm::vec3(0.0f)) {
+		if (!(n.x == n.x)) {
+			++stray_vertices;
+			n = glm::vec3(0.0f, 0.0f, 1.0f); //arbitrary
+		} else if (n == glm::vec3(0.0f)) {
 			throw std::runtime_error("Vertex " + std::to_string(&n-&normals[0]+1) + " has sum-zero surrounding face area.");
 		}
+		n = normalize(n);
+	}
+
+	if (stray_vertices > 0) {
+		std::cout << "NOTE: there are " << stray_vertices << " stray (unreferenced) vertices; they have been assigned +z normals." << std::endl;
 	}
 
 	return mesh;
+}
+
+void sm::Mesh::save_instructions(std::string const &filename, sm::Library const &face_library) const{
+
+	std::ofstream out(filename, std::ios::binary);
+	//slow but for now
+	auto out_loops = [&](sm::Mesh::Face f)->uint32_t{
+		for(auto l : face_library.faces){
+			if(l.key() == library[f.type]){
+				uint32_t c = 0;
+				for(auto e : l.edges){
+					// yarn edges are getting over counted, but they will get cancelled:
+					if(e.direction == sm::Library::Face::Edge::Out ){
+						c++;
+					}
+				}
+				return c;
+			}
+		}
+		return 1;
+	};
+	auto in_loops = [&](sm::Mesh::Face f)->uint32_t{
+		for(auto l : face_library.faces){
+			if(l.key() == library[f.type]){
+				uint32_t c = 0;
+				for(auto e : l.edges){
+					if(e.direction == sm::Library::Face::Edge::In){
+						c++;
+					}
+				}
+				return c;
+			}
+		}
+		return 1;
+	};
+	std::string prev_face = "--- pattern start ---- (" + std::to_string(faces.size()) + " stitch-faces )";
+	uint32_t count = 1;
+	int active_loops = 0;
+	// requires : faces appear in construction sequence
+	uint32_t STEP  = 10;
+	for (auto const &f : faces) {
+		if(f.type < this->library.size()){
+			// go through all connections that have this face, adding the +edges, removing the -edges
+			// slow, but okay
+			active_loops += -in_loops(f) + out_loops(f);
+			if(this->library[f.type] == prev_face && (&f-&faces[0])%STEP != 0){
+				count++;
+			}
+			else{
+				out << prev_face << " ... " << count << " times. \n";
+				prev_face = this->library[f.type];
+				count = 1;
+				if( f.size() != 4 || (&f - &faces[0])%STEP == 0 ){
+					out << "\t\tactive loops: " << active_loops << "\n";
+				}
+			}
+		}
+	}
+	out << prev_face << " ...  " << count << " times.\n";
+	out << "---- pattern end ----\n";
+	std::cout << "active_loops " << active_loops << std::endl;
 }
 
 void sm::Mesh::save(std::string const &filename) const {
@@ -295,6 +1284,47 @@ void sm::Mesh::save(std::string const &filename) const {
 
 	for (auto const &c : connections) {
 		out << "e " << (c.a.face+1) << "/" << (c.a.edge+1) << " " << (c.b.face+1) << "/" << (c.flip ? "-" : "") << (c.b.edge+1) << "\n";
+	}
+	for (auto const &h : hints) {
+		if(h.type == sm::Mesh::Hint::Resource){
+		out << "h " << (h.lhs.face + 1) << "/" << (h.lhs.edge+1) << " ";
+		auto bn = std::get<sm::BedNeedle>(h.rhs);
+		out  << bn.bed;
+		out  << bn.needle + 0.5f*bn.nudge;
+		out  << ' ' << (char)h.src;
+		out <<"\n";
+		}
+		else if(h.type == sm::Mesh::Hint::Order){
+		out << "o " << (h.lhs.face + 1) << "/" << (h.lhs.edge+1) << " ";
+		auto fe = std::get<sm::Mesh::FaceEdge>(h.rhs);
+		out  << (fe.face+1) << "/" << (fe.edge +1) << " ";
+		out  << (char)h.src;
+		out <<"\n";
+		}
+		else if(h.type == sm::Mesh::Hint::Variant){
+		out << "t " << (h.lhs.face + 1) << " " << std::get<std::string>(h.rhs) << " ";
+		out  << (char)h.src;
+		out <<"\n";
+		}
+		else if (h.type == sm::Mesh::Hint::Layer) {
+			out << "l " << (h.lhs.face + 1) << " " << std::get<std::pair<int,int>>(h.rhs).first << " " << std::get<std::pair<int, int>>(h.rhs).second << " ";
+			out << (char)h.src;
+			out << "\n";
+		}
+	}
+
+	// xfer instruction in the "stream"
+	for(auto const &ins: move_instructions){
+		out << "xfer " << (char)ins.src.bed << ins.src.needle << " " << (char)ins.tgt.bed << ins.tgt.needle << "\n";
+	}
+
+	// association of instruction (1-based) with connections (1-based)
+	/*for(auto const &mc : move_connections){
+		out <<"ci " << (mc.c_idx + 1) << "/" << (mc.i_idx + 1) << "\n";
+	}*/
+
+	for(auto const &ins : total_order){
+		out << "I " << (ins.first == -1U ? 0 : ins.first+1) <<"/" << ins.second+1 << "\n";
 	}
 
 	for (auto const &u : units) {
@@ -329,17 +1359,17 @@ void sm::Mesh::rip(uint32_t fixed_id){
 			n += glm::cross(this->vertices[f[i]] - this->vertices[f[(i+1)%f.size()]], -this->vertices[f[(f.size()+i-1)%f.size()]] + this->vertices[f[i]]);
 		}
 		normals.emplace_back(glm::normalize(n));
-		count+= f.size();
+		count += uint32_t(f.size());
 	}
-	
+
 	avg_len /= count;
 
 	std::map<std::pair<uint32_t, uint32_t>, uint32_t> edge_to_face;
 	std::unordered_set<uint32_t>  fixed_set;
-	
+
 	for(auto &f : this->faces){
 		for(uint32_t i = 0; i < f.size(); ++i){
-			edge_to_face[std::make_pair(f[i], f[(i+1)%f.size()])] = &f - &this->faces[0];
+			edge_to_face[std::make_pair(f[i], f[(i+1)%f.size()])] = uint32_t(&f - &this->faces[0]);
 		}
 	}
 	// figure out what the appropriate face for rotation should be given a face with known rotation
@@ -372,9 +1402,9 @@ void sm::Mesh::rip(uint32_t fixed_id){
 			for(auto id : fixed_set){
 				auto ff = this->faces[id];
 				if(ff.size() == 4){ // some basic rules for other shapes?
-					auto left = edge_to_face[ std::make_pair(ff[0], ff[3])];	
-					auto down = edge_to_face[ std::make_pair(ff[1], ff[0])];	
-					auto right = edge_to_face[ std::make_pair(ff[2], ff[1])];	
+					auto left = edge_to_face[ std::make_pair(ff[0], ff[3])];
+					auto down = edge_to_face[ std::make_pair(ff[1], ff[0])];
+					auto right = edge_to_face[ std::make_pair(ff[2], ff[1])];
 					auto up = edge_to_face[ std::make_pair(ff[3], ff[2])];
 					auto lf = this->faces[left];
 					auto df = this->faces[down];
@@ -408,7 +1438,7 @@ void sm::Mesh::rip(uint32_t fixed_id){
 						if(!fixed_set.count(up))
 							fixed_set.insert(up);
 					}
-					
+
 				}
 			}
 			if(old_size == fixed_set.size()) break;
@@ -421,7 +1451,7 @@ void sm::Mesh::rip(uint32_t fixed_id){
 		glm::vec3 n = normals[&f - &this->faces[0]];
 		auto ff = f;
 		for(auto &v: f){
-			float offset_eps = 0.1f;
+			float offset_eps = 0.01f;
 			glm::vec3 e = -this->vertices[v] + this->vertices[ ff[(&v-&f[0]+1)%f.size()]];
 			glm::vec3 offset_a = glm::normalize(glm::cross(n,e))*offset_eps*avg_len;
 			e = -this->vertices[v] + this->vertices[ ff[(f.size()+&v-&f[0]-1)%f.size()]];
@@ -429,10 +1459,10 @@ void sm::Mesh::rip(uint32_t fixed_id){
 			assert(offset_a == offset_a);
 			assert(offset_b == offset_b);
 			updated_vertices.emplace_back(this->vertices[v]+offset_a - offset_b);
-			old_to_new_facevertex[std::make_pair(&f- &this->faces[0],v)] = (updated_vertices.size()-1);
-			v = updated_vertices.size()-1;
-		
-			
+			old_to_new_facevertex[std::make_pair(uint32_t(&f- &this->faces[0]),v)] = uint32_t(updated_vertices.size()-1);
+			v = uint32_t(updated_vertices.size()-1);
+
+
 		}
 	}
 	this->connections.clear(); // clear old connections?
@@ -453,7 +1483,7 @@ void sm::Mesh::rip(uint32_t fixed_id){
 		auto opp = std::make_pair(pr.first.second, pr.first.first);
 		if(done.count(opp)) continue;
 		if(edge_to_face.count(opp)){
-			
+
 			Connection c;
 			c.a.face = pr.second;
 			if(!old_to_new_facevertex.count(std::make_pair(c.a.face, pr.first.first))) continue;
@@ -467,13 +1497,29 @@ void sm::Mesh::rip(uint32_t fixed_id){
 
 			done.insert(pr.first);
 			done.insert(opp);
-		
+
 			this->connections.emplace_back(c);
 		}
-		
+
 	}
 
 }
+
+
+void sm::Mesh::remove_inferred_hints(uint32_t from){ // default-1U
+	hints.erase(std::remove_if(hints.begin(), hints.end(),[from](sm::Mesh::Hint const &h)->bool{
+				return (h.src == sm::Mesh::Hint::Inferred && (from == -1U || h.inferred_from == from));
+				}), hints.end());
+}
+
+void sm::Mesh::remove_heuristic_hints(uint32_t from){ // default-1U
+
+	hints.erase(std::remove_if(hints.begin(), hints.end(),[from](sm::Mesh::Hint const &h)->bool{
+				return (h.src == sm::Mesh::Hint::Heuristic && (from == -1U || h.inferred_from == from));
+				}), hints.end());
+}
+
+
 
 sm::Library sm::Library::load(std::string const &filename) {
 	sm::Library library;
@@ -520,34 +1566,52 @@ sm::Library sm::Library::load(std::string const &filename) {
 			sm::Library::Face::Derive derive;
 
 			std::string by_or_from;
-			if (!(str >> by_or_from) || !(by_or_from == "by" || by_or_from == "from")) throw std::runtime_error(line_info() + "derive line should have face name followed by 'by' or 'from'");
-			if (by_or_from == "by") {
-				std::string tok;
-				while (str >> tok) {
-					if (tok == "from") {
+			{
+				std::string type;
+				while (str >> type) {
+					if (type == "by" || type == "from") {
+						by_or_from = type;
 						break;
-					} else if (tok == "mirror-x") {
+					}
+					derive.expect_key += ' ';
+					derive.expect_key += type;
+				}
+			}
+
+			if (derive.expect_key != "") {
+				derive.expect_key = name + derive.expect_key;
+			} else {
+				std::cerr << line_info() + " WARNING: derive line using just face name may be brittle; consider adding edge types." << std::endl;
+			}
+
+			if (!(by_or_from == "by" || by_or_from == "from")) throw std::runtime_error(line_info() + "derive line should have face name and edge labels followed by 'by' or 'from'");
+			if (by_or_from == "by") {
+				std::string tok2;
+				while (str >> tok2) {
+					if (tok2 == "from") {
+						break;
+					} else if (tok2 == "mirror-x") {
 						if (derive.by & sm::Library::Face::Derive::MirrorXBit) throw std::runtime_error(line_info() + "derive shouldn't mention mirror-x twice.");
 						derive.by |= sm::Library::Face::Derive::MirrorXBit;
-					} else if (tok == "mirror-z") {
+					} else if (tok2 == "mirror-z") {
 						if (derive.by & sm::Library::Face::Derive::MirrorZBit) throw std::runtime_error(line_info() + "derive shouldn't mention mirror-z twice.");
 						derive.by |= sm::Library::Face::Derive::MirrorZBit;
-					} else if (tok == "reverse-yarn") {
+					} else if (tok2 == "reverse-yarn") {
 						if (derive.by & sm::Library::Face::Derive::ReverseYarnBit) throw std::runtime_error(line_info() + "derive shouldn't mention reverse-yarn twice.");
 						derive.by |= sm::Library::Face::Derive::ReverseYarnBit;
 					} else {
-						throw std::runtime_error(line_info() + "unknown derivation operation '" + tok + "'");
+						throw std::runtime_error(line_info() + "unknown derivation operation '" + tok2 + "'");
 					}
 				}
-				if (tok != "from") throw std::runtime_error(line_info() + "derive line should have 'from' after operations");
+				if (tok2 != "from") throw std::runtime_error(line_info() + "derive line should have 'from' after operations");
 			} else {
 				assert(by_or_from == "from");
 			}
 			{ //read source:
-				std::string tok;
-				while (str >> tok) {
+				std::string tok2;
+				while (str >> tok2) {
 					if (derive.from != "") derive.from += ' ';
-					derive.from += tok;
+					derive.from += tok2;
 				}
 			}
 			library.faces.emplace_back();
@@ -659,6 +1723,12 @@ sm::Library sm::Library::load(std::string const &filename) {
 
 			derive_face(*source->second, fp->derive.by, fp);
 
+			if (fp->derive.expect_key != "" && fp->derive.expect_key != fp->key()) {
+				throw std::runtime_error("Deriving face with expected key '" + fp->derive.expect_key + "', but got key '" + fp->key() + "'.");
+			}
+
+			std::cout << "\tDerived '" << fp->key() << "' from '" << fp->derive.from << "'" << std::endl; //DEBUG
+
 			auto ret = keys.emplace(fp->key(), fp);
 			if (!ret.second) throw std::runtime_error("Duplicate face signature: '" + ret.first->first + "'");
 		}
@@ -679,11 +1749,13 @@ sm::Library sm::Library::load(std::string const &filename) {
 	return library;
 }
 
-void sm::Library::save(std::string const &filename) {
+void sm::Library::save(std::string const &filename) const{
 	std::ofstream out(filename, std::ios::binary);
 	for (auto const &face : faces) {
 		if (face.derive.from != "") {
-			out << "derive " << face.name;
+			out << "derive ";
+			if (face.derive.expect_key != "") out << face.derive.expect_key;
+			else out << face.name;
 			if (face.derive.by) {
 				out << " by";
 				if (face.derive.by & sm::Library::Face::Derive::MirrorXBit) out << " mirror-x";
@@ -712,6 +1784,464 @@ void sm::Library::save(std::string const &filename) {
 			out << ' ' << '[' << yarn.end.edge << ':' << yarn.end.along << ',' << yarn.end.z << ']';
 			out << '\n';
 		}
+	}
+}
+
+//------------------------------------------------
+
+// Code
+
+sm::Code sm::Code::load(std::string const &filename) {
+	sm::Code code_library;
+	sm::Code::Face *current = nullptr;
+	std::vector< sm::Instr > *current_instrs = nullptr;
+	{
+
+		std::ifstream in(filename, std::ios::binary);
+		uint32_t line_number = 0;
+		auto line_info = [&]() -> std::string {
+			return "[" + filename + ":" + std::to_string(line_number) + "] ";
+		};
+		std::string line;
+		while (std::getline(in, line)) {
+			++line_number;
+			{ //trim comments
+				auto i = line.find('#');
+				if (i != std::string::npos) line = line.substr(0, i);
+			}
+			std::istringstream str(line);
+			std::string tok;
+			if (!(str >> tok)) continue; //ignore blank lines
+			if (tok == "face") {
+				std::string name;
+				if (!(str >> name)) throw std::runtime_error(line_info() + "Failed to read name field from face line");
+				std::string temp;
+				if (str >> temp) throw std::runtime_error(line_info() + "Trailing junk (" + temp + "...) in face line");
+
+				code_library.faces.emplace_back();
+				code_library.faces.back().name = name;
+				current = &code_library.faces.back();
+				current_instrs = nullptr;
+			} else if (tok == "variant") {
+				if (!current) throw std::runtime_error(line_info() + "variant line without face line");
+				std::string ver = "";
+				if(!(str >> ver) || ver == "") throw std::runtime_error(line_info() + "Failed to read name in variant line");
+				current->variant = ver;
+			} else if (tok == "edge") {
+				if (!current) throw std::runtime_error(line_info() + "edge line without face line");
+				Code::Face::Edge edge;
+				std::string type;
+				if (!(str >> type)) throw std::runtime_error(line_info() + "Failed to read [+-]?type in edge line");
+				if (type[0] == '+') {
+					edge.direction = sm::Code::Face::Edge::Out;
+					edge.type = type.substr(1);
+				} else if (type[0] == '-') {
+					edge.direction = sm::Code::Face::Edge::In;
+					edge.type = type.substr(1);
+				} else {
+					edge.direction = sm::Code::Face::Edge::Any;
+					edge.type = type;
+				}
+				if(edge.type != "x"){
+					char bed;
+					if (!(str >> bed)) throw std::runtime_error(line_info() + "edge without bed");
+					edge.bn.bed = bed;
+					float needle;
+					if (!(str >> needle) && !edge.bn.dontcare()) throw std::runtime_error(line_info() + "edge without needle");
+					if(!edge.bn.dontcare()){
+						edge.bn.needle = int(std::round(needle));
+						//edge.bn.nudge = (needle - edge.bn.needle)*2;
+						if (needle - edge.bn.needle > 0.25) edge.bn.nudge = 1;
+						if (edge.bn.needle - needle > 0.25) edge.bn.nudge = -1;
+					}
+					std::string y = "";
+					while (str >> y ){
+						if (!edge.yarns.empty()) edge.yarns += " ";
+						edge.yarns += y;
+					}
+				} else {
+					std::string temp;
+					if( str >> temp ) throw std::runtime_error(line_info() + "Trailing junk (" + temp + "...) with dontcare edge line");
+				}
+				// any trailing junk will be treated as yarn...
+				current->edges.emplace_back(edge);
+			} else if (tok == "code") {
+				if (!current) throw std::runtime_error(line_info() + "code line without face line");
+				current_instrs = &(current->instrs);
+			} else if (tok == ";;Carriers:") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "Carrier header line without code line");
+				//todo save local carrier order
+				std::string c;
+				while(str >> c){
+					current->carriers.emplace_back(c);
+				}
+			} else if (tok == "knit") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Instr::Knit;
+				char direction;
+				if(!(str >> direction)){
+					throw std::runtime_error(line_info() + "knit line without direction");
+				}
+				if( direction == '+'){
+					ins.direction = sm::Instr::Right;
+				} else if( direction == '-'){
+					ins.direction = sm::Instr::Left;
+				} else{
+					throw std::runtime_error(line_info() + "knit without +/- direction");
+				}
+				char bed;
+				int needle;
+				if(!(str >> bed)){
+					throw std::runtime_error(line_info() + "knit line without bed");
+				}
+				if(!(str >> needle)){
+					throw std::runtime_error(line_info() + "knit line without needle");
+				}
+				ins.src.bed = bed; ins.src.needle = needle;
+				ins.tgt = ins.src;
+				std::string y;
+				while(str >> y){
+					if(!ins.yarns.empty()) ins.yarns += " ";
+					ins.yarns += y;
+				}
+				//ins.rack = rack_from(ins.src, ins.tgt);
+			} else if (tok == "tuck") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Instr::Tuck;
+				char direction;
+				if(!(str >> direction)){
+					throw std::runtime_error(line_info() + "tuck line without direction");
+				}
+				if( direction == '+'){
+					ins.direction = sm::Instr::Right;
+				} else if( direction == '-'){
+					ins.direction = sm::Instr::Left;
+				} else{
+					throw std::runtime_error(line_info() + "tuck without +/- direction");
+				}
+				char bed;
+				int needle;
+				if(!(str >> bed)){
+					throw std::runtime_error(line_info() + "tuck line without bed");
+				}
+				if(!(str >> needle)){
+					throw std::runtime_error(line_info() + "tuck line without needle");
+				}
+				ins.tgt.bed = bed; ins.tgt.needle = needle;
+				std::string y;
+				while(str >> y){
+					if(!ins.yarns.empty()) ins.yarns += " ";
+					ins.yarns += y;
+				}
+				//ins.rack = rack_from(ins.src, ins.tgt);
+			} else if (tok == "miss") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Instr::Miss;
+				char direction;
+				if(!(str >> direction)){
+					throw std::runtime_error(line_info() + "miss line without direction");
+				}
+				if( direction == '+'){
+					ins.direction = sm::Instr::Right;
+				} else if( direction == '-'){
+					ins.direction = sm::Instr::Left;
+				} else{
+					throw std::runtime_error(line_info() + "miss without +/- direction");
+				}
+				char bed;
+				int needle;
+				if(!(str >> bed)){
+					throw std::runtime_error(line_info() + "miss line without bed");
+				}
+				if(!(str >> needle)){
+					throw std::runtime_error(line_info() + "miss line without needle");
+				}
+				ins.src.bed = bed; ins.src.needle = needle;
+				ins.tgt = ins.src;
+				std::string y;
+				while(str >> y){
+					if(!ins.yarns.empty()) ins.yarns += " ";
+					ins.yarns += y;
+				}
+				//ins.rack = rack_from(ins.src, ins.tgt);
+			} else if (tok == "xfer") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Instr::Xfer;
+				char from_bed;
+				int from_needle;
+				char direction;
+				if(!(str >> direction)) throw std::runtime_error(line_info() + "xfer line without direction or bed");
+				if (direction == '+' || direction == '-'){
+					
+					if(!(str >> from_bed)){
+						throw std::runtime_error(line_info() + "xfer line without (from)bed");
+					}
+					//throw std::runtime_error(line_info() + "xfer line should not have direction");
+				}
+				else{
+					from_bed = direction; // no direction was specified so that must have been the from bed
+				}
+
+				if(!(str >> from_needle)){
+					throw std::runtime_error(line_info() + "xfer line without (from)needle");
+				}
+				ins.src.bed = from_bed; ins.src.needle = from_needle;
+				char to_bed;
+				int to_needle;
+				if(!(str >> to_bed)){
+					throw std::runtime_error(line_info() + "xfer line without (to)bed");
+				}
+				if(!(str >> to_needle)){
+					throw std::runtime_error(line_info() + "xfer line without (to)needle");
+				}
+				ins.tgt.bed = to_bed;
+				ins.tgt.needle = to_needle;
+				//ins.rack = rack_from(ins.src, ins.tgt);
+				std::string temp;
+				if (str >> temp) throw std::runtime_error(line_info() + "Trailing junk (" + temp + "...) in xfer line");
+			} else if (tok == "split") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Instr::Split;
+				char direction;
+				if(!(str >> direction)){
+					throw std::runtime_error(line_info() + "split line without direction");
+				}
+				if( direction == '+'){
+					ins.direction = sm::Instr::Right;
+				} else if( direction == '-'){
+					ins.direction = sm::Instr::Left;
+				} else{
+					throw std::runtime_error(line_info() + "split without +/- direction");
+				}
+				char bed;
+				int needle;
+				if(!(str >> bed)){
+					throw std::runtime_error(line_info() + "split line without bed");
+				}
+				if(!(str >> needle)){
+					throw std::runtime_error(line_info() + "split line without needle");
+				}
+				ins.src.bed = bed; ins.src.needle = needle;
+
+				char to_bed;
+				int to_needle;
+				if(!(str >> to_bed)) throw std::runtime_error(line_info() + "split without target bed");
+				if(!(str >> to_needle))  throw std::runtime_error(line_info() + "split without target needle");
+				ins.tgt.bed = to_bed; ins.tgt.needle = to_needle;
+				ins.tgt2 = ins.src;
+				std::string y;
+				while(str >> y){
+					if(!ins.yarns.empty()) ins.yarns += " ";
+					ins.yarns += y;
+				}
+				//ins.rack = rack_from(ins.src, ins.tgt);
+			} else if (tok == "drop"){
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Instr::Drop;
+				char bed; int needle;
+
+				if(!(str >> bed)) throw std::runtime_error(line_info() + "drop without bed");
+				if(!(str >> needle))  throw std::runtime_error(line_info() + "drop without needle");
+				ins.src.bed = bed;
+				ins.src.needle = needle;
+				std::string temp;
+				if (str >> temp) throw std::runtime_error(line_info() + "Trailing junk (" + temp + "...) in drop line");
+			} else if (tok == "in") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Instr::In;
+
+				std::string y;
+				while(str >> y){
+					if(!ins.yarns.empty()) ins.yarns += " ";
+					ins.yarns += y;
+				}
+			}  else if (tok == "out") {
+				if (!current_instrs) throw std::runtime_error(line_info() + "instr line without code line");
+				current_instrs->emplace_back();
+				auto &ins = current_instrs->back();
+				ins.op = sm::Instr::Out;
+
+				std::string y;
+				while(str >> y){
+					if(!ins.yarns.empty()) ins.yarns += " ";
+					ins.yarns += y;
+				}
+			}
+			else {
+				throw std::runtime_error(line_info() + "Unrecognized line-start token '" + tok + "'");
+			}
+		}
+
+		std::map< std::string, Code::Face const * > keys;
+
+		for (auto &face : code_library.faces) {
+			auto ret = keys.emplace(face.key(), &face);
+			if (!ret.second) throw std::runtime_error("Duplicate face signature in code library: '" + ret.first->first + "'");
+			if (face.variant == "") throw std::runtime_error("Variant missing for face: " + face.key());
+		}
+		// verify that instructions are valid (does this need to ssa?)
+		// todo: also verify yarn positions
+		for (auto const &face : code_library.faces){
+			std::set<sm::BedNeedle> temporaries, incoming, outgoing;
+			std::set<std::string> carriers; // todo split into incoming and outgoing carriers
+			for (auto const &edge : face.edges){
+				if(edge.direction == Code::Face::Edge::In && edge.type[0] == 'l' && !edge.bn.dontcare()){
+					incoming.insert(edge.bn);
+				}
+				else if(edge.direction == Code::Face::Edge::Out &&  edge.type[0] == 'l' && !edge.bn.dontcare()){
+					outgoing.insert(edge.bn);
+				}
+				if(!edge.yarns.empty()) {
+					carriers.insert(edge.yarns);
+					// also include split up carriers
+					std::istringstream str(edge.yarns);
+					std::string yarn;
+					while(str >> yarn) {
+						carriers.insert(yarn);
+					}
+				}
+			}
+
+			for(auto const &ins : face.instrs){
+				if(!ins.src.dontcare() && !(incoming.count(ins.src) || temporaries.count(ins.src))){
+					throw std::runtime_error("src bed-needle " + ins.src.to_string() + " is not an input resource:" + face.key());
+				}
+				if(incoming.count(ins.src)){
+				}
+				else if(temporaries.count(ins.src)){
+				}
+				incoming.erase(ins.src);
+				temporaries.erase(ins.src);
+				if(!ins.tgt.dontcare()) {
+					temporaries.insert(ins.tgt);
+				}
+				if(!ins.tgt2.dontcare()) {
+					temporaries.insert(ins.tgt2);
+				}
+				if(!ins.yarns.empty()){
+					std::istringstream str(ins.yarns);
+					std::string yarn;
+					while (str >> yarn){
+						if (!carriers.count(yarn)) throw std::runtime_error("yarn [" + yarn + " of " + ins.yarns + "] not specified on edge label by code:" + face.key());
+					}
+				}
+				
+			}
+
+			for(auto bn : outgoing){
+				if(!temporaries.count(bn) && !incoming.count(bn))
+					throw std::runtime_error("tgt bed-needle [" + bn.to_string() + "] is not produced by code:" + face.key());
+				{
+				}
+				temporaries.erase(bn);
+				incoming.erase(bn);
+			}
+
+
+			if(!temporaries.empty()){
+				std::string err = "";
+				for(auto bn : temporaries) err += " " + bn.to_string();
+				throw std::runtime_error("Temporary locations [ " + err + " ] are not cleared in " + face.key());
+			}
+
+
+		}
+	}
+	return code_library;
+}
+
+void sm::Code::save(std::string const &filename) const {
+	std::ofstream out(filename);
+	for(auto const &face : faces){
+		out << "face " << face.name << '\n';
+		if(face.variant != ""){
+			out << "\tvariant " << face.variant << '\n';
+		}
+		for(auto const &edge : face.edges) {
+			out << "\tedge ";
+			if (edge.direction == sm::Code::Face::Edge::In) out << "-";
+			else if (edge.direction == sm::Code::Face::Edge::Out) out << "+";
+			out << edge.type << ' ';
+			if(edge.type != "x"){ // convention none type ==> no bed-needle specified
+				if(edge.bn.bed != 'x')
+					out << edge.bn.bed <<  (edge.bn.needle + edge.bn.nudge * 0.5) << ' ';
+				else
+					out << 'x' << ' ';
+			}
+			out << edge.yarns;
+			out << '\n';
+		}
+		// don't use instr.knitout_string() here, it uses translation and  also inserts racking
+		out << "\tcode \n";
+		out << "\t\t;;Carriers: "; for(auto c : face.carriers) out << c << " "; out << '\n';
+		for(auto const &instr : face.instrs) {
+			out <<"\t\t";
+			switch(instr.op){
+				case sm::Instr::Knit:
+					out <<"knit ";
+					out << (char)instr.direction << ' ';
+					out << instr.tgt.bed << instr.tgt.needle << ' ';
+					out << instr.yarns << '\n';
+					break;
+				case sm::Instr::Tuck:
+					out <<"tuck ";
+					out << (char)instr.direction << ' ';
+					out << instr.tgt.bed << instr.tgt.needle << ' ';
+					out << instr.yarns << '\n';
+					break;
+				case sm::Instr::Miss:
+					out <<"miss ";
+					out << (char)instr.direction << ' ';
+					out << instr.src.bed << instr.src.needle << ' ';
+					out << instr.yarns << '\n';
+					break;
+				case sm::Instr::Xfer:
+					out <<"xfer ";
+					if(instr.direction != sm::Instr::None){
+						out << (char)instr.direction << ' ';
+					}
+					out << instr.src.bed << instr.src.needle << ' ';
+					out << instr.tgt.bed << instr.tgt.needle << ' ';
+					out << '\n';
+					break;
+				case sm::Instr::Split:
+					out <<"split ";
+					out <<(char)instr.direction << ' ';
+					out << instr.src.bed << instr.src.needle << ' ';
+					out << instr.tgt.bed << instr.tgt.needle << ' ';
+					out << instr.yarns << '\n';
+					break;
+				case sm::Instr::Drop:
+					out <<"drop ";
+					out << instr.src.bed << instr.src.needle << '\n';
+					break;
+				case sm::Instr::In:
+					out <<"in ";
+					out << instr.yarns << '\n';
+					break;
+				case sm::Instr::Out:
+					out <<"out ";
+					out << instr.yarns << '\n';
+					break;
+				default:
+					assert(false && "unknown knitout operation");
+			}
+		}
+		out << '\n';
 	}
 }
 
@@ -862,7 +2392,7 @@ sm::Yarns sm::Yarns::load(std::string const &filename) {
 template< typename T >
 static void write(std::ostream &out, std::string magic, std::vector< T > const &data) {
 	assert(magic.size() == 4);
-	uint32_t size = sizeof(T) * data.size();
+	uint32_t size = uint32_t(sizeof(T) * data.size());
 	out.write(magic.c_str(), 4);
 	out.write(reinterpret_cast< const char * >(&size), sizeof(uint32_t));
 	out.write(reinterpret_cast< const char * >(data.data()), sizeof(T)*data.size());
@@ -885,9 +2415,9 @@ void sm::Yarns::save(std::string const &filename) const {
 	for (auto const &unit : units) {
 		//PERHAPS: if (&unit == &units[0]) assert(unit.name == "1" && unit.length == 1.0f);
 		out_units.emplace_back();
-		out_units.back().name_begin = out_strings.size();
+		out_units.back().name_begin = uint32_t(out_strings.size());
 		out_strings.insert(out_strings.end(), unit.name.begin(), unit.name.end());
-		out_units.back().name_end = out_strings.size();
+		out_units.back().name_end = uint32_t(out_strings.size());
 		out_units.back().length = unit.length;
 	}
 
@@ -898,15 +2428,15 @@ void sm::Yarns::save(std::string const &filename) const {
 			assert(cp.unit < units.size());
 
 			out_checkpoints.emplace_back();
-			out_checkpoints.back().point = cp.point + out_points.size();
+			out_checkpoints.back().point = uint32_t(cp.point + out_points.size());
 			out_checkpoints.back().length = cp.length;
 			out_checkpoints.back().unit = cp.unit;
 		}
 		out_yarns.emplace_back();
-		out_yarns.back().point_begin = out_points.size();
+		out_yarns.back().point_begin = uint32_t(out_points.size());
 		out_points.insert(out_points.end(), yarn.points.begin(), yarn.points.end());
 		out_sources.insert(out_sources.end(), yarn.sources.begin(), yarn.sources.end());
-		out_yarns.back().point_end = out_points.size();
+		out_yarns.back().point_end = uint32_t(out_points.size());
 		out_yarns.back().radius = yarn.radius;
 		out_yarns.back().color = yarn.color;
 	}
@@ -927,7 +2457,7 @@ static float twice_area(glm::vec2 const &a, glm::vec2 const &b, glm::vec2 const 
 	return glm::dot( c - a, glm::vec2( -(b.y - a.y), b.x - a.x ) );
 }
 
-void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &library, sm::Yarns *yarns_) {
+void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &library, sm::Yarns *yarns_, std::map<sm::Mesh::FaceEdge, uint32_t> *fe_to_yarn_index) {
 	assert(yarns_);
 	auto &yarns = *yarns_;
 	yarns = Yarns();
@@ -947,6 +2477,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 	//look up all mesh face types in library:
 	std::vector< sm::Library::Face const * > mesh_library;
 	{
+		std::set< std::string > warned_about_signature;
 		std::map< std::string, sm::Library::Face const * > signature_to_face;
 		for (auto const &face : library.faces) {
 			signature_to_face.insert(std::make_pair(face.key(), &face));
@@ -955,7 +2486,9 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		for (auto const &sig : mesh.library) {
 			auto f = signature_to_face.find(sig);
 			if (f == signature_to_face.end()) {
-				std::cerr << "WARNING: library is missing face with signature '" << sig << "'" << std::endl;
+				if (warned_about_signature.insert(sig).second) {
+					std::cerr << "WARNING: library is missing face with signature '" << sig << "'" << std::endl;
+				}
 				mesh_library.emplace_back(nullptr);
 			} else {
 				mesh_library.emplace_back(f->second);
@@ -963,8 +2496,6 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		}
 		assert(mesh_library.size() == mesh.library.size());
 	}
-
-
 
 
 	//generate long connected chains of yarn segments by looking at edge labels:
@@ -1038,9 +2569,9 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 					to.z = inv_along(to.z);
 				}
 
-				auto ret = forward.insert(std::make_pair(from, std::make_pair(to, segs.size()-1)));
+				auto ret = forward.insert(std::make_pair(from, std::make_pair(to, uint32_t(segs.size()-1))));
 				assert(ret.second);
-				ret = reverse.insert(std::make_pair(to, std::make_pair(from, segs.size()-1)));
+				ret = reverse.insert(std::make_pair(to, std::make_pair(from, uint32_t(segs.size()-1))));
 				assert(ret.second);
 			}
 		}
@@ -1049,7 +2580,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			std::cerr << "WARNING: have " << invalid_assignment << " faces whose types have a different number of edges than the face." << std::endl;
 		}
 
-	
+
 		std::unordered_map< glm::uvec2, glm::uvec2 > connections;
 		for (auto const &c : mesh.connections) {
 			glm::uvec2 from = glm::uvec2(
@@ -1227,23 +2758,64 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			chains.emplace_back(chain.begin(), chain.end());
 		}
 		if (flipped_chains) {
-			std::cerr << "NOTE: flipped " << flipped_chains << " chains owing to direction vote." << std::endl;
+			//std::cerr << "NOTE: flipped " << flipped_chains << " chains owing to direction vote." << std::endl;
 		}
 
 		{ //show chain sizes breakdown:
 			std::map< uint32_t, uint32_t > hist;
 			for (auto const &chain : chains) {
-				hist.insert(std::make_pair(chain.size(), 0)).first->second += 1;
+				hist.insert(std::make_pair(uint32_t(chain.size()), 0)).first->second += 1;
 			}
-			std::cout << "Have " << chains.size() << " chains:\n";
-			for (auto const &sc : hist) {
-				std::cout << "  " << sc.second << " of size " << sc.first << "\n";
-			}
-			std::cout.flush();
+			//std::cout << "Have " << chains.size() << " chains:\n";
+			//for (auto const &sc : hist) {
+			//	std::cout << "  " << sc.second << " of size " << sc.first << "\n";
+			//}
+			//std::cout.flush();
 		}
 
 	}
 
+	if(fe_to_yarn_index){
+		auto &fe_to_y = *fe_to_yarn_index;
+		std::map<std::string, uint32_t> name_to_idx;
+		for(auto const &lf : library.faces){
+			name_to_idx[lf.key()] = uint32_t(&lf - &library.faces[0]);
+		}
+		for(auto &segments: chains){
+			uint32_t segment_id = uint32_t(&segments - &chains[0]);
+			for(auto &seg: segments){
+				assert(seg.face);
+				assert(seg.yarn != -1U);
+				if(seg.face->type == -1U){
+					std::cerr << "face has no assigned type" << std::endl;
+				} 
+				else if(!name_to_idx.count(mesh.library[seg.face->type])){
+					std::cerr << "face name not in library" << std::endl;
+				}
+				else{
+					auto lface =library.faces[name_to_idx[mesh.library[seg.face->type]]];
+					auto yarn = lface.yarns[seg.yarn];
+					if(lface.edges[yarn.begin.edge].type[0] == 'y'){
+						// assign segment id to face/edge
+						sm::Mesh::FaceEdge fe;
+						fe.face = uint32_t(seg.face - &mesh.faces[0]);
+						fe.edge = yarn.begin.edge;
+						fe_to_y[fe] = segment_id;
+					}
+					if(lface.edges[yarn.end.edge].type[0] == 'y'){
+						// assign segment id to face/edge
+						sm::Mesh::FaceEdge fe;
+						fe.face = uint32_t(seg.face - &mesh.faces[0]);
+						fe.edge = yarn.end.edge;
+						fe_to_y[fe] = segment_id;
+
+					}
+				}
+				
+			}
+		}
+
+	}
 
 
 	//Idea: express xy coords of yarn points in each face in terms of generalized barycentric coordinates.
@@ -1270,7 +2842,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 				float total_coord = 0.0f;
 				coords.reserve(face.edges.size());
 				for (uint32_t i = 0; i < face.edges.size(); ++i) {
-					uint32_t pi = (i > 0 ? i - 1 : face.edges.size() - 1);
+					uint32_t pi = uint32_t(i > 0 ? i - 1 : face.edges.size() - 1);
 					glm::vec2 const &prev = face.edges[pi].vertex;
 					glm::vec2 const &cur = face.edges[i].vertex;
 					glm::vec2 const &next = face.edges[(i + 1 < face.edges.size() ? i + 1 : 0)].vertex;
@@ -1379,7 +2951,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			avg_ratio /= avg_ratio_count;
 		}
 		radius_scale = std::sqrt(avg_ratio);
-		std::cout << "Idea radius scaling, based on " << avg_ratio_count << " area ratios: " << radius_scale << std::endl;
+		//std::cout << "Idea radius scaling, based on " << avg_ratio_count << " area ratios: " << radius_scale << std::endl;
 	}
 
 	//---------------
@@ -1495,6 +3067,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		}
 	}
 
+
 	//lookup table for checkpoints:
 	std::unordered_multimap< glm::uvec3, Mesh::Checkpoint const * > fec_to_checkpoints;
 	for (auto const &c : mesh.checkpoints) {
@@ -1549,7 +3122,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		);
 	};
 
-	float mismatch = 0.0f;
+	[[maybe_unused]] float mismatch = 0.0f;
 	float max_mismatch = 0.0f;
 	for (auto const &chain : chains) {
 		yarns.yarns.emplace_back();
@@ -1583,12 +3156,12 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 			}
 
 			{ //add checkpoints for beginning of chain segment
-				uint32_t point = ( yarns.yarns.back().points.empty() ? 0 : yarns.yarns.back().points.size() - 1);
+				uint32_t point = uint32_t(yarns.yarns.back().points.empty() ? 0 : yarns.yarns.back().points.size() - 1);
 				auto r = fec_to_checkpoints.equal_range(begin_fec);
 				for (auto i = r.first; i != r.second; /* later */ ) {
 					//assign checkpoint based on yarn point:
 					checkpoints.emplace_back(std::make_pair(point, i->second));
-				
+
 					//remove checkpoint from lookup structure:
 					auto old = i;
 					++i;
@@ -1622,7 +3195,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 
 			{ //add checkpoints for end of chain segment
 				assert(!yarns.yarns.back().points.empty());
-				uint32_t point = yarns.yarns.back().points.size() - 1;
+				uint32_t point = uint32_t(yarns.yarns.back().points.size() - 1);
 				auto r = fec_to_checkpoints.equal_range(end_fec);
 				for (auto i = r.first; i != r.second; /* later */ ) {
 					//assign checkpoint based on yarn point:
@@ -1671,7 +3244,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 
 				std::reverse(checkpoints.begin(), checkpoints.end());
 				for (auto &pc : checkpoints) {
-					pc.first = yarns.yarns.back().points.size() - 1 - pc.first;
+					pc.first = uint32_t(yarns.yarns.back().points.size()) - 1 - pc.first;
 				}
 
 				//PARANOIA: check that flipping worked
@@ -1691,7 +3264,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		}
 
 	}
-	std::cout << "Total/max boundary mis-match from chains (should be very small): " << mismatch << "/" << max_mismatch << std::endl;
+	//std::cout << "Total/max boundary mis-match from chains (should be very small): " << mismatch << "/" << max_mismatch << std::endl;
 
 	//transfer units:
 	//TODO: could consider eliminating any unused units
@@ -1701,7 +3274,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 		yarns.units.back().length = u.length;
 	}
 
-	std::cout << "Of " << mesh.checkpoints.size() << " checkpoints, " << fec_to_checkpoints.size() << " remain unassigned." << std::endl;
+	//std::cout << "Of " << mesh.checkpoints.size() << " checkpoints, " << fec_to_checkpoints.size() << " remain unassigned." << std::endl;
 
 	/*
 	for (auto const &face : mesh.faces) {
@@ -1761,7 +3334,7 @@ void sm::mesh_and_library_to_yarns(sm::Mesh const &mesh, sm::Library const &libr
 	*/
 
 
-	std::cout << "Generated yarns lie in [" << min.x << "," << max.x << "]x[" << min.y << ", " << max.y << "]x[" << min.z << "," << max.z << "]." << std::endl;
+	//std::cout << "Generated yarns lie in [" << min.x << "," << max.x << "]x[" << min.y << ", " << max.y << "]x[" << min.z << "," << max.z << "]." << std::endl;
 
 }
 
@@ -1778,8 +3351,8 @@ void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs 
 	Circle.reserve(Angles);
 	for (uint32_t a = 0; a < Angles; ++a) {
 		double ang = M_PI * 2.0 * double(a) / double(Angles);
-		Circle[a].x = std::cos(ang);
-		Circle[a].y = std::sin(ang);
+		Circle[a].x = float(std::cos(ang));
+		Circle[a].y = float(std::sin(ang));
 	}
 
 	for (auto const &yarn_struct : yarns.yarns) {
@@ -1830,7 +3403,7 @@ void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs 
 				curve_to(me, e);
 			}
 			/*
-			
+
 			glm::vec3 s = at;
 			for (uint32_t i = 1; i <= 5; ++i) {
 				float t = (i / 5.0f);
@@ -1873,7 +3446,7 @@ void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs 
 					glm::vec3 n0 = -Circle[r-1].y * along
 					             + Circle[r-1].x * ( p1 * Circle[i].x + p2 * Circle[i].y );
 					glm::vec3 n1 = -Circle[r].y * along
-					             + Circle[r].x * ( p1 * Circle[i].x + p2 * Circle[i].y );	
+					             + Circle[r].x * ( p1 * Circle[i].x + p2 * Circle[i].y );
 					attribs.emplace_back(a + yarn_radius * n0, n0, yarn_color);
 					if (i == 0 && attribs.size() > 1) attribs.emplace_back(attribs.back());
 					attribs.emplace_back(a + yarn_radius * n1, n1, yarn_color);
@@ -1896,7 +3469,7 @@ void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs 
 				}
 				attribs.emplace_back(attribs[attribs.size() - 2*Angles]);
 				attribs.emplace_back(attribs[attribs.size() - 2*Angles]);
-				
+
 				d1 = next_d1;
 				d2 = next_d2;
 				at = next_at;
@@ -1951,7 +3524,7 @@ void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs 
 					             + Circle[r-1].x * ( p1 * Circle[i].x + p2 * Circle[i].y );
 					glm::vec3 n1 = Circle[r].y * along
 					             + Circle[r].x * ( p1 * Circle[i].x + p2 * Circle[i].y );
-	
+
 					attribs.emplace_back(a + yarn_radius * n1, n1, yarn_color);
 					if (i == 0) attribs.emplace_back(attribs.back());
 					attribs.emplace_back(a + yarn_radius * n0, n0, yarn_color);
@@ -1968,7 +3541,7 @@ void sm::yarns_to_tristrip(sm::Yarns const &yarns, std::vector< sm::YarnAttribs 
 }
 
 void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library::Face *face2_) {
-	
+
 	assert(face2_);
 	auto &face2 = *face2_;
 	face2.shorthand = face.shorthand;
@@ -1981,7 +3554,13 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 	uint32_t r = 0;
 	if (by_bits & sm::Library::Face::Derive::MirrorXBit) {
 		//new first vertex should be after the run of loop-in edges on the side:
-		while (r < face.edges.size() && face.edges[r].direction == face.edges[0].direction && face.edges[r].type[0] == face.edges[0].type[0]) ++r;
+		auto remove_number_suffix = [&](std::string str) {
+			while (!str.empty() && str[str.size()-1] >= '0' && str[str.size()-1] <= '9') {
+				str.erase(str.size()-1);
+			}
+			return str;
+		};
+		while (r < face.edges.size() && face.edges[r].direction == face.edges[0].direction && remove_number_suffix(face.edges[r].type) == remove_number_suffix(face.edges[0].type)) ++r;
 
 		//should not call on edges with all in edges:
 		if (r >= face.edges.size()) {
@@ -1990,10 +3569,10 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 
 		for (uint32_t i = 0; i < face2.edges.size(); ++i) {
 			//vertices should appear in reversed order, and should start with 'r':
-			uint32_t v = (r + face.edges.size() - i) % face.edges.size();
+			uint32_t v = uint32_t( (r + face.edges.size() - i) % face.edges.size() );
 			face2.edges[i].vertex = glm::vec2(-face.edges[v].vertex.x, face.edges[v].vertex.y);
 			//edge info gets copied from previous edge:
-			uint32_t e = (v + face.edges.size() - 1) % face.edges.size();
+			uint32_t e = uint32_t( (v + face.edges.size() - 1) % face.edges.size() );
 			face2.edges[i].direction = face.edges[e].direction;
 			face2.edges[i].type = face.edges[e].type;
 		}
@@ -2019,7 +3598,7 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 		auto copy_end = [&](sm::Library::Face::EdgePoint const &from, sm::Library::Face::EdgePoint &to) {
 			if (by_bits & sm::Library::Face::Derive::MirrorXBit) {
 				// e = (r - i - 1) -> r - e - 1 = i
-				to.edge = (r + face.edges.size() - from.edge - 1) % face.edges.size();
+				to.edge = uint32_t( (r + face.edges.size() - from.edge - 1) % face.edges.size() );
 				to.along = 1.0f - from.along;
 			} else {
 				to.edge = from.edge;
@@ -2043,3 +3622,1487 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 	}
 
 }
+
+//-----------------------------------
+// partial order of faces
+// returns true if successfully ordered
+// maybe should return a reordered Mesh..
+// else false
+
+bool sm::can_order_faces(sm::Mesh const &mesh, sm::Library const &library, std::vector<uint32_t> *_order){
+	assert(_order);
+	std::vector<uint32_t> &order = *_order;
+	order.clear();
+	sm::Mesh out = mesh;
+	std::map<std::string, uint32_t> name_to_lib_idx;
+	for(auto const &l : library.faces){
+		name_to_lib_idx[l.key()] = uint32_t( &l-&library.faces[0] );
+	}
+	uint32_t iterations = 0;
+	std::unordered_set<uint32_t> completed_faces;
+	// Build up candidate faces instead of this ridiculousness...but works
+	while(true){
+		for(auto const &f : mesh.faces){
+			uint32_t fid = uint32_t( &f - &mesh.faces[0] );
+			if(completed_faces.count(fid)) continue;
+			if(name_to_lib_idx.count(mesh.library[f.type]) == 0) {
+				// probably not a throw?
+				std::cout << "Face " << fid << " does not have a valid library name " << mesh.library[f.type] << std::endl;
+				break;
+			}
+			auto l = library.faces[name_to_lib_idx[mesh.library[f.type]]]; // library face
+			// does it have an "in", is the "in" connection done?
+			bool ins_available = true;
+			for(auto &e : l.edges){
+				uint32_t eid = uint32_t( &e - &l.edges[0] );
+				if(e.direction == sm::Library::Face::Edge::In){
+					sm::Mesh::FaceEdge fe; fe.face = fid; fe.edge = eid;
+					for(auto c : mesh.connections){
+						if(c.a == fe){
+							if(!completed_faces.count(c.b.face)) ins_available = false;
+						}
+						else if(c.b == fe){
+							if(!completed_faces.count(c.a.face)) ins_available = false;
+						}
+					}
+				}
+			}
+			if (ins_available){
+				completed_faces.insert(uint32_t( &f - &mesh.faces[0] ));
+				order.emplace_back(uint32_t( &f - &mesh.faces[0] ));
+			}
+		}
+		if(completed_faces.size() == mesh.faces.size()) break;
+		++iterations;
+		if(iterations > mesh.faces.size()) break;
+	}
+
+	if(completed_faces.size() == mesh.faces.size()){
+		for(uint32_t i = 0; i < mesh.faces.size(); ++i){
+			out.faces[i] = mesh.faces[order[i]];
+		}
+		for(auto &c : out.connections){
+			c.a.face = uint32_t( std::distance(order.begin(), std::find(order.begin(), order.end(), c.a.face)) );
+			c.b.face = uint32_t( std::distance(order.begin(), std::find(order.begin(), order.end(), c.b.face)) );
+		}
+		for(auto &h : out.hints){
+			h.lhs.face = uint32_t( std::distance(order.begin(), std::find(order.begin(), order.end(), h.lhs.face)) );
+		}
+		for(auto &c : out.checkpoints){
+			if(c.face != -1U)
+				c.face = uint32_t( std::distance(order.begin(), std::find(order.begin(), order.end(), c.face)) );
+		}
+	} else{
+		
+		return false;
+	}
+	// A mesh where faces are correctly ordered if ordering was possible, else original..
+	return true;
+}
+bool sm::add_hint(sm::Mesh::Hint const h, sm::Mesh *_mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> * _offenders){
+	assert(_mesh);
+	assert(_offenders);
+	sm::Mesh &mesh = *_mesh;
+	sm::Mesh temp = *_mesh;
+	//std::vector<sm::Mesh::Hint> &offenders = *_offenders;
+	temp.hints.emplace_back(h);
+	if(verify(temp, library,  code, _offenders)){
+		mesh.hints.emplace_back(h);
+		return true;
+	}
+
+	return false;
+}
+
+bool sm::partial_order_to_sequences(std::set<std::pair<uint32_t, uint32_t>> partial, std::vector<std::vector<uint32_t>> &sequences, uint32_t max_sequences){
+
+	std::cout << "Partial order to sequences... " << std::endl;
+	sequences.clear();
+
+	std::set<uint32_t> nodes;
+	for(auto p : partial) {nodes.insert(p.first); nodes.insert(p.second);}
+
+	struct State : std::vector<uint32_t>{
+	};
+
+	auto qcmp = [](State const &l, State const &r) { return l.size() < r.size(); };
+	std::priority_queue<State, std::vector<State>, decltype(qcmp)> pq(qcmp);
+
+	// initial states
+	for(auto n : nodes){
+		bool is_root = true;
+		for(auto p : partial){
+			if(p.second == n) is_root = false;
+		}
+		if(is_root){
+			State s;
+			s.emplace_back(n);
+			pq.push(s);
+		}
+	}
+	std::cout << "Starting states.. " << pq.size() << std::endl;
+	while(!pq.empty()){
+		auto s = pq.top();
+		pq.pop();
+		if(s.size() == nodes.size()){
+			sequences.emplace_back(s);
+			if(sequences.size() >= max_sequences) return true;
+			if(sequences.size()%10000 == 0){
+				std::cout << "Found " << sequences.size() << " sequences." << std::endl;
+			}
+			continue;
+		}
+		for(auto &n : nodes){
+			std::set<uint32_t> done(s.begin(), s.end());
+			if(done.count(n)) continue;
+			bool is_next  = true;
+			for(auto &p : partial){
+				if(p.second == n && !done.count(p.first)){
+					is_next = false;
+				}
+			}
+			if(is_next){
+				State nxt = s;
+				nxt.emplace_back(n);
+				pq.push(nxt);
+			}
+		}
+	}
+	uint32_t t = 10;
+	if(sequences.size() < t) t = uint32_t(sequences.size());
+	for(uint32_t i = 0; i < t; ++i){
+		for(auto s : sequences[i]){
+			std::cout << s << " ";
+		} std::cout << std::endl;
+	}
+	std::cout << "..finished computing all sequences.. found " << sequences.size() << std::endl;
+
+	return !(sequences.empty());
+}
+// returns false if not a partial order, else returns a sequence of instructions that respects the order
+bool sm::partial_order_to_sequence(std::set<std::pair<uint32_t, uint32_t>> partial, std::vector<uint32_t> *_sequence){
+	assert(_sequence);
+	auto &sequence = *_sequence;
+	std::set<uint32_t> instructions;
+	for(auto &pr: partial) {
+		instructions.insert(pr.first);
+		instructions.insert(pr.second);
+	}
+	std::set<uint32_t> done;
+	while(!instructions.empty()){
+		uint32_t old = uint32_t(sequence.size());
+		for(auto x : instructions){
+			if(done.count(x)) continue;
+			bool valid = true;
+			for(auto &pr : partial){
+				if(pr.second == x && !done.count(pr.first)){
+					valid = false;
+				}
+			}
+			if(valid){
+				done.insert(x);
+				sequence.emplace_back(x);
+				instructions.erase(x);
+				break;
+			}
+		}
+		if(sequence.size() == old){
+			// could not make progress, must be a cycle
+			return false;
+		}
+	}
+	return true;
+}
+// assumes mesh->total_order exists
+// maps instruction order to actual needle bed values from resource constraints
+// maps yarns to a table of "Y0..n" style yarns
+// inserts yarn-in and yarn-out instructions (might be a bit awkward for now)
+bool sm::compute_total_instructions(sm::Mesh &mesh, sm::Library const &library,  sm::Code const &code){
+	mesh.total_instructions.clear();
+
+	// process all the hints into easy to access formats
+	std::map<std::string, uint32_t> name_to_code_idx;
+	std::map<uint32_t, std::string> face_variant;
+	std::map<int32_t, int32_t> face_translation;
+	std::vector<std::string> carriers;
+	std::map<sm::Mesh::FaceEdge, uint8_t> edge_map; 
+    for(auto &fi : mesh.faces){
+		for(uint32_t i = 0; i < fi.size(); ++i){
+			sm::Mesh::FaceEdge fe; fe.face = uint32_t(&fi - &mesh.faces[0]); fe.edge = i;
+			edge_map[fe] += 1;
+		}
+	}
+	for(auto const &c : mesh.connections){
+		//c.a.face, c.a.edge and c.b.face, c.b.edge
+		sm::Mesh::FaceEdge a = c.a;
+		sm::Mesh::FaceEdge b = c.b;
+		edge_map[a] += 1;
+		edge_map[b] += 1;
+    }
+
+
+	auto face_to_code_key = [&](const sm::Mesh::Face &f)->std::string{
+		std::string variant = "";
+		if(face_variant.count(uint32_t(&f - &mesh.faces[0]))){
+			variant = face_variant[uint32_t(&f - &mesh.faces[0])];
+		}
+		std::string signature = mesh.library[f.type] + ' ' + variant;
+		return signature;
+	};
+
+
+	for(auto const &c : code.faces){
+		name_to_code_idx[c.key()] = uint32_t(&c - &code.faces[0]);
+	}
+	for(auto h : mesh.hints){
+		if(h.type == sm::Mesh::Hint::Variant){
+			if(face_variant.count(h.lhs.face) && face_variant[h.lhs.face] != std::get<std::string>(h.rhs)){
+				std::cerr << "[Variant] Hints for face " << h.lhs.face << " are inconsistent: " << face_variant[h.lhs.face] << ", " << std::get<std::string>(h.rhs) << std::endl;
+				return "";
+			}
+			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
+		}
+	}
+
+	// Resource hints
+	for(auto h: mesh.hints){
+		if(h.type == sm::Mesh::Hint::Resource){
+			const sm::Mesh::Face &f = mesh.faces[h.lhs.face];
+			std::string signature = face_to_code_key(f);
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			const sm::BedNeedle bn = std::get<sm::BedNeedle>(h.rhs);
+			const sm::BedNeedle bn_template = l.edges[h.lhs.edge].bn;
+			if(bn_template.dontcare()) continue;
+			int offset = int(bn.location() - bn_template.location());
+			// verify checks that these are indeed valid.
+			face_translation[h.lhs.face] = offset;
+		}
+	}
+
+	sm::Yarns yarns;
+	std::map<sm::Mesh::FaceEdge, uint32_t> fe_to_yarn_index;
+	mesh_and_library_to_yarns(mesh, library, &yarns, &fe_to_yarn_index);
+
+	std::map<std::pair<uint32_t, std::string>, uint32_t> face_yarn_mappings;
+
+	for(auto &f : mesh.faces){
+		uint32_t fid = uint32_t(&f - &mesh.faces[0]);
+		std::string name = mesh.library[f.type] + ' ' + face_variant[fid];
+		if(name_to_code_idx.count(name)){
+			auto &cf = code.faces[name_to_code_idx[name]];
+			for(uint32_t i = 0; i < cf.edges.size(); ++i){
+				if(cf.edges[i].yarns.empty()) continue;
+				sm::Mesh::FaceEdge fe;
+				fe.face = fid; fe.edge = i;
+				uint32_t yi = fe_to_yarn_index[fe];
+				std::string yns = cf.edges[i].yarns;
+				std::istringstream stream(yns);
+				std::vector<std::string> tokens{std::istream_iterator<std::string>{stream},std::istream_iterator<std::string>{}};
+				for(auto yn : tokens){
+					auto fy = std::make_pair(fid, yn);
+					if(!face_yarn_mappings.count(fy)){
+						face_yarn_mappings[fy] = yi;
+					}
+					if(face_yarn_mappings[fy] != yi){
+						//throw std::runtime_error("face yarn carrier mapping is not consistent");
+						std::wcout << "face yarn carrier mapping is not consistent" << std::endl;
+						return false;
+					}
+				}
+			}
+		}
+	}
+
+	// Layer hints
+	std::vector<int> layer_mapping, total_layer_mapping;
+	layer_mapping.assign(mesh.faces.size(), 0);
+	total_layer_mapping.assign(mesh.faces.size(), 1);
+	for (auto& h : mesh.hints) {
+		if (h.type == sm::Mesh::Hint::Layer) {
+			layer_mapping[h.lhs.face] = std::get<std::pair<int,int>>(h.rhs).first;
+			total_layer_mapping[h.lhs.face] = std::get<std::pair<int, int>>(h.rhs).second;
+		}
+	}
+	MachineState machine;
+	machine.total_layers = 1; 
+	mesh.total_instructions.clear();
+	// go by order, plug translate by and hint index to get knitout instruction
+	for(auto const &fi : mesh.total_order){
+        
+        sm::Code::Face const  *cf = nullptr;
+        if(fi.first != -1U){
+            auto f_ = mesh.faces[fi.first];
+            std::string name = mesh.library[f_.type] + ' ' + face_variant[fi.first];
+            if(name_to_code_idx.count(name)){
+                cf = &code.faces[name_to_code_idx[name]];
+            }
+        }
+        for(auto xmap : edge_map){
+			if(xmap.second != 1) continue;
+			auto x = xmap.first;
+            if(x.face == fi.first){
+                // if yarn in, insert yarn
+                if(cf && cf->edges[x.edge].direction == sm::Code::Face::Edge::In && !cf->edges[x.edge].yarns.empty()){
+                    sm::Instr in_op;
+                    in_op.op = sm::Instr::In;
+                    in_op.yarns = cf->edges[x.edge].yarns;
+                    in_op.face_instr = fi; 
+					in_op.face_instr.second--;
+					
+					auto fy = std::make_pair(fi.first, cf->edges[x.edge].yarns);
+					if(face_yarn_mappings.count(fy) == 0){
+						throw std::runtime_error("face yarn carrier mapping not encountered before?");
+					}
+					in_op.yarns = "Y" + std::to_string(face_yarn_mappings[fy]);
+
+					machine.make(in_op, mesh, code);
+                    mesh.total_instructions.emplace_back(in_op);
+               		edge_map[xmap.first] = 0;
+				}
+            }
+        }
+        
+		if(fi.first == -1U){ // pick from instruction stream
+			//TODO: Are xfers in the intsruction stream layer agnostic? Yes, for now.
+			assert(fi.second < mesh.move_instructions.size());
+			auto xfer_op = mesh.move_instructions[fi.second];
+			assert(xfer_op.op == sm::Instr::Xfer);
+			xfer_op.face_instr = fi;
+		
+			machine.make(xfer_op, mesh, code);
+			mesh.total_instructions.emplace_back(xfer_op);
+		}
+		else{
+			if(!face_translation.count(fi.first)) {
+				std::cerr << "Mesh is not sufficiently hinted, total order missing " << std::endl; break;
+			}
+
+			std::string signature = mesh.library[mesh.faces[fi.first].type] +  ' ' + (face_variant.count(fi.first) ? face_variant[fi.first] : "");
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			if(fi.second >= l.instrs.size()){
+				assert(false && "Invalid instruction index for face."); // should be verified earlier.
+			}
+			int t = face_translation[fi.first];
+			auto ins = l.instrs[fi.second];
+			ins.face_instr = fi;
+			ins.translate(t);
+			if(ins.is_loop() && !ins.yarns.empty()){
+				auto fy = std::make_pair(fi.first, ins.yarns);
+				if(face_yarn_mappings.count(fy) == 0){
+					throw std::runtime_error("face yarn carrier mapping not encountered before?");
+				}
+				ins.yarns = "Y" + std::to_string(face_yarn_mappings[fy]);
+			}
+			int face_layer = layer_mapping[fi.first]; // If not annotated, always 0
+			int total_layers = total_layer_mapping[fi.first]; //if not annotated, always 1
+			machine.total_layers = total_layers;
+			std::vector<sm::Instr> p1,p2;
+			if(ins.needs_front_shuffle()) machine.shuffle_front(face_layer, &p1, &p2);
+			else if(ins.needs_back_shuffle()) machine.shuffle_back(face_layer, &p1, &p2);
+			ins = ins.in_layer(face_layer, machine.total_layers);
+			machine.make(ins, mesh, code);
+			
+			for(auto x: p1) mesh.total_instructions.emplace_back(x);
+			for(auto x: p2) mesh.total_instructions.emplace_back(x);
+			mesh.total_instructions.emplace_back(ins);
+			
+		}
+        for(auto xmap : edge_map){
+			if(xmap.second != 1) continue;
+			auto x = xmap.first;
+            if(x.face == fi.first){
+                // if yarn in, insert yarn
+                if(cf && fi.second == cf->instrs.size()-1 && cf->edges[x.edge].direction == sm::Code::Face::Edge::Out && !cf->edges[x.edge].yarns.empty()){
+                    sm::Instr out_op;
+                    out_op.op = sm::Instr::Out;
+					out_op.face_instr = fi;
+					out_op.face_instr.second++;
+					
+					auto fy = std::make_pair(fi.first, cf->edges[x.edge].yarns);
+					if(face_yarn_mappings.count(fy) == 0){
+						throw std::runtime_error("face yarn carrier mapping not encountered before?");
+					}
+					out_op.yarns = "Y" + std::to_string(face_yarn_mappings[fy]);
+					machine.make(out_op, mesh, code);
+                    mesh.total_instructions.emplace_back(out_op);
+               		edge_map[xmap.first] = 0;
+                }
+            }
+        }
+	} // fi loop
+
+	return true;
+}
+
+
+// if is_fully_hinted is true, checks also if mesh is fully hinted
+// else only checks if hints are consistent
+bool sm::verify(sm::Mesh const &mesh, sm::Library const &library, sm::Code const &code, std::vector<sm::Mesh::Hint> *_offenders,  bool is_fully_hinted){
+	std::cout << "----------------- Start constraint verification ---------------- " << std::endl;
+
+	assert(_offenders);
+	std::vector<sm::Mesh::Hint> &offenders = *_offenders;
+
+	offenders.clear();
+	// TODO fill this up with offending hints
+
+	// process all the hints into easy to access formats
+	std::map<std::string, uint32_t> name_to_code_idx;
+	std::map<std::string, uint32_t> name_to_lib_idx;
+	std::map<uint32_t, std::string> face_variant;
+	std::map<int32_t, int32_t> face_translation;
+	for(auto const &c : code.faces){
+		name_to_code_idx[c.key()] = uint32_t(&c - &code.faces[0]);
+	}
+	for(auto const &f : library.faces){
+		name_to_lib_idx[f.key()] = uint32_t(&f - &library.faces[0]);
+	}
+
+
+
+	// ----------------- hint verification -------------
+	// Variant hints:
+	for(auto h : mesh.hints){
+		// TODO check that variant hints are consistent
+		if(h.type == sm::Mesh::Hint::Variant){
+			if(face_variant.count(h.lhs.face) && face_variant[h.lhs.face] != std::get<std::string>(h.rhs)){
+				std::cerr << "[Variant] Hints for face " << h.lhs.face << " are inconsistent: " << face_variant[h.lhs.face] << ", " << std::get<std::string>(h.rhs) << std::endl;
+				offenders.emplace_back(h);
+			}
+			std::string signature = mesh.library[mesh.faces[h.lhs.face].type] + ' ' + std::get<std::string>(h.rhs);
+			if(!name_to_code_idx.count(signature)){
+				std::cerr << "Variant hint for face does not exist in code library. Signature:" << signature << std::endl;
+				offenders.emplace_back(h);
+			}
+			else{
+				face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
+			}
+		}
+	}
+
+	
+	auto face_to_code_key = [&](const sm::Mesh::Face &f)->std::string{
+		std::string variant = "";
+		if(face_variant.count(uint32_t(&f- &mesh.faces[0]))){
+			variant = face_variant[uint32_t(&f - &mesh.faces[0])];
+		}
+		std::string signature = mesh.library[f.type] + ' ' + variant;
+		return signature;
+	};
+
+	// faces are associated with code signatures that exist in the code library
+	if(is_fully_hinted){
+		for(auto const &f : mesh.faces){
+			std::string signature = face_to_code_key(f);
+			if(!name_to_code_idx.count(signature)){
+			// nothing offends, just missing hint -- can create an empty hint signature to indicate which face is missing?
+			std::cerr << "Code does not exist for face signature " << mesh.library[f.type] << " code signature " << signature << std::endl;
+			return false;
+			}
+		}
+	}
+
+	// Types of offences:
+	// 1. Variant: Face has a variant name that does not exists
+	// 2. Variant: Face has a variant name that is inconsistent with resource hints. 
+	// 3. Resource: Edge has a resource hint that is inconsistent with other edge resource hints 
+	// 4. Resource: Edge has a resource hint that is inconsistent with connections.
+	
+	{
+		// 1.
+		for(auto const &h : mesh.hints){
+			if(h.type != sm::Mesh::Hint::Variant) continue;
+			std::string variant_name = std::get<std::string>(h.rhs);
+			auto f = mesh.faces[h.lhs.face];
+			std::string signature = mesh.library[f.type] + " " + variant_name;
+			if(!name_to_code_idx.count(signature)){
+				std::cerr << "Variant name does not exist for signature " << signature << std::endl;
+				offenders.emplace_back(h); // variant name
+			}
+		}
+		
+
+	// Resource hints
+	for(auto h: mesh.hints){
+		if(h.type == sm::Mesh::Hint::Resource){
+			const sm::Mesh::Face &f = mesh.faces[h.lhs.face];
+			std::string signature = face_to_code_key(f);
+			if(!name_to_code_idx.count(signature)) continue; // resource exists, variant doesn't exist
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			if(l.edges.size() != f.size()){
+				// resource hint is not offending, code and face don't match -- must be caught much earlier than this...
+				std::cerr <<"Code face and mesh face have different number of edges." << std::endl;
+				return false;
+			}
+			const sm::BedNeedle bn = std::get<sm::BedNeedle>(h.rhs);
+			const sm::BedNeedle bn_template = l.edges[h.lhs.edge].bn;
+			if(bn_template.dontcare()) continue;
+			
+			if constexpr(false && bn.bed != bn_template.bed){ //in the layer world, do we still care about beds lining up? Can always move loop to the right bed as long as indices line up
+				offenders.emplace_back(h); // edge resource conflicts with variant.
+				std::cerr << "Template and assigned bed don't match. Template:" << bn_template.bed << " assigned: " << bn.bed << std::endl;
+				// also find variant hint for this face and add it to offence.
+				for(auto hh : mesh.hints){
+					if(hh.type == sm::Mesh::Hint::Variant && hh.lhs.face == h.lhs.face){
+						std::cerr << "\t Also flagging variant hint " << hh.to_string() << std::endl;
+						offenders.emplace_back(hh);
+					}
+				}
+			}
+			int offset = int(bn.location() - bn_template.location());
+			if( face_translation.count(h.lhs.face) && face_translation[h.lhs.face] != offset){
+				std::cerr <<"Resource hints are not consistent!" << h.lhs.face << "/" << h.lhs.edge<< std::endl;
+				std::cerr <<"\tOld translation: " << face_translation[h.lhs.face] << " new translation: " << offset << std::endl;
+				std::cerr <<"\tLoc Template: " << bn_template.location() << " Hint: " << bn.location() << std::endl;
+
+				offenders.emplace_back(h);
+
+			}
+			face_translation[h.lhs.face] = offset;
+		}
+	}
+	// all faces have a resource hint
+	for(auto &f : mesh.faces){
+		if(!face_translation.count(uint32_t(&f - &mesh.faces[0])) && is_fully_hinted){
+			// no offenders, missing hints
+			std::cerr << "All faces have not been hinted. "<< &f - &mesh.faces[0] << std::endl;
+			//return false;
+		}
+	}
+
+
+	std::vector<std::string> carriers;
+	{
+		// Go over all the yarn carriers that appear in each face code
+		// to generate a carrier use string
+		for(auto const &f : mesh.faces){
+			std::string signature = face_to_code_key(f);
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			for(auto c : l.carriers){
+				if(std::find(carriers.begin(), carriers.end(), c) == carriers.end()){
+					carriers.emplace_back(c);
+				}
+			}
+		}
+		// Check that carriers are globally consistent
+		for(auto const &f : mesh.faces){
+			std::string signature = face_to_code_key(f);
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			for(uint32_t k = 1; k < l.carriers.size(); ++k){
+				auto d1 = std::distance(carriers.begin(), std::find(carriers.begin(), carriers.end(),l.carriers[k-1]));
+				auto d2 = std::distance(carriers.begin(), std::find(carriers.begin(), carriers.end(), l.carriers[k]));
+				if(d2 < d1){
+					// maybe this should be a wrong variant offence TODO
+					std::cerr << "Local face carrier order not consistent with global order. " << std::endl;
+					//return false;
+				}
+			}
+		}
+	}
+
+	// Order hints
+	{
+
+		//check for consistency independent of total order for verification purposes
+		{
+			std::map<sm::Mesh::FaceEdge, uint32_t> face_instr_idx;
+			for(auto const &h : mesh.hints){
+				if(h.type == sm::Mesh::Hint::Order){
+					auto rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
+					if(face_instr_idx.count(h.lhs)){
+					}
+					else{
+						face_instr_idx[h.lhs] = uint32_t(face_instr_idx.size());
+					}
+					if(face_instr_idx.count(rhs)){
+					}
+					else{
+						face_instr_idx[rhs] = uint32_t(face_instr_idx.size());
+					}
+				}
+			}
+			std::set<std::pair<uint32_t, uint32_t>> partials;
+			for(auto const &h : mesh.hints){
+				if(h.type == sm::Mesh::Hint::Order){
+					auto rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
+					partials.insert(std::make_pair(face_instr_idx[h.lhs], face_instr_idx[rhs]));
+				}
+			}
+			std::vector<uint32_t> sequence;
+			if(!partial_order_to_sequence(partials, &sequence)){
+				//TODO find offending hints
+				std::cerr << "Instruction hints have a cycle. " << std::endl;
+				return false;
+			}
+			
+		}
+		// respect total order, as long as total order is consistent, this should be consistent
+		auto order = mesh.total_order;
+		if(order.size()){
+			for(auto const &h: mesh.hints){
+				if(h.type == sm::Mesh::Hint::Order){
+					std::pair<uint32_t, uint32_t> before, after;
+					before.first = h.lhs.face;
+					before.second = h.lhs.edge;
+					after.first = (std::get<sm::Mesh::FaceEdge>(h.rhs)).face;
+					after.second = (std::get<sm::Mesh::FaceEdge>(h.rhs)).edge;
+					auto a_it = std::find(order.begin(), order.end(), after);
+					auto b_it = std::find(order.begin(), order.end(), before);
+					if(a_it == order.end()){
+						std::cerr <<"Instruction (after) " << after.first << "/" << after.second << " is not in total order." << std::endl;
+						std::cerr << "Hint: " << h.to_string() << std::endl;
+						offenders.emplace_back(h);
+					}
+					if(b_it == order.end()){
+						std::cerr << "Instruction (before) " << before.first << "/" << before.second << " is not in total order." << std::endl;
+						offenders.emplace_back(h);
+					}
+					if(std::distance(order.begin(), a_it) < std::distance(order.begin(), b_it)){
+						std::cerr << "Order hint inconsistent with total order " << std::endl;
+						std::cout << "\tbefore: " << before.first << "/" << before.second << " after: " << after.first << "/" << after.second << std::endl;
+						std::cout << "\tbefore-dist: " << std::distance(order.begin(), b_it) << " after-dist: " << std::distance(order.begin(), a_it) << std::endl;
+						offenders.emplace_back(h);
+						//return false;
+					}
+				}
+			}
+		}
+	}
+
+	// sanity of total order
+	{
+
+		// no repetition
+		{
+			auto order = mesh.total_order;
+			auto it = std::unique(order.begin(), order.end());
+			if(it != order.end()){
+				std::cerr << "Total order has duplicate entries!"  << std::endl;
+				//return false;
+			}
+		}
+		// all face instructions covered
+		for(auto const &f : mesh.faces){
+			std::string signature = face_to_code_key(f);
+			auto const &l = code.faces[name_to_code_idx[signature]];
+			for(uint32_t i = 0; i < l.instrs.size(); ++i){
+				const std::pair<uint32_t, uint32_t> fi = std::make_pair(uint32_t(&f - &mesh.faces[0]), i);
+				auto it = std::find(mesh.total_order.begin(), mesh.total_order.end(), fi);
+				if(it == mesh.total_order.end() && is_fully_hinted){
+					std::cerr << "Total order is incomplete, does not feature face/instr : "<< &f - &mesh.faces[0] << "/" << i << " ." << std::endl;
+					return false;
+				}
+			}
+		}
+		// if total order exists and covers all face/instructions without repetition then it must be acyclic
+	}
+
+	// 4. Check that edge resources line up
+	std::map<sm::Mesh::FaceEdge, uint32_t> face_instrs_idx_map;
+	std::map<uint32_t, sm::Mesh::FaceEdge>	idx_face_instrs_map;
+	std::set<std::pair<uint32_t, uint32_t>> partials;
+	std::vector<uint32_t> sequence;
+	for (auto& h : mesh.hints) {
+		if (h.type == sm::Mesh::Hint::Order) {
+			sm::Mesh::FaceEdge lhs, rhs;
+			lhs = h.lhs;
+			rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
+			//if (lhs.face == rhs.face && lhs.face != -1U) continue;
+			if (!face_instrs_idx_map.count(lhs)) face_instrs_idx_map[lhs] = uint32_t(face_instrs_idx_map.size());
+			if (!face_instrs_idx_map.count(rhs)) face_instrs_idx_map[rhs] = uint32_t(face_instrs_idx_map.size());
+			auto pr = std::make_pair(face_instrs_idx_map[lhs], face_instrs_idx_map[rhs]);
+			partials.insert(pr);
+		}
+	}
+	for (auto& pr : face_instrs_idx_map) {
+		idx_face_instrs_map[pr.second] = pr.first;
+	}
+	partial_order_to_sequence(partials, &sequence);
+	/*{//debug:
+		std::cout << "Instructions sequences: ";
+		for (auto& x : sequence) {
+			auto pr = idx_face_instrs_map[x];
+			std::cout << pr.to_string() << ",";
+		}
+		std::cout << std::endl;
+	}*/
+	for (auto const& c : mesh.connections) {
+		//unused: uint32_t c_id = &c - &mesh.connections[0];
+		// if there exists a resource hint for c.a and a resource hint for c.b and they are inconsistent
+
+		auto ha_it = std::find_if(mesh.hints.begin(), mesh.hints.end(), [&](const sm::Mesh::Hint& h)->bool {return (h.type == sm::Mesh::Hint::Resource && h.lhs == c.a); });
+		auto hb_it = std::find_if(mesh.hints.begin(), mesh.hints.end(), [&](const sm::Mesh::Hint& h)->bool {return (h.type == sm::Mesh::Hint::Resource && h.lhs == c.b); });
+		if (ha_it != mesh.hints.end() && hb_it != mesh.hints.end()) {
+			sm::BedNeedle rhs_a = std::get<sm::BedNeedle>(ha_it->rhs);
+			sm::BedNeedle rhs_b = std::get<sm::BedNeedle>(hb_it->rhs);
+
+			// rhs_a = rhs_a.in_layer(); // from layer hint for : c.a.face
+			// rhs_b = rhs_b.in_layer(); // from layer hint for : c.b.face
+
+			sm::BedNeedle orig_rhs_a = rhs_a;
+			bool is_yarn_connection = false;
+			{
+				std::string aname = mesh.library[mesh.faces[c.a.face].type];
+				std::string bname = mesh.library[mesh.faces[c.b.face].type];
+				assert(name_to_lib_idx.count(aname));
+				assert(name_to_lib_idx.count(bname));
+				auto& fa = library.faces[name_to_lib_idx[aname]];
+				auto& fb = library.faces[name_to_lib_idx[bname]];
+
+				if (fa.edges[c.a.edge].type[0] == 'y') {
+					assert(fb.edges[c.b.edge].type[0] == 'y');
+					is_yarn_connection = true;
+				}
+
+			}
+			
+			// Get code faces for fa and fb
+			// find edge to instruction bounds
+			// find all the transfers that can be applied between these two instructions
+			// apply them and check...
+			std::string aname = face_to_code_key(mesh.faces[c.a.face]);
+			std::string bname = face_to_code_key(mesh.faces[c.b.face]);
+			if (name_to_code_idx.count(aname) && name_to_code_idx.count(bname)) {
+				auto ca = code.faces[name_to_code_idx[aname]]; //c.a
+				auto cb = code.faces[name_to_code_idx[bname]]; //c.b
+				sm::Mesh::FaceEdge a_fe, b_fe;
+				a_fe.face = a_fe.edge = -1U; b_fe.face = b_fe.edge = -1U;
+				if (!is_yarn_connection) {
+					// loop connection
+					for (auto& e : ca.loop_instruction_to_edge_connections) {
+						if (e.second == c.a.edge) {
+							a_fe.face = c.a.face;
+							a_fe.edge = e.first;
+						}
+					}
+					for (auto& e : cb.loop_edge_to_instruction_connections) {
+						if (e.first == c.b.edge) {
+							b_fe.face = c.b.face;
+							b_fe.edge = e.second;
+						}
+					}
+					uint32_t start = -1U; uint32_t end = -1U;
+					for (uint32_t i = 0; i < sequence.size(); ++i) {
+						auto fi = idx_face_instrs_map[sequence[i]];
+						if (fi.face == a_fe.face && fi.edge == a_fe.edge) start = i;
+						if (fi.face == b_fe.face && fi.edge == b_fe.edge) end = i;
+					}
+					sm::BedNeedle start_bn = rhs_a;
+					if (start != -1U && end != -1U) {
+						for (uint32_t k = start + 1; k <= end; ++k) {
+							//if src k is start_bn, update start_bn to target of k
+							auto fe = idx_face_instrs_map[sequence[k]];
+							if (fe.face == -1U && fe.edge < mesh.move_instructions.size()) {
+								auto xins = mesh.move_instructions[fe.edge];
+								if (xins.src == start_bn) {
+									start_bn = xins.tgt;
+									//std::cout << "debug: applying transfer instruction " << xins.to_string() << " between " << rhs_a.to_string() << " and " << rhs_b.to_string() << std::endl;
+								}
+							}
+						}
+					}
+					rhs_a = start_bn;
+				 }
+				else {
+					// yarn connection
+					for (auto& e_ : ca.yarn_instruction_to_edge_connections) {
+						auto e = e_.second;
+						{
+							if (e.second == c.a.edge) {
+								a_fe.face = c.a.face;
+								a_fe.edge = e.first;
+							}
+						}
+					}
+					for (auto& e_ : cb.yarn_edge_to_instruction_connections) {
+						auto e = e_.second;
+						{
+							if (e.first == c.b.edge) {
+								b_fe.face = c.b.face;
+								b_fe.edge = e.second;
+							}
+						}
+					}
+					uint32_t start = -1U; uint32_t end = -1U;
+					for (uint32_t i = 0; i < sequence.size(); ++i) {
+						auto fi = idx_face_instrs_map[sequence[i]];
+						if (fi.face == a_fe.face && fi.edge == a_fe.edge) start = i;
+						if (fi.face == b_fe.face && fi.edge == b_fe.edge) end = i;
+					}
+					sm::BedNeedle start_bn = rhs_a;
+					if (start != -1U && end != -1U) {
+						for (uint32_t k = start + 1; k <= end; ++k) {
+							//if src k is start_bn, update start_bn to target of k
+							auto fe = idx_face_instrs_map[sequence[k]];
+							if (fe.face == -1U && fe.edge < mesh.move_instructions.size()) {
+								auto xins = mesh.move_instructions[fe.edge];
+								if (xins.src.bed == start_bn.bed && std::abs(xins.src.location() - start_bn.location()) < 0.5) {
+									start_bn.bed = xins.tgt.bed;
+									start_bn.needle = xins.tgt.needle;
+									std::cout << "debug(yarn): applying transfer instruction " << xins.to_string() << " between " << rhs_a.to_string() << " and " << rhs_b.to_string() << std::endl;
+								}
+							}
+						}
+					}
+					rhs_a = start_bn;
+				}
+			}
+
+			if (is_yarn_connection && std::abs(rhs_a.location() - rhs_b.location()) > 0.5f) {
+				std::cerr << "(Yarn)Slack conflict. Location: " << rhs_a.location() << "(orig: "<< orig_rhs_a.location() <<")  -> " << rhs_b.location()  << std::endl;
+				offenders.emplace_back(*ha_it);
+				offenders.emplace_back(*hb_it);
+			}
+			else if (!is_yarn_connection && (std::abs(rhs_a.location() - rhs_b.location()) > 0.5f || rhs_a.bed != rhs_b.bed)) {
+				std::cerr << "(Loop)Slack conflict. " << rhs_a.to_string() << "(orig: " << orig_rhs_a.to_string() << ")  -> " << rhs_b.to_string() << std::endl;
+				offenders.emplace_back(*ha_it);
+				offenders.emplace_back(*hb_it);
+			}
+		}
+	}
+
+	}
+	
+	if(is_fully_hinted && offenders.empty()){
+	
+		sm::Mesh m = mesh;
+		compute_total_instructions(m, library, code);
+		MachineState machine; // this machine has no concept of layers
+
+		for(auto ins : m.total_instructions){
+			if(!machine.make(ins, m, code)){
+				std::cerr << "Machine could not create " << ins.to_string() << " without violating constraints" << std::endl;
+				return false;
+			}
+		}
+		if(!machine.empty()){
+			std::cerr << "Loops leftover at the very end" << std::endl;
+		}
+		std::cout << "Total passes recorded: " << machine.passes.size() << std::endl;
+		/*
+		// we reached here, test that machine sim is okay
+		// go by order, plug translate by and hint index to get knitout instruction
+		for(auto const &fi : mesh.total_order){
+			sm::Instr ins;
+			if(fi.first == -1U){
+				ins = mesh.move_instructions[fi.second];
+				ins.face_instr = fi;
+			}
+			else{
+
+				assert(face_translation.count(fi.first));
+				std::string signature = mesh.library[mesh.faces[fi.first].type] +  ' ' + (face_variant.count(fi.first) ? face_variant[fi.first] : "");
+				auto const &l = code.faces[name_to_code_idx[signature]];
+				if(fi.second >= l.instrs.size()){
+					assert(false && "Invalid instruction index for face."); // should be verified earlier.
+				}
+				int t = face_translation[fi.first];
+				ins = l.instrs[fi.second];
+				ins.translate(t);
+				ins.face_instr  = fi; 
+
+			}
+			if(!machine.make(ins, mesh, code)){
+				std::cerr << "Machine could not create instruction " << ins.to_string() << " without violating constraints!" << std::endl;
+				return false;
+			}
+		}
+		if(!machine.empty()){
+			std::cerr << "Loops leftover at the very end. " << std::endl;
+			//return false; // maybe this is an error
+		}
+		std::cout << "Total passes recorded:  " << machine.passes.size() << std::endl;
+		*/
+	}
+
+	// --------------End of hint verification -------------
+	//debug
+	std::cout << "Offending hints: " << std::endl;
+	for (auto& h : offenders) {
+		std::cout << h.to_string() << std::endl;
+	}
+	std::cout << "----------------- End of constraint verification ---------------- " << std::endl;
+	// if !is_fully_hinted, then true only indicates that no inconsistency exists
+	if(!offenders.empty()) return false;
+	return true;
+}
+
+bool sm::compute_total_order(sm::Mesh &mesh, sm::Code const &code, sm::Library const &library){
+	std::cout << "Computing total order..." << std::endl;
+	mesh.total_order.clear();
+	std::vector<uint32_t> sequence;
+	std::map<sm::Mesh::FaceEdge, uint32_t> face_instr_idx;
+	std::map<uint32_t, sm::Mesh::FaceEdge> instr_face_map;
+	std::set<std::pair<uint32_t, uint32_t>> partials;
+	//check for consistency independent of total order for verification purposes
+	
+	// go through all the faces and just add them as-is
+	// process all the hints into easy to access formats
+	std::map<std::string, uint32_t> name_to_code_idx;
+	std::map<uint32_t, std::string> face_variant;
+
+	for(auto const &c : code.faces){
+		name_to_code_idx[c.key()] = uint32_t(&c - &code.faces[0]);
+	}
+	for(auto h : mesh.hints){
+		if(h.type == sm::Mesh::Hint::Variant){
+			if(face_variant.count(h.lhs.face) && face_variant[h.lhs.face] != std::get<std::string>(h.rhs)){
+				std::cerr << "[Variant] Hints for face " << h.lhs.face << " are inconsistent: " << face_variant[h.lhs.face] << ", " << std::get<std::string>(h.rhs) << std::endl;
+				return false;
+			}
+			face_variant[h.lhs.face] = std::get<std::string>(h.rhs);
+		}
+	}
+
+
+	for(uint32_t fid = 0; fid < mesh.faces.size(); ++fid){
+		if(face_variant.count(fid) == 0){
+			std::cout << "Variant missing for face " << fid << std::endl;
+			return false;
+		}
+	}
+	for(uint32_t fid = 0; fid < mesh.faces.size(); ++fid){
+		std::string name = mesh.library[mesh.faces[fid].type] + " " + face_variant[fid];
+		if(!name_to_code_idx.count(name)){
+			std::cout << "Code/Variant missing for face " << fid << std::endl;
+			return false;
+		}
+		uint32_t cid = name_to_code_idx[name];
+		auto const &c = code.faces[cid];
+		if(!c.instrs.empty()){
+			for(uint32_t k  = 0; k < c.instrs.size(); ++k){
+				sm::Mesh::FaceEdge fe; fe.face = fid; fe.edge = k;
+				uint32_t idx = uint32_t(face_instr_idx.size());
+				face_instr_idx[fe] = idx;
+				instr_face_map[idx] = fe;
+			}
+		}
+	}
+
+	// add instructions from the xfer stream
+	for(uint32_t i = 0; i < mesh.move_instructions.size(); ++i){
+		sm::Mesh::FaceEdge fe; fe.face = -1U; fe.edge = i;
+		uint32_t idx = uint32_t(face_instr_idx.size());
+		face_instr_idx[fe] = idx; 
+		instr_face_map[idx] = fe;
+	}
+
+	{
+		for(auto const &h : mesh.hints){
+			if(h.type == sm::Mesh::Hint::Order){
+				auto rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
+				if(face_instr_idx.count(h.lhs)){
+				}
+				else {
+					std::cerr << "hint includes face instruction that does not exist. " << h.to_string() << std::endl;
+					return false;
+				}
+				if(face_instr_idx.count(rhs)){
+				}
+				else {
+					std::cerr << "hint includes face instruction that does not exist. " << h.to_string() << std::endl;
+					return false;
+				}
+
+			}
+		}
+		for(auto const &h : mesh.hints){
+			if(h.type == sm::Mesh::Hint::Order){
+				auto rhs = std::get<sm::Mesh::FaceEdge>(h.rhs);
+				partials.insert(std::make_pair(face_instr_idx[h.lhs], face_instr_idx[rhs]));
+			}
+		}
+	}
+	// also use the dependency order
+	if(false){
+		int count = int(partials.size());
+		int tcount = 0;
+		std::vector<uint32_t> order;
+		if (can_order_faces(mesh, library, &order)) {
+			sm::Mesh::FaceEdge last_fe; last_fe.face = -1U; last_fe.edge = -1U;
+			for (auto& o : order) {
+				std::string name = mesh.library[mesh.faces[o].type] + " " + face_variant[o];
+				if (!name_to_code_idx.count(name)) {
+					std::cout << "*Code/Variant missing for face " << o << std::endl;
+					return false;
+				}
+				uint32_t cid = name_to_code_idx[name];
+				auto const& c = code.faces[cid];
+				if (!c.instrs.empty()) {
+					if (last_fe.face != -1U && last_fe.edge != -1U) {
+						sm::Mesh::FaceEdge fe; fe.face = o; fe.edge = 0;
+						partials.insert(std::make_pair(face_instr_idx[last_fe], face_instr_idx[fe]));
+						tcount++;
+					}
+					if (c.instrs.size() == 1) {
+						sm::Mesh::FaceEdge fe; fe.face = o; fe.edge = 0;
+						last_fe = fe;
+					}
+					for (uint32_t k = 1; k < c.instrs.size(); ++k) {
+						sm::Mesh::FaceEdge pe, ne;
+						pe.face = o; pe.edge = k - 1;
+						ne.face = o; ne.edge = k;
+						partials.insert(std::make_pair(face_instr_idx[pe], face_instr_idx[ne]));
+						last_fe = ne;
+						tcount++;
+					}
+				}
+			}
+		}
+		std::cout << "Added " << partials.size() - count << " partial constraints from dependencies and total insertions : " << tcount << std::endl;
+
+	}
+
+	{
+		std::vector<std::vector<uint32_t>> all_sequences;
+		std::vector<uint32_t> _sequence;
+		bool order_is_okay = partial_order_to_sequence(partials, &_sequence);
+		if (order_is_okay) {
+			if (partial_order_to_sequences(partials, all_sequences, 1)) { //DEBUG 1, else 1000
+				for (auto& order : all_sequences) {
+					mesh.total_order.clear();
+					for (auto const& x : order) {
+						std::pair<uint32_t, uint32_t> o;
+						auto fe = instr_face_map[x]; o.first = fe.face; o.second = fe.edge;
+						mesh.total_order.emplace_back(o);
+					}
+
+					std::vector<Mesh::Hint> offenders;
+					bool strict = true;
+					bool verified = verify(mesh, library, code, &offenders, strict);
+
+					if (verified) {
+						std::cout << "Succeeded with sequence " << &order - &all_sequences[0] << " / " << all_sequences.size() << " and have order of size " << mesh.total_order.size() << std::endl;
+						return true;
+					}
+
+				}
+			}
+			std::cerr << "Tried 1000 possible total orders, need more ordering constraints.." << std::endl;
+		}
+		else {
+			std::cout << "Did not succeed since partial order seem to be cyclic." << std::endl;
+		}
+	}
+
+	std::cout << "Did not succeed but has order of size " << mesh.total_order.size() << std::endl;
+	// not verified..
+
+	return false;
+}
+
+
+bool sm::compute_code_graph(sm::Code &code){
+	// doesn't really need library but maybe should be tested against both
+	// verify that instructions are valid (does this need to ssa?)
+	// todo: also verify yarn positions
+
+
+	for (auto &face : code.faces){
+
+
+		// TODO check that split correctly produces two entries
+		std::set< std::pair<uint32_t, uint32_t> > edge_to_edge_connections;
+		std::set< std::pair<uint32_t, uint32_t> > edge_to_instructions_connections;
+		std::set< std::pair<uint32_t, uint32_t> > instructions_to_edge_connections;
+		std::set< std::pair<uint32_t, uint32_t> > instructions_to_instructions_connections;
+
+		std::set< std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_edge_to_edge_connections;
+		std::set< std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_edge_to_instructions_connections;
+		std::set< std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_instructions_to_edge_connections;
+		std::set< std::pair<std::string, std::pair<uint32_t, uint32_t>>> yarn_instructions_to_instructions_connections;
+
+
+	
+		std::set<sm::BedNeedle> temporaries, incoming, outgoing;
+		std::set<std::string>  yarn_incoming, yarn_used,  yarn_outgoing;
+		std::map<std::string, sm::BedNeedle> yarn_locations;
+		std::set<std::string> carriers; // todo split into incoming and outgoing carriers
+		for (auto const &edge : face.edges){
+			if(edge.direction == Code::Face::Edge::In && edge.type[0] == 'l' && !edge.bn.dontcare()){
+				incoming.insert(edge.bn);
+			}
+			else if(edge.direction == Code::Face::Edge::Out &&  edge.type[0] == 'l' && !edge.bn.dontcare()){
+				outgoing.insert(edge.bn);
+			}
+			else if(edge.direction == Code::Face::Edge::In && edge.type[0] == 'y' && !edge.bn.dontcare()){
+				std::istringstream str(edge.yarns);
+				std::string yarn;
+				while(str >> yarn){
+					yarn_incoming.insert(yarn);
+					yarn_locations[yarn] = edge.bn;
+				}
+			}
+			else if(edge.direction == Code::Face::Edge::Out &&  edge.type[0] == 'y' && !edge.bn.dontcare()){
+				std::istringstream str(edge.yarns);
+				std::string yarn;
+				while(str >> yarn){
+					yarn_outgoing.insert(yarn);
+				}
+			}
+
+			if(!edge.yarns.empty()) {
+				carriers.insert(edge.yarns);
+				// also include split up carriers
+				std::istringstream str(edge.yarns);
+				std::string yarn;
+				while(str >> yarn) {
+					carriers.insert(yarn);
+				}
+			}
+		}
+		auto get_loop_in_edge_id = [&face](sm::BedNeedle bn)->uint32_t{
+			for(auto const &edge : face.edges){
+				if(edge.type[0] == 'y') continue;
+				if(edge.direction != sm::Code::Face::Edge::In) continue;
+				if(edge.bn == bn) return uint32_t(&edge - &face.edges[0]);
+			}
+			return -1U;
+		};
+		auto get_loop_out_edge_id = [&face](sm::BedNeedle bn)->uint32_t{
+			for(auto const &edge : face.edges){
+				if(edge.type[0] == 'y') continue;
+				if(edge.direction != sm::Code::Face::Edge::Out) continue;
+				if(edge.bn == bn) return uint32_t(&edge - &face.edges[0]);
+			}
+			return -1U;
+		};
+
+		auto has_common_yarns = [](std::string y1, std::string y2)->bool{
+			std::istringstream s1(y1);
+			std::istringstream s2(y2);
+			std::vector<std::string> t1{std::istream_iterator<std::string>{s1}, std::istream_iterator<std::string>{}};
+			std::vector<std::string> t2{std::istream_iterator<std::string>{s2}, std::istream_iterator<std::string>{}};
+			for(auto y : t1){
+				if(std::find(t2.begin(), t2.end(), y) != t2.end()){
+					return true;
+				}
+			}
+
+			return false;
+		};
+		auto get_yarn_in_edge_id = [&](std::string yarns)->uint32_t{
+			for(auto const &edge : face.edges){
+				if(edge.type[0] == 'l') continue;
+				if(edge.direction != sm::Code::Face::Edge::In) continue;
+				if(has_common_yarns(yarns, edge.yarns)) return uint32_t(&edge - &face.edges[0]);
+			}
+			return -1U;
+		};
+		auto get_yarn_out_edge_id = [&](std::string yarns)->uint32_t{
+
+
+			for(auto const &edge : face.edges){
+				if(edge.type[0] == 'l') continue;
+				if(edge.direction != sm::Code::Face::Edge::Out) continue;
+				if(has_common_yarns(yarns, edge.yarns)) return uint32_t(&edge - &face.edges[0]);
+			}
+
+			return -1U;
+		};
+		
+
+		// Loops
+		{
+			for(auto const &ins : face.instrs){
+				if(!ins.src.dontcare() && !(incoming.count(ins.src) || temporaries.count(ins.src))){
+					throw std::runtime_error("src bed-needle " + ins.src.to_string() + " is not an input resource:" + face.key());
+				}
+				if(incoming.count(ins.src)){
+					// 2.edge to instruction 
+					{
+						uint32_t e_id = get_loop_in_edge_id(ins.src);
+						if(e_id == -1U){
+							// input resource has already been tested
+							std::cerr << "Input resource missing?" << std::endl;
+						}
+						edge_to_instructions_connections.insert(std::make_pair(e_id, uint32_t(&ins - &face.instrs[0])));
+					}
+					
+					incoming.erase(ins.src);
+				}
+				if(temporaries.count(ins.src)){
+					// 3.instruction to instruction (but which one)
+					// track back from the last instruction, pick the one whose tgt/tgt2 is ins.src
+					{
+						uint32_t i_id = uint32_t(&ins - &face.instrs[0]);
+						assert(i_id >= 1 && "First instruction must not use a temporary, right?");
+						uint32_t i_id2 = -1U;
+						for(int k = i_id-1; k >= 0; k--){
+							auto const &ins2  = face.instrs[k];
+							if(ins2.tgt == ins.src){
+								i_id2 = k;
+								break;
+							}
+							else if(ins2.tgt2 == ins.src){
+								i_id2 = k;
+								break;
+							}
+						}
+						assert(i_id2 != -1U && "some instruction should have created this temporary");
+						instructions_to_instructions_connections.insert(std::make_pair(i_id2, i_id));
+					}
+					temporaries.erase(ins.src);
+				}
+				if(!ins.tgt.dontcare()) {
+					temporaries.insert(ins.tgt);
+				}
+				if(!ins.tgt2.dontcare()) {
+					temporaries.insert(ins.tgt2);
+				}
+			}
+			for(auto bn : outgoing){
+				if(!temporaries.count(bn) && !incoming.count(bn))
+					throw std::runtime_error("tgt bed-needle [" + bn.to_string() + "] is not produced by code:" + face.key());
+				if(temporaries.count(bn)){
+					// 4.instruction to edge
+					uint32_t e_id = get_loop_out_edge_id(bn);
+					uint32_t i_id = -1U;
+					// does this make sense for drops? (yes, because otherwise doesn't exist in outgoing?
+					// find the last instruction that produced this outgoing
+					if(!face.instrs.empty()){
+						for(int k = int(face.instrs.size()-1); k >= 0; k--){
+							auto ins =face.instrs[k];
+							if(ins.tgt == bn || ins.tgt2 == bn){
+								i_id = k;
+								break;
+							}
+						}
+					}
+					assert(i_id != -1U && "some instruction must produce this outgoing edge");
+					instructions_to_edge_connections.insert(std::make_pair( i_id, e_id));
+				}
+				if(incoming.count(bn)){// this is an edge to edge connection
+					uint32_t e_id = get_loop_out_edge_id(bn);
+					uint32_t e_id_in = get_loop_in_edge_id(bn);
+					edge_to_edge_connections.insert(std::make_pair(e_id_in, e_id));
+
+				}
+
+				incoming.erase(bn);
+				temporaries.erase(bn);
+			}
+		} // end of loops
+		auto find_ins_with_yarn_before = [&](uint32_t id, std::string y)->uint32_t{
+			
+			for(int k = (int)id-1; k >=0; k--){
+				auto ins2 = face.instrs[k];
+				if(has_common_yarns(y, ins2.yarns)) return k;
+			}
+			return -1U;
+		};
+		// Yarns
+		{
+			//std::cout << "Face: " << face.key() << std::endl;
+			for(auto const &ins : face.instrs){
+				//std::cout <<"\t Instr: " << ins.to_string() << std::endl;
+				std::set<std::string> ins_yarns;
+				{
+					std::istringstream str(ins.yarns);
+					std::string yarn;
+					while(str >> yarn) {
+						ins_yarns.insert(yarn);
+					}
+				}
+				if(ins.op == sm::Instr::In){
+					for(auto y : ins_yarns){
+						if(yarn_incoming.count(y)){
+							throw std::runtime_error("In inserts yarn that was already incoming.");
+						}
+						yarn_used.insert(y);
+					}
+				}
+				else if(ins.op == sm::Instr::Out){
+					for(auto y : ins_yarns){
+						uint32_t prev_id = find_ins_with_yarn_before(uint32_t(&ins - &face.instrs[0]), y);
+						yarn_used.erase(y);
+						if(prev_id != -1U){
+							yarn_instructions_to_instructions_connections.insert(std::make_pair(y,std::make_pair(prev_id, uint32_t(&ins - &face.instrs[0]))));
+						}
+						else if(yarn_incoming.count(y)){
+							auto eid = get_yarn_in_edge_id(y);
+							if(eid != -1U){
+							yarn_edge_to_instructions_connections.insert(std::make_pair(y,std::make_pair(eid, uint32_t(&ins - &face.instrs[0]))));
+							}
+							yarn_incoming.erase(y);
+						}
+						yarn_locations[y] = sm::BedNeedle();
+					}
+				}
+				else if(/*!ins.tgt.dontcare() &&*/ ins.is_loop()){
+					for(auto y : ins_yarns){
+						if(yarn_incoming.count(y)){
+							// move the yarn_location based on instruction direction on the tgt location 
+							if(ins.direction == sm::Instr::Left){
+								// TODO is the yarn to the right of the tgt location?
+								yarn_locations[y] = ins.tgt;
+								yarn_locations[y].nudge = -1;
+							} else {
+								// TODO is the yarn to the left of the tgt location?
+								yarn_locations[y] = ins.tgt;
+								yarn_locations[y].nudge = 1;
+							}
+							yarn_incoming.erase(y);
+							yarn_used.insert(y);
+							// Edge to Instruction
+							// find the edge that has this yarn 
+							auto eid = get_yarn_in_edge_id(y);
+							if(eid == -1U){
+								assert(false);
+							}
+							// Yarn edge to instructions
+							yarn_edge_to_instructions_connections.insert(std::make_pair(y, std::make_pair(eid, uint32_t(&ins - &face.instrs[0]))));
+						}
+						else if(yarn_used.count(y)){
+							if(ins.direction == sm::Instr::Left){
+								// TODO is the yarn to the right of the tgt location?
+								yarn_locations[y] = ins.tgt;
+								yarn_locations[y].nudge = -1;
+							} else {
+								// TODO is the yarn to the right of the tgt location?
+								yarn_locations[y] = ins.tgt;
+								yarn_locations[y].nudge = 1;
+							}
+							yarn_used.insert(y);
+							// Instruction to Instruction
+							// find the last instruction that used this yarns
+							uint32_t i_id = uint32_t(&ins - &face.instrs[0]);
+							uint32_t prev_id = find_ins_with_yarn_before(i_id, y);
+							
+							assert(prev_id != -1U); //found it somewhere, right?
+							yarn_instructions_to_instructions_connections.insert(std::make_pair(y,std::make_pair(prev_id, i_id)));
+						}
+					}
+				}
+			//	std::cout << "\t Used:"; for(auto y : yarn_used) std::cout << y << ","; std::cout << std::endl;
+			}
+			for(auto yo : yarn_outgoing){
+				if(yarn_used.count(yo)){
+					// find the last instruction that used this :
+					// add a yarn_instructions_to_edge connection 
+					auto eid = get_yarn_out_edge_id(yo);
+
+					uint32_t i_id = find_ins_with_yarn_before(uint32_t(face.instrs.size()), yo);
+					if(i_id != -1U){
+					yarn_instructions_to_edge_connections.insert(std::make_pair(yo,std::make_pair(i_id, eid)));
+					}
+					else{
+						std::cerr << "Yarn on the outgoing edge " << yo <<" not used by anything?" << std::endl;
+						std::cerr << "Face " << face.name << std::endl;
+						std::cerr << "Yarn " << yo << " was not used?" << std::endl;
+						std::cout << "Used yarns: ";for(auto x : yarn_used) std::cout << x << ","; std::cout << std::endl;
+
+						assert(false);
+					}
+				}
+				else if(yarn_incoming.count(yo)){
+					// check that yarn_edge_to_edge exists?
+					auto eid1 = get_yarn_in_edge_id(yo);
+					auto eid2 = get_yarn_out_edge_id(yo);
+					if(eid1 != -1U && eid2 != -1U){
+					yarn_edge_to_edge_connections.insert(std::make_pair(yo,std::make_pair(eid1, eid2)));
+					}
+					else{
+						std::cerr << "Yarn missing in outgoing.." << std::endl;
+						std::cerr << "Face " << face.name << std::endl;
+						std::cerr << "Yarn " << yo << " was not not in incoming?" << std::endl;
+						std::cout << "Used yarns: ";for(auto x : yarn_used) std::cout << x << ","; std::cout << std::endl;
+
+						assert(false);
+					}
+				}
+				else{
+					std::cerr << "Face " << face.name << std::endl;
+					std::cerr << "Yarn " << yo << " was not used/not in incoming" << std::endl;
+					std::cout << "Used yarns: ";for(auto x : yarn_used) std::cout << x << ","; std::cout << std::endl;
+					assert(false && "has to fall in one of those buckets");
+				}
+			}
+		} // end of yarns
+
+		{
+			// copy all this informaton to code face in some way
+			face.loop_edge_to_edge_connections = edge_to_edge_connections;
+			face.loop_edge_to_instruction_connections = edge_to_instructions_connections;
+			face.loop_instruction_to_edge_connections = instructions_to_edge_connections;
+			face.loop_instruction_to_instruction_connections = instructions_to_instructions_connections;
+
+			face.yarn_edge_to_edge_connections = yarn_edge_to_edge_connections;
+			face.yarn_edge_to_instruction_connections = yarn_edge_to_instructions_connections;
+			face.yarn_instruction_to_edge_connections = yarn_instructions_to_edge_connections;
+			face.yarn_instruction_to_instruction_connections = yarn_instructions_to_instructions_connections;
+
+		}
+
+
+		if(!temporaries.empty()){
+			std::string err = "";
+			for(auto bn : temporaries) err += " " + bn.to_string();
+			throw std::runtime_error("Temporary locations [ " + err + " ] are not cleared in " + face.key());
+		}
+
+
+	}
+
+	std::cout << "Computed code graph using code faces " << code.faces.size()  <<  std::endl;
+	return true;
+}
+
+
+
+// knitout from faces
+// assumes hinting is complete and valid
+std::string sm::knitout(sm::Mesh &mesh, sm::Library const &library, sm::Code const &code){
+
+	compute_total_instructions(mesh, library, code);
+	
+	std::set<std::string> carriers;
+	for(auto &ins : mesh.total_instructions){
+		std::istringstream stream(ins.yarns);
+		std::vector<std::string> tokens{std::istream_iterator<std::string>{stream},
+			std::istream_iterator<std::string>{}};
+		for(auto yarns : tokens){
+			carriers.insert(yarns);
+		} 
+	}
+	// --------------Code Generation------------------------
+	// todo run machine here? verifier already did..
+	std::string knitout_string = "";
+	// knitout header
+	knitout_string += ";!knitout-2\n";
+
+
+	{
+		// append all the carriers
+		knitout_string += ";;Carriers: ";
+		for(auto c : carriers) knitout_string += c + " ";
+		knitout_string += "\n";
+	}
+	// what to blame:
+	knitout_string += ";auto-generated from smobj, see sm.cpp,  sm::knitout()\n";
+
+
+	MachineState machine;
+	// go by order, plug translate by and hint index to get knitout instruction
+	for(auto &ins : mesh.total_instructions){
+		machine.make(ins, mesh, code);
+		knitout_string += ins.to_string();
+		knitout_string += ";"+std::to_string(ins.face_instr.first+1)+"/"+std::to_string(ins.face_instr.second+1);
+		knitout_string += "\n";
+	}
+
+	return knitout_string;
+}
+
+glm::vec3 sm::face_centroid(uint32_t fid, sm::Mesh const &mesh){
+	glm::vec3 pos(0.f);
+	for(auto v : mesh.faces[fid]){
+		pos += mesh.vertices[v];
+	}
+	if(mesh.faces[fid].empty()) return pos;
+	pos /= (float)(mesh.faces[fid].size());
+
+	return pos;
+}
+
+
