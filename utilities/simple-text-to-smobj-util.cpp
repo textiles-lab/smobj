@@ -8,6 +8,7 @@
 #include <sstream>
 #include <list>
 #include <iterator>
+#include <bitset>
 
 
 
@@ -32,18 +33,49 @@ struct FaceWithDirection{
 	Flipped flip; 
 };
 
+// --------- a potential fix for a safe way to get the edge. 
+// struct EdgeResultForSquareFaces {
+// 	sm::Library::Face::Edge bottom_edge;
+// 	sm::Library::Face::Edge right_edge;
+// 	sm::Library::Face::Edge top_edge;
+// 	sm::Library::Face::Edge left_edge;
+
+// 	uint32_t bottom_edge_index;
+// 	uint32_t right_edge_index; 
+// 	uint32_t top_edge_index;
+// 	uint32_t left_edge_index;	
+// };
+
+// EdgeResultForSquareFaces get_face_edges_for_square_faces(sm::Library::Face f){
+// 	EdgeResultForSquareFaces result;
+// 	for (int i = 0; i < f.edges.size(); i++){
+// 		sm::Library::Face::Edge::Direction v = f.edges.at(i).direction;
+// 		std::string type = f.edges.at(i).type;
+
+
+// 		if (type.substr(2).compare("y")){ // top or bottom
+// 			if (v == sm::Library::Face::Edge::Direction::In){
+
+// 			}
+
+// 		}
+// 		else{//left or right
+
+// 		}
+// 	}
+// }
+
+
 
 int main(int argc, char **argv) {
 	if (argc != 4) {
 		std::cerr <<
-			"Usage:\n\t./text-to-smobj <in.txt> <library.sf> <out.smobj>\n"
+			"Usage:\n\t./simple-text-to-smobj-util <in.txt> <library.sf> <out.smobj>\n"
 			" Where in.txt looks something like this:\n"
-			"    face-name e1 e2 e3 e4\n"
-			"    face-name e2 e3 . .\n"
+			" 	sh sh sh\n"
+			"	sh sh sh\n"
 			"    ...\n"
-			" That is, each line has a face name followed by variables indicating\n"
-			" where that face's edge connect. '.' is a special variable meaning\n"
-			" 'does not connect'"
+			" That is, each line has a list of shorthand names \n"
 			<< std::endl;
 		return 1;
 	}
@@ -59,7 +91,8 @@ int main(int argc, char **argv) {
 	// AD: change the map to work with the new datastruture 
 	// map of string to list of FaceWithDirections
 	// the string is the input, the list is the potential interpertations.
-	std::unordered_map< std::string, std::list<FaceWithDirection> > shorthand_to_face;
+	// check the edges for determinging direction. 
+	std::unordered_map< std::string, std::unordered_map<std::string, FaceWithDirection> > shorthand_to_face;
 	
 	for (auto const &f : library.faces) {
 		FaceWithDirection face_to_add;
@@ -71,44 +104,51 @@ int main(int argc, char **argv) {
 			face_to_add.flip = Flipped::front;
 		}
 		else { // there is a derivation
-			if (f.derive.by & 001) {
+			if (f.derive.by == 0b001) {
 				face_to_add.direction = Direction::left;
 				face_to_add.flip = Flipped::front;
 			}
-			if (f.derive.by & 010) {
+			else if (f.derive.by == 0b010) {
 				face_to_add.direction = Direction::right;
 				face_to_add.flip = Flipped::back;
 			}
-			if (f.derive.by & 011) {
+			else if (f.derive.by == 0b011) {
 				face_to_add.direction = Direction::left;
 				face_to_add.flip = Flipped::back;
 			}
-			
-
 		}
 
 		//the first two characters as the alias
 		std::string shorthand = face_to_add.face.shorthand;
-		
-		//
+
 
 		// if the lookup fails, we will create a list
-		
-  		std::unordered_map<std::string,std::list<FaceWithDirection>>::iterator got = shorthand_to_face.find(shorthand);
+  		std::unordered_map< std::string, std::unordered_map<std::string, FaceWithDirection>>::iterator got = shorthand_to_face.find(shorthand);
 		// std::cout << shorthand << std::endl;
 		if (got == shorthand_to_face.end()){
 			
-			auto ret = shorthand_to_face.emplace(shorthand, std::list<FaceWithDirection>{});
+			auto ret = shorthand_to_face.emplace(shorthand, std::unordered_map<std::string, FaceWithDirection>{});
 			assert(ret.second && "No duplicate face shorthand names.");
 
-			ret.first->second.emplace_back(face_to_add);
+			
+			std::string key = face_to_add.face.name;
+			for (sm::Library::Face::Edge e : face_to_add.face.edges){
+				key += e.direction;
+				key += e.type;
+			}
+
+			ret.first->second.insert({key, face_to_add});
 
 		}
 		else { 	// if the lookup is successful, we add it to the list. 
-			std::list<FaceWithDirection>  face_list = got->second;
-			face_list.emplace_back(face_to_add);
+			std::unordered_map<std::string, FaceWithDirection>  face_list = got->second;
+			std::string key = face_to_add.face.name;
+			for (sm::Library::Face::Edge e : face_to_add.face.edges){
+				key += e.direction;
+				key += e.type;
+			}
+			face_list.insert({key, face_to_add});
 			got->second = face_list;
-			std::cout << "face name: " << face_to_add.face.name << "face sh: " << face_to_add.face.shorthand << " amount: " << face_list.size() << std::endl;
 
 
 		
@@ -116,16 +156,7 @@ int main(int argc, char **argv) {
 
 	}
 	std::cout << "library load successful" << std::endl;
-  	std::unordered_map<std::string,std::list<FaceWithDirection> >::iterator got = shorthand_to_face.find("dc");
-	if (got != shorthand_to_face.end()){
-		
-		for (auto f : got->second){
-			std::cout << f.face.name << std::endl;
-			
-
-		}
-	}
-
+	
 
 	//library templates, to be used in layout:
 	std::vector< std::vector< glm::vec2 > > templates;
@@ -136,12 +167,20 @@ int main(int argc, char **argv) {
 
 	//----------------------------
 
+
 	{ //parse text file:
-		std::unordered_map< std::string, uint32_t > name_to_L;
-		auto get_L = [&mesh,&name_to_L,&templates](sm::Library::Face const &face) -> uint32_t {
-			auto f = name_to_L.find(face.name);
-			if (f != name_to_L.end()) return f->second;
-			name_to_L.insert(std::make_pair(face.name, mesh.library.size()));
+		std::unordered_map<std::string, uint32_t> key_to_L;
+		auto get_L = [&mesh, &key_to_L, &templates](sm::Library::Face const &face) -> uint32_t {
+			std::string key = face.name;
+			for (auto const &e : face.edges) {
+				key += std::to_string(static_cast<int>(e.direction));
+				key += e.type;
+			}
+			auto f = key_to_L.find(key);
+			if (f != key_to_L.end()) {
+				return f->second;
+			}
+			key_to_L[key] = mesh.library.size();
 			mesh.library.emplace_back(face.key());
 			templates.emplace_back();
 			for (auto const &e : face.edges) {
@@ -177,12 +216,6 @@ int main(int argc, char **argv) {
 			// for (std::string tok : toks)
 			reverse_lines.emplace_front(l);
 		}
-		for (std::list<std::string> line: reverse_lines){
-			for (std::string sh : line){
-				std::cout << sh << std::endl;
-
-			}
-		}
 
 		
 		unsigned int rowIndex = 1; 
@@ -191,14 +224,11 @@ int main(int argc, char **argv) {
 		for (; rowIndex <= reverse_lines.size(); rowIndex++) {
 			auto l = std::next(reverse_lines.begin(),rowIndex-1);
 			std::list<std::string> line(*l);
-			std::cout << "line size " << line.size() << std::endl; 
 			uint32_t previous_face = -1U;
 			uint32_t previous_right_edge = -1U;
 			// uint32_t previous_left_edge = -1U;
 			current_row_top_connections.clear();
 			
-
-
 
 			for(unsigned int i = 0; i < l->size(); i++) {
 				//capture the stitch
@@ -214,10 +244,40 @@ int main(int argc, char **argv) {
 				// AD: from the face with direction list, find the right face based on the state
 				// if a right handed crocheter: 
 				// the 
-				std::list<FaceWithDirection> const face_with_direction_list = f->second;
-
+				std::unordered_map<std::string, FaceWithDirection> const face_with_direction_map = f->second;
+				sm::Library::Face face;
 				//we will do only one type of face for now
-				sm::Library::Face const face = f->second.front().face;
+				for (auto& [face_name, face_element] : face_with_direction_map){
+					Direction d = face_element.direction;
+					std::string input_amount = face_element.face.edges.at(0).type.substr(1);
+					std::cout << "fe name: "<< face_element.face.name << " " << std::bitset<8>(face_element.face.derive.by) << " " << input_amount << std::endl;						
+
+					Flipped f = face_element.flip;
+					if (rowIndex > 1){
+						if (rowIndex % 2 == 0){
+							if (d == Direction::left && f == Flipped::back && input_amount == "2"){
+								face = face_element.face;
+								std::cout << "for face "<< i<< ", rowIndex " << rowIndex<< ", face "<< face.name << " is chosen " <<face_element.face.edges.at(0).type << std::endl;	
+							}
+						}
+						else {
+							if (d == Direction::right && f == Flipped::front && input_amount == "2"){
+								face = face_element.face;
+								std::cout << "for face "<< i<< ", rowIndex " << rowIndex<< ", face "<< face.name << " is chosen " << face_element.face.edges.at(0).type<< std::endl;								}
+						}
+						
+					}
+					else{
+						if (d == Direction::right && f == Flipped::front && input_amount == "1"){
+								face = face_element.face;
+								std::cout << "for face "<< i<< ", rowIndex " << rowIndex<< ", face "<< face.name << " is chosen " << face_element.face.edges.at(0).type<<std::endl;	
+							}
+						
+
+					}
+				
+				}
+				
 
 				mesh.faces.emplace_back();
 				sm::Mesh::Face &m_face = mesh.faces.back();
@@ -282,7 +342,6 @@ int main(int argc, char **argv) {
 					con_bot.b.face = current_face;
 					con_bot.b.edge = bottom_edge;
 					// con.flip = true;
-					std::cout << "A: "<< con_bot.a.face << " B: "<<con_bot.b.face <<std::endl;
 					mesh.connections.emplace_back(con_bot);
 					previous_row_top_connections.erase(previous_row_top_connections.begin());
 
