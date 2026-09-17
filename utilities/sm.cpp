@@ -2041,5 +2041,6 @@ void sm::derive_face(sm::Library::Face const &face, uint8_t by_bits, sm::Library
 			);
 		}
 	}
+	face2.derive.by = by_bits | face.derive.by;
 
 }
