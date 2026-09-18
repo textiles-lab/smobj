@@ -219,10 +219,17 @@ int main(int argc, char **argv) {
 		unsigned int rowIndex = 1; 
 		std::list< sm::Mesh::Connection> previous_row_top_connections;
 		std::list< sm::Mesh::Connection> current_row_top_connections;
+
+		sm::Mesh::Connection previous_left_chain_top;
+		sm::Mesh::Connection previous_right_chain_top;
+		bool has_previous_left_chain = false;
+		bool has_previous_right_chain = false;
+
 		uint32_t left_edge = 3;
 		uint32_t right_edge = 1; 
 		uint32_t top_edge = 2;
 		uint32_t bottom_edge = 0;
+		
 		for (; rowIndex <= reverse_lines.size(); rowIndex++) {
 			auto l = std::next(reverse_lines.begin(),rowIndex-1);
 			std::list<std::string> line(*l);
@@ -230,6 +237,8 @@ int main(int argc, char **argv) {
 			uint32_t previous_right_edge = -1U;
 			// uint32_t previous_left_edge = -1U;
 			current_row_top_connections.clear();
+			sm::Mesh::Connection current_left_chain_top;
+    		sm::Mesh::Connection current_right_chain_top;
 			
 
 			for(unsigned int i = 0; i < l->size(); i++) {
@@ -254,9 +263,22 @@ int main(int argc, char **argv) {
 						mesh.vertices.emplace_back(std::numeric_limits<float>::quiet_NaN());
 					}
 
-					uint32_t chain_face_index = mesh.faces.size() - 1;					
+					uint32_t chain_face_index = mesh.faces.size()-1;	
 					previous_face = chain_face_index;
-					previous_right_edge = right_edge;
+					previous_right_edge = right_edge;				
+					if (has_previous_left_chain) {
+						sm::Mesh::Connection con = previous_left_chain_top;
+
+						con.b.face = chain_face_index;
+						con.b.edge = bottom_edge;
+
+						mesh.connections.emplace_back(con);
+					}
+
+					current_left_chain_top.a.face = chain_face_index;
+					current_left_chain_top.a.edge = top_edge;
+					current_left_chain_top.flip = true;
+
 
 					std::cout << "added chain to start" << std::endl;
 				}
@@ -381,6 +403,21 @@ int main(int argc, char **argv) {
 					con.b.face = current_face;
 					con.b.edge = left_edge;
 					con.flip = true;
+					
+					if (has_previous_right_chain) {
+						sm::Mesh::Connection vertical = previous_right_chain_top;
+						vertical.b.face = current_face;
+						vertical.b.edge = bottom_edge;
+
+						mesh.connections.emplace_back(vertical);
+
+					}
+					
+					current_right_chain_top.a.face = current_face;
+					current_right_chain_top.a.edge = top_edge;
+					current_right_chain_top.flip = true;
+
+
 					std::cout << "added chain to end" << std::endl;
 				}
 				
@@ -388,7 +425,11 @@ int main(int argc, char **argv) {
 
 			
 			previous_row_top_connections = current_row_top_connections;
+			previous_left_chain_top = current_left_chain_top;
+			previous_right_chain_top = current_right_chain_top;
 			
+			has_previous_left_chain = true;
+			has_previous_right_chain = true;
 		}
 
 		if (!open_edges.empty()) {
