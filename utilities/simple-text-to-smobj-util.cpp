@@ -219,7 +219,9 @@ int main(int argc, char **argv) {
 		unsigned int rowIndex = 1; 
 		std::list< sm::Mesh::Connection> previous_row_top_connections;
 		std::list< sm::Mesh::Connection> current_row_top_connections;
-
+		std::list< sm::Mesh::Connection> first_row_bottom_connections;
+		sm::Mesh::Connection first_turning_chain_bottom_connection;
+		sm::Mesh::Connection previous_bottom_chain_right;
 		sm::Mesh::Connection previous_left_chain_top;
 		sm::Mesh::Connection previous_right_chain_top;
 		bool has_previous_left_chain = false;
@@ -265,7 +267,13 @@ int main(int argc, char **argv) {
 
 					uint32_t chain_face_index = mesh.faces.size()-1;	
 					previous_face = chain_face_index;
-					previous_right_edge = right_edge;				
+					previous_right_edge = right_edge;
+					if (rowIndex == 1){
+						first_turning_chain_bottom_connection.a.face = chain_face_index;
+						first_turning_chain_bottom_connection.a.edge = bottom_edge;
+						first_turning_chain_bottom_connection.flip = true;
+						// mesh.connections.emplace_back(first_turning_chain_bottom_connection);
+					}				
 					if (has_previous_left_chain) {
 						sm::Mesh::Connection con = previous_left_chain_top;
 
@@ -343,7 +351,7 @@ int main(int argc, char **argv) {
 				//edge 1 is right
 				//edge 3 is left
 				//maybe theres a better way to get this? 
-				
+								
 				if (previous_face != -1U) {
 					mesh.connections.emplace_back();
 					sm::Mesh::Connection &con = mesh.connections.back();
@@ -362,6 +370,13 @@ int main(int argc, char **argv) {
 				con_top.a.face = current_face;
 				con_top.a.edge = top_edge;
 				con_top.flip = true;
+				if (rowIndex == 1){
+					first_row_bottom_connections.emplace_back();
+					sm::Mesh::Connection &con_bottom = first_row_bottom_connections.back();
+					con_bottom.a.face = current_face;
+					con_bottom.a.edge = bottom_edge;
+					con_bottom.flip = true;
+				}
 				
 
 				if (rowIndex >= 2 && !previous_row_top_connections.empty()){ //its not the first row so we should connect to the row below. 
@@ -421,7 +436,55 @@ int main(int argc, char **argv) {
 				}
 				
 			}
+			//attach the bottom chains
+			if (rowIndex == 1){
+				sm::Library::Face bottom_left_turn_chain = shorthand_to_face.at("chTurnBot").at("ch_edge1-u-*l0-ly+ly*x").face;
+				mesh.faces.emplace_back();
+				sm::Mesh::Face &turn_face = mesh.faces.back();
 
+				turn_face.type = get_L(bottom_left_turn_chain);
+
+				for (uint32_t i = 0; i < bottom_left_turn_chain.edges.size();++i) {
+					turn_face.emplace_back(mesh.vertices.size());
+					mesh.vertices.emplace_back(std::numeric_limits<float>::quiet_NaN());
+				}
+
+				uint32_t bottom_left_turn_face_index = mesh.faces.size()-1;
+				first_turning_chain_bottom_connection.b.face = bottom_left_turn_face_index;
+				first_turning_chain_bottom_connection.b.edge = top_edge;
+				mesh.connections.emplace_back(first_turning_chain_bottom_connection);
+				
+				sm::Library::Face bottom_chain_face = shorthand_to_face.at("ch").at("ch-d-*x-ly+l1+ly").face;
+				uint32_t previous_bottom_chain_face = bottom_left_turn_face_index;
+				for (sm::Mesh::Connection con : first_row_bottom_connections){
+					mesh.faces.emplace_back();
+					sm::Mesh::Face &m_face = mesh.faces.back();
+					m_face.type = get_L(bottom_chain_face);
+					for (uint32_t i = 0; i < bottom_chain_face.edges.size(); ++i) {
+						m_face.emplace_back(mesh.vertices.size());
+						mesh.vertices.emplace_back(std::numeric_limits< float >::quiet_NaN());
+					}
+					uint32_t current_face = mesh.faces.size()-1;
+					con.b.face = current_face;
+					con.b.edge = top_edge;
+					mesh.connections.emplace_back(con);
+					if (previous_bottom_chain_face != -1U) {
+						mesh.connections.emplace_back();
+						sm::Mesh::Connection &chain_con_bot = mesh.connections.back();
+
+						chain_con_bot.a.face = previous_bottom_chain_face;
+						chain_con_bot.a.edge = right_edge;
+
+						chain_con_bot.b.face = current_face;
+						chain_con_bot.b.edge = left_edge;
+
+						chain_con_bot.flip = true;
+					}
+
+					previous_bottom_chain_face = current_face;
+					
+				}
+			}
 			
 			previous_row_top_connections = current_row_top_connections;
 			previous_left_chain_top = current_left_chain_top;
@@ -444,7 +507,6 @@ int main(int argc, char **argv) {
 			uint32_t current_face = mesh.faces.size()-1;
 			con.b.face = current_face;
 			con.b.edge = bottom_edge;
-			// con.flip = true;
 			mesh.connections.emplace_back(con);
 		}
 
