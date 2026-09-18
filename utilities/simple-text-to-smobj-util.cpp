@@ -382,7 +382,6 @@ int main(int argc, char **argv) {
 					} 
 					else {
 						chain_face = shorthand_to_face.at("chTurnTop").at("ch_edge2-u+-ly*x*l0+ly").face;
-
 					}
 					
 					mesh.faces.emplace_back();
@@ -403,7 +402,7 @@ int main(int argc, char **argv) {
 					con.b.face = current_face;
 					con.b.edge = left_edge;
 					con.flip = true;
-					
+
 					if (has_previous_right_chain) {
 						sm::Mesh::Connection vertical = previous_right_chain_top;
 						vertical.b.face = current_face;
@@ -430,6 +429,23 @@ int main(int argc, char **argv) {
 			
 			has_previous_left_chain = true;
 			has_previous_right_chain = true;
+		}
+
+		//implement the caps on the faces
+		sm::Library::Face cap_face = shorthand_to_face.at("cp").at("cap-l2*x*x*x").face;
+		for (sm::Mesh::Connection con : previous_row_top_connections){
+			mesh.faces.emplace_back();
+			sm::Mesh::Face &m_face = mesh.faces.back();
+			m_face.type = get_L(cap_face);
+			for (uint32_t i = 0; i < cap_face.edges.size(); ++i) {
+				m_face.emplace_back(mesh.vertices.size());
+				mesh.vertices.emplace_back(std::numeric_limits< float >::quiet_NaN());
+			}
+			uint32_t current_face = mesh.faces.size()-1;
+			con.b.face = current_face;
+			con.b.edge = bottom_edge;
+			// con.flip = true;
+			mesh.connections.emplace_back(con);
 		}
 
 		if (!open_edges.empty()) {
