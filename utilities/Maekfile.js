@@ -66,6 +66,7 @@ const sm_objs = [
 const utilities = [
 	maek.LINK( [ maek.CPP('knitout-to-smobj.cpp'), ...sm_objs ], 'knitout-to-smobj' ),
 	maek.LINK( [ maek.CPP('text-to-smobj.cpp'), ...sm_objs ], 'text-to-smobj' ),
+	maek.LINK( [ maek.CPP('simple-text-to-smobj-util.cpp'), ...sm_objs ], 'simple-text-to-smobj-util' ),
 	maek.LINK( [ maek.CPP('smobj-to-yarns.cpp'), ...sm_objs ], 'smobj-to-yarns' ),
 	maek.LINK( [ maek.CPP('simplify-yarns.cpp'), ...sm_objs ], 'simplify-yarns' ),
 	maek.LINK( [ maek.CPP('yarn-units.cpp'), ...sm_objs ], 'yarn-units' ),
