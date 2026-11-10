@@ -1,3 +1,5 @@
+// compile with g++ -std=c++17 -Wall -Werror -g -DGLM_ENABLE_EXPERIMENTAL -O2 -o simple-text-to-smobj-util simple-text-to-smobj-util.cpp sm.o    
+
 #include "sm.hpp"
 
 #include <string>
@@ -68,9 +70,9 @@ struct FaceWithDirection{
 
 
 int main(int argc, char **argv) {
-	if (argc != 4) {
+	if (argc != 5) {
 		std::cerr <<
-			"Usage:\n\t./simple-text-to-smobj-util <in.txt> <library.sf> <out.smobj>\n"
+			"Usage:\n\t./simple-text-to-smobj-util <in.txt> <library.sf> <out.smobj> <old|new>\n"
 			" Where in.txt looks something like this:\n"
 			" 	sh sh sh\n"
 			"	sh sh sh\n"
@@ -82,6 +84,7 @@ int main(int argc, char **argv) {
 	std::string in_text = argv[1];
 	std::string in_library = argv[2];
 	std::string out_smobj = argv[3];
+	std::string version = argv[4];
 	std::cout << "Will use connections in '" << in_text << "' and faces in library '" << in_library << "' to create smobj '" << out_smobj << "'" << std::endl;
 
 	//-------------------------
@@ -162,395 +165,594 @@ int main(int argc, char **argv) {
 
 	sm::Mesh mesh;
 
+
 	
 
 	//----------------------------
-
-
-	{ //parse text file:
-		std::unordered_map<std::string, uint32_t> key_to_L;
-		auto get_L = [&mesh, &key_to_L, &templates](sm::Library::Face const &face) -> uint32_t {
-			std::string key = face.name;
-			for (auto const &e : face.edges) {
-				key += std::to_string(static_cast<int>(e.direction));
-				key += e.type;
-			}
-			auto f = key_to_L.find(key);
-			if (f != key_to_L.end()) {
-				return f->second;
-			}
-			key_to_L[key] = mesh.library.size();
-			mesh.library.emplace_back(face.key());
-			templates.emplace_back();
-			for (auto const &e : face.edges) {
-				templates.back().emplace_back(e.vertex);
-			}
-			return mesh.library.size()-1;
-		};
-
-		std::unordered_map< std::string, uint32_t > open_edges;		
-		
-		// the first line is the last set of stitches,
-		// so reverse the line order for building from the bottom up
-		std::ifstream text(in_text);
-		std::string line;
-		std::list<std::list<std::string>> reverse_lines;
-		// std::vector< std::string > toks;
-		while (std::getline(text,line)){
-			{ //trim comments:
-				auto idx = line.find('#');
-				if (idx != std::string::npos) line = line.substr(0,idx);
-			}
-			std::vector< std::string > toks;
-			std::list<std::string> l;
-			{
-				std::string tok;
-				std::istringstream str(line);
-				while (str >> tok) {
-					l.emplace_back(tok);
+	//i want to be able to index on pattern_as_string[rownum][stitchnum]
+	std::vector< std::vector< std::string > > pattern_as_string;
+	if(version == "new"){
+		{ //take the textfile and fill in the candidates
+			std::unordered_map<std::string, uint32_t> key_to_L;
+			auto get_L = [&mesh, &key_to_L, &templates](sm::Library::Face const &face) -> uint32_t {
+				std::string key = face.name;
+				for (auto const &e : face.edges) {
+					key += std::to_string(static_cast<int>(e.direction));
+					key += e.type;
 				}
+				auto f = key_to_L.find(key);
+				if (f != key_to_L.end()) {
+					return f->second;
+				}
+				key_to_L[key] = mesh.library.size();
+				mesh.library.emplace_back(face.key());
+				templates.emplace_back();
+				for (auto const &e : face.edges) {
+					templates.back().emplace_back(e.vertex);
+				}
+				return mesh.library.size()-1;
+			};
+
+			std::unordered_map< std::string, uint32_t > open_edges;		
+			
+			// the first line is the last set of stitches,
+			// so reverse the line order for building from the bottom up
+			std::ifstream text(in_text);
+			std::string line;
+			std::list<std::list<std::string>> reverse_lines;
+			// std::vector< std::string > toks;
+			while (std::getline(text,line)){
+				{ //trim comments:
+					auto idx = line.find('#');
+					if (idx != std::string::npos) line = line.substr(0,idx);
+				}
+				std::vector< std::string > toks;
+				std::list<std::string> l;
+				{
+					std::string tok;
+					std::istringstream str(line);
+					while (str >> tok) {
+						l.emplace_back(tok);
+					}
+				}
+				if (l.size() == 0) continue; //row is empty, so we skip
+				// for (std::string tok : toks)
+				reverse_lines.emplace_front(l);
 			}
-			if (l.size() == 0) continue; //row is empty, so we skip
-			// for (std::string tok : toks)
-			reverse_lines.emplace_front(l);
-		}
-
-		
-		unsigned int rowIndex = 1; 
-		std::list< sm::Mesh::Connection> previous_row_top_connections;
-		std::list< sm::Mesh::Connection> current_row_top_connections;
-		std::list< sm::Mesh::Connection> first_row_bottom_connections;
-		sm::Mesh::Connection last_turning_chain_bottom_connection;
-		sm::Mesh::Connection previous_bottom_chain_right;
-		sm::Mesh::Connection previous_left_chain_top;
-		sm::Mesh::Connection previous_right_chain_top;
-		bool has_previous_left_chain = false;
-		bool has_previous_right_chain = false;
-
-		uint32_t left_edge = 3;
-		uint32_t right_edge = 1; 
-		uint32_t top_edge = 2;
-		uint32_t bottom_edge = 0;
-		
-		for (; rowIndex <= reverse_lines.size(); rowIndex++) {
-			auto l = std::next(reverse_lines.begin(),rowIndex-1);
-			std::list<std::string> line(*l);
-			uint32_t previous_face = -1U;
-			uint32_t previous_right_edge = -1U;
-			// uint32_t previous_left_edge = -1U;
-			current_row_top_connections.clear();
-			sm::Mesh::Connection current_left_chain_top;
-    		sm::Mesh::Connection current_right_chain_top;
+			
+			//pattern_as_string[rownum][stitchnum]
+			for (auto const &rl : reverse_lines) {
+				pattern_as_string.emplace_back(rl.begin(), rl.end());
+			}
 			
 
-			for(unsigned int i = 0; i < l->size(); i++) {
-				//if it is the first stitch, put the turning chain
-				if (i == 0) {
-					sm::Library::Face chain_face;
-					std::cout << "adding chain to start" << std::endl;
-					if (rowIndex % 2 == 0) {
-						chain_face = shorthand_to_face.at("chTurnTop").at("ch_edge2-u--ly+ly*l0*x").face;
+		}
+		//candidates[rownum][stitchnum][faceoption]
+		std::vector< std::vector< std::vector<sm::Library::Face> > > candidates;
+		//std::vector< std::vector< std::vector< std::string > > >  candidates;
+
+
+		//First pass
+		// here we want to gather all possible stitches. 
+		{
+			for (unsigned int i = 0; i < pattern_as_string.size(); i++){
+				std::vector<std::string> row = pattern_as_string.at(i);
+				unsigned int rowNumber = i + 1; 
+				Direction d; 
+				Flipped f;
+				if (rowNumber % 2 == 0){
+					d = Direction::right;
+					f = Flipped::back;
+				}
+				else{
+					d = Direction::left;
+					f = Flipped::front; 
+				}
+				for(unsigned int j = 0; j < row.size(); j++){
+					std::string stitch_token = row.at(j);
+					// get all possible stitch faces
+					auto face_group = shorthand_to_face.find(stitch_token);
+					if (face_group == shorthand_to_face.end()) {
+						std::cerr << "ERROR: face '" << stitch_token << "' does not appear in library." << std::endl;
+						return 1;
 					}
-					else {
-						chain_face = shorthand_to_face.at("chTurnBot").at("ch_edge1-u-*l0-ly+ly*x").face;
+					std::vector< sm::Library::Face> faces_found; 
+					for (auto const &[key,face] : face_group->second){
+						if (face.direction != d || face.flip != f) continue;
+						if (face.face.edges.size() != 4) continue;
+						faces_found.emplace_back(face.face);
 					}
+					candidates[i].emplace_back();
+					for (auto const &p : faces_found) {
+						candidates[i].back().emplace_back(p);
+					}
+					
+					if (candidates[i].back().empty()){
+						std::cerr << "ERROR: stitch '" << stitch_token << "' does not have a 4 sided face that doesnt match" << std::endl;
+						return 1;
+					}
+					
+				}
+			}
+		}
+		
+
+		//second pass
+		{
+			//an vector that represents the stitch order of creation
+			// i was considering building it in the order of creation (zigzag for crochet)
+			// but for the sake of standardizing i did not, but this format will leave the 
+			// option for one to change the order of creation depending on the craft
+			std::vector< std::pair< unsigned int, unsigned int > > stitch_order; 
+
+			//for each row and column, the number here represents the index of the chosen face from
+			// candidates[r][c]. usage is candidates[r][c][face_to_insert]
+			std::vector<std::vector< unsigned int >> face_to_insert; 
+
+			auto face_fits_here = [&](unsigned int r, unsigned int i, sm::Library::Face const &c) -> bool {
+				return true;
+			};
+
+			for (unsigned int r = 0; r < pattern_as_string.size(); ++r) {
+				face_to_insert[r].assign(pattern_as_string[r].size(), -1U);
+				for (unsigned int i = 0; i < pattern_as_string[r].size(); ++i) {
+					stitch_order.emplace_back(r, i);
+				}
+			}
+
+
+			unsigned const int max_steps = 100000; 
+			unsigned int steps = 0; 
+		
+
+			unsigned int stitch_number = 0;
+			unsigned int deepest_reached = 0;
+
+			std::vector<unsigned int> next_try(stitch_order.size(), 0);
+			while (stitch_number < stitch_order.size()){
+				if (steps >= max_steps){
+					std::cerr << "ERROR: backtracking ran out of steps." << std::endl;
+					return 1;
+				}
+				deepest_reached = (unsigned int)std::max(deepest_reached, stitch_number);
+
+				unsigned int r = stitch_order[stitch_number].first;
+				unsigned int c = stitch_order[stitch_number].second;
+
+				std::vector<sm::Library::Face> &current_candidates = candidates[r][c];
+				bool fit_found = false;
+
+				//starting from the candidates that have yet to be tried for this stitch
+				for (unsigned int s = next_try[stitch_number]; s < current_candidates.size(); c++){
+					// if it fits
+					if (face_fits_here(r,c,current_candidates[s])){
+						face_to_insert[r][c] = s;
+						next_try[stitch_number] = c+1;
+						fit_found = true;
+						break;
+					}
+				}
+				
+
+
+				if (fit_found){
+					stitch_number++;
+					steps++;
+					continue;
+				}
+				//if here, there is a stitch where no possible fit is good.
+				// so we must back up
+				//clear the next tries and the face to insert for this stitch
+				next_try[stitch_number] = 0;
+				face_to_insert[stitch_number] = -1U;
+
+				//if we can no longer back up, then we failed to find a pattern
+				if (stitch_number == 0){
+					unsigned int err_r = stitch_order[deepest_reached].first;
+					unsigned int err_c = stitch_order[deepest_reached].second;
+					std::cerr << "ERROR: no possible solution. Reached stitch (" << err_r<< "), (" << err_c<< ")." << std::endl;
+					return 1;
+
+				}
+				stitch_number--;
+				
+			}
+
+		}
+
+
+	}
+	
+	
+	
+	else{
+		{ //parse text file:
+			std::unordered_map<std::string, uint32_t> key_to_L;
+			auto get_L = [&mesh, &key_to_L, &templates](sm::Library::Face const &face) -> uint32_t {
+				std::string key = face.name;
+				for (auto const &e : face.edges) {
+					key += std::to_string(static_cast<int>(e.direction));
+					key += e.type;
+				}
+				auto f = key_to_L.find(key);
+				if (f != key_to_L.end()) {
+					return f->second;
+				}
+				key_to_L[key] = mesh.library.size();
+				mesh.library.emplace_back(face.key());
+				templates.emplace_back();
+				for (auto const &e : face.edges) {
+					templates.back().emplace_back(e.vertex);
+				}
+				return mesh.library.size()-1;
+			};
+
+			std::unordered_map< std::string, uint32_t > open_edges;		
+			
+			// the first line is the last set of stitches,
+			// so reverse the line order for building from the bottom up
+			std::ifstream text(in_text);
+			std::string line;
+			std::list<std::list<std::string>> reverse_lines;
+			// std::vector< std::string > toks;
+			while (std::getline(text,line)){
+				{ //trim comments:
+					auto idx = line.find('#');
+					if (idx != std::string::npos) line = line.substr(0,idx);
+				}
+				std::vector< std::string > toks;
+				std::list<std::string> l;
+				{
+					std::string tok;
+					std::istringstream str(line);
+					while (str >> tok) {
+						l.emplace_back(tok);
+					}
+				}
+				if (l.size() == 0) continue; //row is empty, so we skip
+				// for (std::string tok : toks)
+				reverse_lines.emplace_front(l);
+			}
+
+			
+			unsigned int rowIndex = 1; 
+			std::list< sm::Mesh::Connection> previous_row_top_connections;
+			std::list< sm::Mesh::Connection> current_row_top_connections;
+			std::list< sm::Mesh::Connection> first_row_bottom_connections;
+			sm::Mesh::Connection last_turning_chain_bottom_connection;
+			sm::Mesh::Connection previous_bottom_chain_right;
+			sm::Mesh::Connection previous_left_chain_top;
+			sm::Mesh::Connection previous_right_chain_top;
+			bool has_previous_left_chain = false;
+			bool has_previous_right_chain = false;
+
+			uint32_t left_edge = 3;
+			uint32_t right_edge = 1; 
+			uint32_t top_edge = 2;
+			uint32_t bottom_edge = 0;
+			
+			for (; rowIndex <= reverse_lines.size(); rowIndex++) {
+				auto l = std::next(reverse_lines.begin(),rowIndex-1);
+				std::list<std::string> line(*l);
+				uint32_t previous_face = -1U;
+				uint32_t previous_right_edge = -1U;
+				// uint32_t previous_left_edge = -1U;
+				current_row_top_connections.clear();
+				sm::Mesh::Connection current_left_chain_top;
+				sm::Mesh::Connection current_right_chain_top;
+				
+
+				for(unsigned int i = 0; i < l->size(); i++) {
+					//if it is the first stitch, put the turning chain
+					if (i == 0) {
+						sm::Library::Face chain_face;
+						std::cout << "adding chain to start" << std::endl;
+						if (rowIndex % 2 == 0) {
+							chain_face = shorthand_to_face.at("chTurnTop").at("ch_edge2-u--ly+ly*l0*x").face;
+						}
+						else {
+							chain_face = shorthand_to_face.at("chTurnBot").at("ch_edge1-u-*l0-ly+ly*x").face;
+						}
+
+						mesh.faces.emplace_back();
+
+						sm::Mesh::Face &m_face = mesh.faces.back();
+						m_face.type = get_L(chain_face);
+
+						for (uint32_t e = 0; e < chain_face.edges.size(); ++e){
+							m_face.emplace_back(mesh.vertices.size());
+							mesh.vertices.emplace_back(std::numeric_limits<float>::quiet_NaN());
+						}
+
+						uint32_t chain_face_index = mesh.faces.size()-1;	
+						previous_face = chain_face_index;
+						previous_right_edge = right_edge;
+								
+						if (has_previous_left_chain) {
+							sm::Mesh::Connection con = previous_left_chain_top;
+
+							con.b.face = chain_face_index;
+							con.b.edge = bottom_edge;
+
+							mesh.connections.emplace_back(con);
+						}
+
+						current_left_chain_top.a.face = chain_face_index;
+						current_left_chain_top.a.edge = top_edge;
+						current_left_chain_top.flip = true;
+
+
+						std::cout << "added chain to start" << std::endl;
+					}
+					//capture the stitch
+					std::string stitch_token = *line.begin();
+					line.erase(line.begin());
+					
+
+					auto face_group = shorthand_to_face.find(stitch_token);
+					if (face_group == shorthand_to_face.end()) {
+						std::cerr << "ERROR: face '" << stitch_token << "' does not appear in library." << std::endl;
+						return 1;
+					}
+					// AD: from the face with direction list, find the right face based on the state
+
+					std::unordered_map<std::string, FaceWithDirection> const face_with_direction_map = face_group->second;
+					sm::Library::Face face;
+					//we will do only one type of face for now
+					for (auto& [face_name, face_element] : face_with_direction_map){
+						Direction d = face_element.direction;
+						std::string input_amount = face_element.face.edges.at(0).type.substr(1);
+						std::cout << "fe name: "<< face_element.face.name << " " << std::bitset<8>(face_element.face.derive.by) << " " << input_amount << std::endl;						
+
+						Flipped f = face_element.flip;
+						if (rowIndex > 1){
+							if (rowIndex % 2 == 0){
+								if (d == Direction::right && f == Flipped::back && input_amount == "2"){
+									face = face_element.face;
+									std::cout << "for face "<< i<< ", rowIndex " << rowIndex<< ", face "<< face.name << " is chosen " <<face_element.face.edges.at(0).type << std::endl;	
+								}
+							}
+							else {
+								if (d == Direction::left && f == Flipped::front && input_amount == "2"){
+									face = face_element.face;
+									std::cout << "for face "<< i<< ", rowIndex " << rowIndex<< ", face "<< face.name << " is chosen " << face_element.face.edges.at(0).type<< std::endl;								}
+							}
+							
+						}
+						else{
+							if (d == Direction::left && f == Flipped::front && input_amount == "1"){
+									face = face_element.face;
+									std::cout << "for face "<< i<< ", rowIndex " << rowIndex<< ", face "<< face.name << " is chosen " << face_element.face.edges.at(0).type<<std::endl;	
+								}
+							
+
+						}
+					
+					}
+					
 
 					mesh.faces.emplace_back();
-
 					sm::Mesh::Face &m_face = mesh.faces.back();
-					m_face.type = get_L(chain_face);
+					m_face.type = get_L(face);
 
-					for (uint32_t e = 0; e < chain_face.edges.size(); ++e){
+					for (uint32_t i = 0; i < face.edges.size(); ++i) {
 						m_face.emplace_back(mesh.vertices.size());
+						mesh.vertices.emplace_back(std::numeric_limits< float >::quiet_NaN());
+					}
+					uint32_t current_face = mesh.faces.size()-1;
+					//edge 1 is right
+					//edge 3 is left
+					//maybe theres a better way to get this? 
+									
+					if (previous_face != -1U) {
+						mesh.connections.emplace_back();
+						sm::Mesh::Connection &con = mesh.connections.back();
+
+						con.a.face = previous_face;
+						con.a.edge = previous_right_edge;
+						con.b.face = current_face;
+						con.b.edge = left_edge;
+						con.flip = true;
+					}
+					previous_face = current_face;
+					previous_right_edge = right_edge; 
+
+					current_row_top_connections.emplace_back();
+					sm::Mesh::Connection &con_top = current_row_top_connections.back();
+					con_top.a.face = current_face;
+					con_top.a.edge = top_edge;
+					con_top.flip = true;
+					if (rowIndex == 1){
+						first_row_bottom_connections.emplace_back();
+						sm::Mesh::Connection &con_bottom = first_row_bottom_connections.back();
+						con_bottom.a.face = current_face;
+						con_bottom.a.edge = bottom_edge;
+						con_bottom.flip = true;
+					}
+					
+
+					if (rowIndex >= 2 && !previous_row_top_connections.empty()){ //its not the first row so we should connect to the row below. 
+						sm::Mesh::Connection &con_bot = previous_row_top_connections.front();
+
+						con_bot.b.face = current_face;
+						con_bot.b.edge = bottom_edge;
+						// con.flip = true;
+						mesh.connections.emplace_back(con_bot);
+						previous_row_top_connections.erase(previous_row_top_connections.begin());
+
+					}
+					if(i == l->size() - 1){ //it was the last face, so we place the turn chain
+						std::cout << "adding chain to end" << std::endl;
+						sm::Library::Face chain_face; 
+						if (rowIndex % 2 == 0){
+							chain_face = shorthand_to_face.at("chTurnBot").at("ch_edge1-u+*l0*x+ly-ly").face;
+						} 
+						else {
+							chain_face = shorthand_to_face.at("chTurnTop").at("ch_edge2-u+-ly*x*l0+ly").face;
+						}
+						
+						mesh.faces.emplace_back();
+						sm::Mesh::Face &m_face = mesh.faces.back();
+
+						m_face.type = get_L(chain_face);
+						for (uint32_t i = 0; i < chain_face.edges.size(); ++i) {
+							m_face.emplace_back(mesh.vertices.size());
+							mesh.vertices.emplace_back(std::numeric_limits< float >::quiet_NaN());
+						}
+
+						uint32_t current_face = mesh.faces.size()-1;
+						if (rowIndex == 1){
+							last_turning_chain_bottom_connection.a.face = current_face;
+							last_turning_chain_bottom_connection.a.edge = bottom_edge;
+							last_turning_chain_bottom_connection.flip = true;
+						}		
+
+						mesh.connections.emplace_back();
+						sm::Mesh::Connection &con = mesh.connections.back();
+
+						con.a.face = previous_face;
+						con.a.edge = previous_right_edge;
+						con.b.face = current_face;
+						con.b.edge = left_edge;
+						con.flip = true;
+
+						if (has_previous_right_chain) {
+							sm::Mesh::Connection vertical = previous_right_chain_top;
+							vertical.b.face = current_face;
+							vertical.b.edge = bottom_edge;
+
+							mesh.connections.emplace_back(vertical);
+
+						}
+						
+						current_right_chain_top.a.face = current_face;
+						current_right_chain_top.a.edge = top_edge;
+						current_right_chain_top.flip = true;
+
+
+						std::cout << "added chain to end" << std::endl;
+					}
+					
+				}
+				//attach the bottom chains
+				if (rowIndex == 1){
+					
+
+					sm::Library::Face bottom_chain_face = shorthand_to_face.at("ch").at("ch-u+*x+ly+l1-ly").face;
+					uint32_t previous_bottom_chain_face = -1U;
+					for (sm::Mesh::Connection con : first_row_bottom_connections){
+						mesh.faces.emplace_back();
+						sm::Mesh::Face &m_face = mesh.faces.back();
+						m_face.type = get_L(bottom_chain_face);
+						for (uint32_t i = 0; i < bottom_chain_face.edges.size(); ++i) {
+							m_face.emplace_back(mesh.vertices.size());
+							mesh.vertices.emplace_back(std::numeric_limits< float >::quiet_NaN());
+						}
+						uint32_t current_face = mesh.faces.size()-1;
+						
+
+						con.b.face = current_face;
+						con.b.edge = top_edge;
+						mesh.connections.emplace_back(con);
+
+						if (previous_bottom_chain_face != -1U) {
+							mesh.connections.emplace_back();
+							sm::Mesh::Connection &chain_con_bot = mesh.connections.back();
+
+							chain_con_bot.a.face = previous_bottom_chain_face;
+							chain_con_bot.a.edge = right_edge;
+
+							chain_con_bot.b.face = current_face;
+							chain_con_bot.b.edge = left_edge;
+
+							chain_con_bot.flip = true;
+						}
+
+						previous_bottom_chain_face = current_face;
+						
+					}
+					sm::Library::Face bottom_right_turn_chain = shorthand_to_face.at("chTurnBot").at("ch_edge1-u+*l0*x+ly-ly").face;
+					mesh.faces.emplace_back();
+					sm::Mesh::Face &turn_face = mesh.faces.back();
+
+					turn_face.type = get_L(bottom_right_turn_chain);
+
+					for (uint32_t i = 0; i < bottom_right_turn_chain.edges.size();++i) {
+						turn_face.emplace_back(mesh.vertices.size());
 						mesh.vertices.emplace_back(std::numeric_limits<float>::quiet_NaN());
 					}
 
-					uint32_t chain_face_index = mesh.faces.size()-1;	
-					previous_face = chain_face_index;
-					previous_right_edge = right_edge;
-							
-					if (has_previous_left_chain) {
-						sm::Mesh::Connection con = previous_left_chain_top;
+					uint32_t bottom_right_turn_face_index = mesh.faces.size()-1;
 
-						con.b.face = chain_face_index;
-						con.b.edge = bottom_edge;
+					if (previous_bottom_chain_face != -1U) {
+						mesh.connections.emplace_back();
+						sm::Mesh::Connection &turn_horizontal = mesh.connections.back();
 
-						mesh.connections.emplace_back(con);
+						turn_horizontal.a.face = previous_bottom_chain_face;
+						turn_horizontal.a.edge = right_edge;
+						turn_horizontal.b.face = bottom_right_turn_face_index;
+						turn_horizontal.b.edge = left_edge;
+						turn_horizontal.flip = true;
 					}
 
-					current_left_chain_top.a.face = chain_face_index;
-					current_left_chain_top.a.edge = top_edge;
-					current_left_chain_top.flip = true;
+					last_turning_chain_bottom_connection.b.face = bottom_right_turn_face_index;
 
+					last_turning_chain_bottom_connection.b.edge = top_edge;
 
-					std::cout << "added chain to start" << std::endl;
-				}
-				//capture the stitch
-				std::string stitch_token = *line.begin();
-				line.erase(line.begin());
-				
-
-				auto face_group = shorthand_to_face.find(stitch_token);
-				if (face_group == shorthand_to_face.end()) {
-					std::cerr << "ERROR: face '" << stitch_token << "' does not appear in library." << std::endl;
-					return 1;
-				}
-				// AD: from the face with direction list, find the right face based on the state
-
-				std::unordered_map<std::string, FaceWithDirection> const face_with_direction_map = face_group->second;
-				sm::Library::Face face;
-				//we will do only one type of face for now
-				for (auto& [face_name, face_element] : face_with_direction_map){
-					Direction d = face_element.direction;
-					std::string input_amount = face_element.face.edges.at(0).type.substr(1);
-					std::cout << "fe name: "<< face_element.face.name << " " << std::bitset<8>(face_element.face.derive.by) << " " << input_amount << std::endl;						
-
-					Flipped f = face_element.flip;
-					if (rowIndex > 1){
-						if (rowIndex % 2 == 0){
-							if (d == Direction::right && f == Flipped::back && input_amount == "2"){
-								face = face_element.face;
-								std::cout << "for face "<< i<< ", rowIndex " << rowIndex<< ", face "<< face.name << " is chosen " <<face_element.face.edges.at(0).type << std::endl;	
-							}
-						}
-						else {
-							if (d == Direction::left && f == Flipped::front && input_amount == "2"){
-								face = face_element.face;
-								std::cout << "for face "<< i<< ", rowIndex " << rowIndex<< ", face "<< face.name << " is chosen " << face_element.face.edges.at(0).type<< std::endl;								}
-						}
-						
-					}
-					else{
-						if (d == Direction::left && f == Flipped::front && input_amount == "1"){
-								face = face_element.face;
-								std::cout << "for face "<< i<< ", rowIndex " << rowIndex<< ", face "<< face.name << " is chosen " << face_element.face.edges.at(0).type<<std::endl;	
-							}
-						
-
-					}
-				
+					mesh.connections.emplace_back(last_turning_chain_bottom_connection);
 				}
 				
+				
+				previous_row_top_connections = current_row_top_connections;
+				previous_left_chain_top = current_left_chain_top;
+				previous_right_chain_top = current_right_chain_top;
+				
+				has_previous_left_chain = true;
+				has_previous_right_chain = true;
+			}
 
+			//implement the caps on the faces
+			sm::Library::Face cap_face = shorthand_to_face.at("cp").at("cap-l2*x*x*x").face;
+			for (sm::Mesh::Connection con : previous_row_top_connections){
 				mesh.faces.emplace_back();
 				sm::Mesh::Face &m_face = mesh.faces.back();
-				m_face.type = get_L(face);
-
-				for (uint32_t i = 0; i < face.edges.size(); ++i) {
+				m_face.type = get_L(cap_face);
+				for (uint32_t i = 0; i < cap_face.edges.size(); ++i) {
 					m_face.emplace_back(mesh.vertices.size());
 					mesh.vertices.emplace_back(std::numeric_limits< float >::quiet_NaN());
 				}
 				uint32_t current_face = mesh.faces.size()-1;
-				//edge 1 is right
-				//edge 3 is left
-				//maybe theres a better way to get this? 
-								
-				if (previous_face != -1U) {
-					mesh.connections.emplace_back();
-					sm::Mesh::Connection &con = mesh.connections.back();
-
-					con.a.face = previous_face;
-					con.a.edge = previous_right_edge;
-					con.b.face = current_face;
-					con.b.edge = left_edge;
-					con.flip = true;
-				}
-				previous_face = current_face;
-				previous_right_edge = right_edge; 
-
-				current_row_top_connections.emplace_back();
-				sm::Mesh::Connection &con_top = current_row_top_connections.back();
-				con_top.a.face = current_face;
-				con_top.a.edge = top_edge;
-				con_top.flip = true;
-				if (rowIndex == 1){
-					first_row_bottom_connections.emplace_back();
-					sm::Mesh::Connection &con_bottom = first_row_bottom_connections.back();
-					con_bottom.a.face = current_face;
-					con_bottom.a.edge = bottom_edge;
-					con_bottom.flip = true;
-				}
-				
-
-				if (rowIndex >= 2 && !previous_row_top_connections.empty()){ //its not the first row so we should connect to the row below. 
-					sm::Mesh::Connection &con_bot = previous_row_top_connections.front();
-
-					con_bot.b.face = current_face;
-					con_bot.b.edge = bottom_edge;
-					// con.flip = true;
-					mesh.connections.emplace_back(con_bot);
-					previous_row_top_connections.erase(previous_row_top_connections.begin());
-
-				}
-				if(i == l->size() - 1){ //it was the last face, so we place the turn chain
-					std::cout << "adding chain to end" << std::endl;
-					sm::Library::Face chain_face; 
-					if (rowIndex % 2 == 0){
-						chain_face = shorthand_to_face.at("chTurnBot").at("ch_edge1-u+*l0*x+ly-ly").face;
-					} 
-					else {
-						chain_face = shorthand_to_face.at("chTurnTop").at("ch_edge2-u+-ly*x*l0+ly").face;
-					}
-					
-					mesh.faces.emplace_back();
-					sm::Mesh::Face &m_face = mesh.faces.back();
-
-					m_face.type = get_L(chain_face);
-					for (uint32_t i = 0; i < chain_face.edges.size(); ++i) {
-						m_face.emplace_back(mesh.vertices.size());
-						mesh.vertices.emplace_back(std::numeric_limits< float >::quiet_NaN());
-					}
-
-					uint32_t current_face = mesh.faces.size()-1;
-					if (rowIndex == 1){
-						last_turning_chain_bottom_connection.a.face = current_face;
-						last_turning_chain_bottom_connection.a.edge = bottom_edge;
-						last_turning_chain_bottom_connection.flip = true;
-					}		
-
-					mesh.connections.emplace_back();
-					sm::Mesh::Connection &con = mesh.connections.back();
-
-					con.a.face = previous_face;
-					con.a.edge = previous_right_edge;
-					con.b.face = current_face;
-					con.b.edge = left_edge;
-					con.flip = true;
-
-					if (has_previous_right_chain) {
-						sm::Mesh::Connection vertical = previous_right_chain_top;
-						vertical.b.face = current_face;
-						vertical.b.edge = bottom_edge;
-
-						mesh.connections.emplace_back(vertical);
-
-					}
-					
-					current_right_chain_top.a.face = current_face;
-					current_right_chain_top.a.edge = top_edge;
-					current_right_chain_top.flip = true;
-
-
-					std::cout << "added chain to end" << std::endl;
-				}
-				
+				con.b.face = current_face;
+				con.b.edge = bottom_edge;
+				mesh.connections.emplace_back(con);
 			}
-			//attach the bottom chains
-			if (rowIndex == 1){
-				
 
-				sm::Library::Face bottom_chain_face = shorthand_to_face.at("ch").at("ch-u+*x+ly+l1-ly").face;
-				uint32_t previous_bottom_chain_face = -1U;
-				for (sm::Mesh::Connection con : first_row_bottom_connections){
-					mesh.faces.emplace_back();
-					sm::Mesh::Face &m_face = mesh.faces.back();
-					m_face.type = get_L(bottom_chain_face);
-					for (uint32_t i = 0; i < bottom_chain_face.edges.size(); ++i) {
-						m_face.emplace_back(mesh.vertices.size());
-						mesh.vertices.emplace_back(std::numeric_limits< float >::quiet_NaN());
-					}
-					uint32_t current_face = mesh.faces.size()-1;
-					
-
-					con.b.face = current_face;
-					con.b.edge = top_edge;
-					mesh.connections.emplace_back(con);
-
-					if (previous_bottom_chain_face != -1U) {
-						mesh.connections.emplace_back();
-						sm::Mesh::Connection &chain_con_bot = mesh.connections.back();
-
-						chain_con_bot.a.face = previous_bottom_chain_face;
-						chain_con_bot.a.edge = right_edge;
-
-						chain_con_bot.b.face = current_face;
-						chain_con_bot.b.edge = left_edge;
-
-						chain_con_bot.flip = true;
-					}
-
-					previous_bottom_chain_face = current_face;
-					
+			if (!open_edges.empty()) {
+				std::cerr << "WARNING: the following open edges are not connected:\n";
+				for (auto const &oe : open_edges) {
+					std::cerr << "   " << oe.first << "\n";
 				}
-				sm::Library::Face bottom_right_turn_chain = shorthand_to_face.at("chTurnBot").at("ch_edge1-u+*l0*x+ly-ly").face;
-				mesh.faces.emplace_back();
-				sm::Mesh::Face &turn_face = mesh.faces.back();
-
-				turn_face.type = get_L(bottom_right_turn_chain);
-
-				for (uint32_t i = 0; i < bottom_right_turn_chain.edges.size();++i) {
-					turn_face.emplace_back(mesh.vertices.size());
-					mesh.vertices.emplace_back(std::numeric_limits<float>::quiet_NaN());
-				}
-
-				uint32_t bottom_right_turn_face_index = mesh.faces.size()-1;
-
-				if (previous_bottom_chain_face != -1U) {
-					mesh.connections.emplace_back();
-					sm::Mesh::Connection &turn_horizontal = mesh.connections.back();
-
-					turn_horizontal.a.face = previous_bottom_chain_face;
-					turn_horizontal.a.edge = right_edge;
-					turn_horizontal.b.face = bottom_right_turn_face_index;
-					turn_horizontal.b.edge = left_edge;
-					turn_horizontal.flip = true;
-				}
-
-				last_turning_chain_bottom_connection.b.face = bottom_right_turn_face_index;
-
-				last_turning_chain_bottom_connection.b.edge = top_edge;
-
-				mesh.connections.emplace_back(last_turning_chain_bottom_connection);
+				std::cerr.flush();
 			}
-			
-			
-			previous_row_top_connections = current_row_top_connections;
-			previous_left_chain_top = current_left_chain_top;
-			previous_right_chain_top = current_right_chain_top;
-			
-			has_previous_left_chain = true;
-			has_previous_right_chain = true;
+			uint32_t removed = 0;
+			for (uint32_t i = 0; i < mesh.connections.size(); /* later */) {
+				if (mesh.connections[i].b.face == -1U) {
+					std::swap(mesh.connections[i], mesh.connections.back());
+					mesh.connections.pop_back();
+					++removed;
+				} else {
+					++i;
+				}
+			}
+			if (removed != 0) {
+				std::cout << "WARNING: trimmed " << removed << " incomplete connections." << std::endl;
+			}
+			assert(removed == open_edges.size());
 		}
 
-		//implement the caps on the faces
-		sm::Library::Face cap_face = shorthand_to_face.at("cp").at("cap-l2*x*x*x").face;
-		for (sm::Mesh::Connection con : previous_row_top_connections){
-			mesh.faces.emplace_back();
-			sm::Mesh::Face &m_face = mesh.faces.back();
-			m_face.type = get_L(cap_face);
-			for (uint32_t i = 0; i < cap_face.edges.size(); ++i) {
-				m_face.emplace_back(mesh.vertices.size());
-				mesh.vertices.emplace_back(std::numeric_limits< float >::quiet_NaN());
-			}
-			uint32_t current_face = mesh.faces.size()-1;
-			con.b.face = current_face;
-			con.b.edge = bottom_edge;
-			mesh.connections.emplace_back(con);
-		}
 
-		if (!open_edges.empty()) {
-			std::cerr << "WARNING: the following open edges are not connected:\n";
-			for (auto const &oe : open_edges) {
-				std::cerr << "   " << oe.first << "\n";
-			}
-			std::cerr.flush();
-		}
-		uint32_t removed = 0;
-		for (uint32_t i = 0; i < mesh.connections.size(); /* later */) {
-			if (mesh.connections[i].b.face == -1U) {
-				std::swap(mesh.connections[i], mesh.connections.back());
-				mesh.connections.pop_back();
-				++removed;
-			} else {
-				++i;
-			}
-		}
-		if (removed != 0) {
-			std::cout << "WARNING: trimmed " << removed << " incomplete connections." << std::endl;
-		}
-		assert(removed == open_edges.size());
 	}
-
+	
 	std::cout << "Created mesh with " << mesh.vertices.size() << " vertices, " << mesh.faces.size() << " faces, and " << mesh.connections.size() << " connections." << std::endl;
 
 	//----------------------------
