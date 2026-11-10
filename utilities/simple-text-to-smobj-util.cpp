@@ -174,7 +174,7 @@ int main(int argc, char **argv) {
 	if(version == "new"){
 		{ //take the textfile and fill in the candidates
 			std::unordered_map<std::string, uint32_t> key_to_L;
-			auto get_L = [&mesh, &key_to_L, &templates](sm::Library::Face const &face) -> uint32_t {
+			[[maybe_unused]] auto get_L = [&mesh, &key_to_L, &templates](sm::Library::Face const &face) -> uint32_t {
 				std::string key = face.name;
 				for (auto const &e : face.edges) {
 					key += std::to_string(static_cast<int>(e.direction));
@@ -193,7 +193,7 @@ int main(int argc, char **argv) {
 				return mesh.library.size()-1;
 			};
 
-			std::unordered_map< std::string, uint32_t > open_edges;		
+			std::unordered_map< std::string, uint32_t > open_edges;
 			
 			// the first line is the last set of stitches,
 			// so reverse the line order for building from the bottom up
@@ -228,15 +228,16 @@ int main(int argc, char **argv) {
 
 		}
 		//candidates[rownum][stitchnum][faceoption]
-		std::vector< std::vector< std::vector<sm::Library::Face> > > candidates;
-		//std::vector< std::vector< std::vector< std::string > > >  candidates;
+		std::vector< std::vector< std::vector< sm::Library::Face const * > > > candidates;
 
 
 		//First pass
 		// here we want to gather all possible stitches. 
 		{
+			candidates.reserve(pattern_as_string.size());
+
 			for (unsigned int i = 0; i < pattern_as_string.size(); i++){
-				std::vector<std::string> row = pattern_as_string.at(i);
+				std::vector< std::string > row = pattern_as_string.at(i);
 				unsigned int rowNumber = i + 1; 
 				Direction d; 
 				Flipped f;
@@ -248,6 +249,10 @@ int main(int argc, char **argv) {
 					d = Direction::left;
 					f = Flipped::front; 
 				}
+
+				candidates.emplace_back();
+				assert(candidates.size() == i + 1);
+				candidates.back().reserve(row.size());
 				for(unsigned int j = 0; j < row.size(); j++){
 					std::string stitch_token = row.at(j);
 					// get all possible stitch faces
@@ -256,14 +261,15 @@ int main(int argc, char **argv) {
 						std::cerr << "ERROR: face '" << stitch_token << "' does not appear in library." << std::endl;
 						return 1;
 					}
-					std::vector< sm::Library::Face> faces_found; 
+					std::vector< sm::Library::Face const * > faces_found; 
 					for (auto const &[key,face] : face_group->second){
 						if (face.direction != d || face.flip != f) continue;
 						if (face.face.edges.size() != 4) continue;
-						faces_found.emplace_back(face.face);
+						faces_found.emplace_back(&face.face);
 					}
 					candidates[i].emplace_back();
-					for (auto const &p : faces_found) {
+					assert(candidates[i].size() == j + 1);
+					for (sm::Library::Face const *p : faces_found) {
 						candidates[i].back().emplace_back(p);
 					}
 					
@@ -287,14 +293,57 @@ int main(int argc, char **argv) {
 
 			//for each row and column, the number here represents the index of the chosen face from
 			// candidates[r][c]. usage is candidates[r][c][face_to_insert]
-			std::vector<std::vector< unsigned int >> face_to_insert; 
+			std::vector< std::vector< unsigned int > > face_to_insert; 
 
-			auto face_fits_here = [&](unsigned int r, unsigned int i, sm::Library::Face const &c) -> bool {
+			
+			auto face_fits_here = [&candidates](unsigned int r, unsigned int c, sm::Library::Face const *f) -> bool {
+				//for the above, right, left, down face:
+				//check that there is some candidate in that direction with matching edge type
+				//(NOTE: could restructure so that list of available edge types is computed once instead of for every candidate under test)
+
+				auto edges_match = [](sm::Library::Face::Edge const &a, sm::Library::Face::Edge const &b) {
+					if (a.type != b.type) return false;
+					//'Any' edges connect to 'Any' edges:
+					if (a.direction == sm::Library::Face::Edge::Any) {
+						return b.direction == sm::Library::Face::Edge::Any;
+					} else if (a.direction == sm::Library::Face::Edge::In) {
+						return b.direction == sm::Library::Face::Edge::Out;
+					} else if (a.direction == sm::Library::Face::Edge::Out) {
+						return b.direction == sm::Library::Face::Edge::In;
+					}
+					return false;
+				};
+
+				auto edge_okay = [f,&edges_match,&candidates](unsigned int nr, unsigned int nc, unsigned int fei, unsigned int nei) -> bool {
+					//(alternatively: look for empty edges)
+					if (nr >= candidates.size() || nc >= candidates[nr].size()) return true;
+
+					assert(f);
+					assert(fei < f->edges.size());
+					sm::Library::Face::Edge const &fe = f->edges[fei];
+
+					for (sm::Library::Face const *n : candidates[nr][nc]) {
+						assert(n);
+						assert(nei < n->edges.size());
+						sm::Library::Face::Edge const &ne = n->edges[nei];
+						if (edges_match(fe, ne)) {
+							return true;
+						}
+					}
+					return false;
+				};
+
+				if (!edge_okay(r, c+1, 1, 3)) return false;
+				if (!edge_okay(r, c-1, 3, 1)) return false;
+				if (!edge_okay(r+1, c, 2, 0)) return false;
+				if (!edge_okay(r-1, c, 0, 2)) return false;
+
 				return true;
 			};
 
+			face_to_insert.reserve(pattern_as_string.size());
 			for (unsigned int r = 0; r < pattern_as_string.size(); ++r) {
-				face_to_insert[r].assign(pattern_as_string[r].size(), -1U);
+				face_to_insert.emplace_back(pattern_as_string[r].size(), -1U);
 				for (unsigned int i = 0; i < pattern_as_string[r].size(); ++i) {
 					stitch_order.emplace_back(r, i);
 				}
@@ -308,7 +357,7 @@ int main(int argc, char **argv) {
 			unsigned int stitch_number = 0;
 			unsigned int deepest_reached = 0;
 
-			std::vector<unsigned int> next_try(stitch_order.size(), 0);
+			std::vector< unsigned int > next_try(stitch_order.size(), 0);
 			while (stitch_number < stitch_order.size()){
 				if (steps >= max_steps){
 					std::cerr << "ERROR: backtracking ran out of steps." << std::endl;
@@ -319,11 +368,11 @@ int main(int argc, char **argv) {
 				unsigned int r = stitch_order[stitch_number].first;
 				unsigned int c = stitch_order[stitch_number].second;
 
-				std::vector<sm::Library::Face> &current_candidates = candidates[r][c];
+				std::vector< sm::Library::Face const * > &current_candidates = candidates[r][c];
 				bool fit_found = false;
 
 				//starting from the candidates that have yet to be tried for this stitch
-				for (unsigned int s = next_try[stitch_number]; s < current_candidates.size(); c++){
+				for (size_t s = next_try[stitch_number]; s < current_candidates.size(); ++c){
 					// if it fits
 					if (face_fits_here(r,c,current_candidates[s])){
 						face_to_insert[r][c] = s;
@@ -344,7 +393,8 @@ int main(int argc, char **argv) {
 				// so we must back up
 				//clear the next tries and the face to insert for this stitch
 				next_try[stitch_number] = 0;
-				face_to_insert[stitch_number] = -1U;
+				face_to_insert[stitch_number].assign(pattern_as_string[stitch_number].size(), -1U);
+
 
 				//if we can no longer back up, then we failed to find a pattern
 				if (stitch_number == 0){
