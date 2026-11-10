@@ -25,10 +25,24 @@ T 1
 #(optional) 1-based source line number of knitout file that made this face (use 0 if line not known):
 N 15
 #list of connections between faces:
-# face#/edge#, both one-based; negative edges imply *reversing* the edge
+# face#/edge#, both 1-based; negative edges imply *reversing* the edge
 # this allows non-orientable connections, needed for knitout
 # (NOTE: on a nicely oriented mesh, all 'e' commands will have one negative edge)
 e 1/1 2/-4
+# (optional) list of scheduler hints can be provided for edges using hint lines starting with:
+# 'h' for resource hints, 'o' for order hints, 't' for variant type hints 
+# face/edge inidcates the edge (indices are one-based as above, edges are always positive)
+# hints can indicate bed(char) and needle(float) 
+# 'u' indicates hint is from user, 'i' indicates hint was inferred from user hints, 'h' indicates hint was heuristic/arbitrary
+h 1/1 f20 u 
+# order hints that indicate order between instructions face/instruction 
+# (instructions are indexed ignoring comments)
+o 1/1 2/1 u
+# type hints that indicate  variant name for face index, indices are 1-based
+t 1 variant-name u 
+# total order of instructions is saved as a sequence of face/instruction index, 1-based
+I 1/1
+I 1/2
 #(optional) list of checkpoints on yarns and desired length between them:
 # checkpoint list starts with unit library:
 U 1 1.0 #unit definition -- there is a length unit called '1' with [default] length '1.0'
@@ -40,6 +54,7 @@ U s65 0.2 #unit definition -- there is a length unit called 's65' with [default]
 c 1/1/1 0.1 1 1.0 2 2.0 3 #checkpoint at face/edge/yarn crossing with 0.1 + 1.0*n + 2.0*s65 length following
 c 1/3/1 #last checkpoint on a yarn will always have zero following length
 #NOTE: checkpoints define yarn orientation; yarns without checkpoints will be arbitrarially oriented by smobj-to-yarns
+
 ```
 
 # `.yarns`: a format for yarn curves
@@ -110,6 +125,50 @@ The specific chunks and their order:
 Note that each "Checkpoint" structure adds yarn length between that checkpoint and the next *checkpoint* (or the end of the yarn) -- this is different than adding length between checkpoints and their next yarn point.
 This ambiguity is required because the allocation of length to yarn segments is generally not known.
 
+
+# `.sf`: a format for stitch mesh face libraries
+
+The `.sf` format contains a stitch mesh face library (that is, a collection of "template" face shapes containing yarn shapes).
+This format was originally developed to be edited by hand -- and this shows -- though we have subsequently developed some internal tooling for face creation.
+
+A stitch-faces (`.sf`) file consists of a series of lines. Each line starts with a token and is followed by text in a token-specific format.
+The types of lines and their formats are documented in comments (words after `#`) in the following example:
+```
+#This is an example face based on the illustraion.sf file included in this repository
+
+#The face line is followed by a space and a face name (a non-space-containing token)
+face make-left-tuck+
+	# edge lines that define the shape and edge types of the face
+	# edges appear -- by convention -- CCW from the lower left vertex
+	# an edge line gives the point at which the edge starts and an edge label
+	# the label starts with '+' (for 'out' edges), '-' (for 'in' adges), or nothing (for undirected edges) followed by a string for the edge type
+	# by covention, edge types in knitting faces are 'l' (loop) and 'y' (yarn) and often suffixed by a number of yarns
+	edge (-1.0,-1.062) -l1
+	edge ( 1.0,-1.062) +y1
+	edge ( 1.6, 0.0) +l1
+	edge ( 0.0, 1.2) +l1
+	edge (-1.6, 0.0) -y1
+	#yarn lines specify yarns inside the face, and are given by a boundary point, a list of internal points, and another boundarty point
+	# boundary points are writen [e:amt,z] and consist of a zero-based edge index, e; an amount along the edge, 0 < amt < 1; and a depth, z.
+	# interal points are regular (x,y,z) tuples.
+	yarn [1:0.25,0] (0.321847,-0.211278,-0.19533) (0.390594,0.0406245,0.196892) [2:0.275,0]
+	yarn [2:0.725,0] (0.257785,0.276222,0.206233) (-0.0984679,0.224999,-0.276545) [3:0.275,0]
+	yarn [3:0.725,0] (-0.917159,-0.201903,0) [4:0.75,0]
+	yarn [0:0.275,0] (-0.28123,-0.0375,0.0968753) (0.0125145,0.592189,-0.0593829) (0.529687,0.375012,-0.0609375) (0.648423,-0.064061,-0.034383) (0.389042,-0.473437,0.0968753) [0:0.725,0]
+
+#the full "key" of a face consists of its name followed by space-separated edge labels.
+#the "key" of the face above is "make-left-tuck+ -l1 +y1 +l1 +l1 -y1"
+#face keys must be unique
+
+#As a matter of convenience, a derive line may be used to create a new face by flipping/permuting an existing face
+#derive lines give the key (name and edge labels) of the new face followed by 'by' followed by a list of operations follwed by 'from' followed by a face key
+derive make-right-tuck+ -l1 +y1 +l1 +l1 -y1 by mirror-x reverse-yarn from make-left-tuck+ -l1 +y1 +l1 +l1 -y1
+
+#the operations that may be used: (see Library::Face::Derive::ByBit in sm.hpp)
+# mirror-x -- reflect over the x-axis; move the starting edge to the other end of any chain of same-type edges along the bottom
+# mirror-z -- reflect z-coordinate of yarns
+# reverse-yarn -- reverse direction of yarns; swap '+y' and '-y' edges
+```
 
 # Utilities
 

@@ -1,8 +1,5 @@
-#ifndef GLM_ENABLE_EXPERIMENTAL
-#define GLM_ENABLE_EXPERIMENTAL
-#endif
-#include "glm/glm/glm.hpp"
-#include "glm/glm/gtx/hash.hpp"
+#include <glm/glm.hpp>
+#include <glm/gtx/hash.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -107,6 +104,10 @@ struct Gizmo {
 struct Column {
 	FaceEdge top_edge; //by convention, oriented rightwards
 	float top_y = 0;
+	//indices of the checkpoints for the (to-loop, from-loop) sides
+	// of every loop on this needle, just after they were made
+	// (might ref different faces)
+	std::vector< std::pair< uint32_t, uint32_t > > loop_checkpoints; //ordered out-to-in
 };
 
 struct BedColumns : public std::unordered_map< int32_t, Column > {
@@ -374,6 +375,7 @@ struct Translator {
 	void setup_carriers(Direction dir, BedColumns const &bed, int32_t needle, std::vector< Carrier * > const &cs,
 		Gizmo *gizmo_,
 		FaceEdge *yarn_to_stitch_, FaceEdge *yarn_from_stitch_,
+		std::vector< std::pair< uint32_t, uint32_t > > *loop_checkpoints_,
 		SetupSpecial special = SpecialNone) {
 		assert(gizmo_);
 		auto &gizmo = *gizmo_;
@@ -381,6 +383,8 @@ struct Translator {
 		auto &yarn_to_stitch = *yarn_to_stitch_;
 		assert(yarn_from_stitch_);
 		auto &yarn_from_stitch = *yarn_from_stitch_;
+		assert(loop_checkpoints_);
+		auto &loop_checkpoints = *loop_checkpoints_;
 
 		if (special == SpecialStopAtShearFront) {
 			assert(&bed == &back_bed || &bed == &back_sliders);
@@ -388,6 +392,8 @@ struct Translator {
 
 		yarn_to_stitch = FaceEdge();
 		yarn_from_stitch = FaceEdge();
+
+		loop_checkpoints.clear();
 
 		//no carriers? nothing to do:
 		if (cs.empty()) return;
@@ -798,131 +804,133 @@ struct Translator {
 			if (special == SpecialStopAtShearFront) {
 				yarn_to_stitch = live_to_surround;
 				yarn_from_stitch = live_to_travel;
-				return;
-			}
+			} else {
+				//if not stopping at ShearFront:
 
-			//connect shear front to shear back:
-			{
-				assert(live_to_surround.is_valid());
+				//connect shear front to shear back:
+				{
+					assert(live_to_surround.is_valid());
 
-				faces.emplace_back(source);
-				gizmo.faces.emplace_back(faces.size()-1);
-				Face &face = faces.back();
-				std::string Y = std::to_string(live_to_surround.count);
-				face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
-				float back_x = stitch_x(needle_index(needle), (dir == Right ? Left : Right));
-				//float x = stitch_x(surround_index, (dir == Right ? Left : Right));
-				float x = travel_x(bring_index, (dir == Right ? Right : Left));
-				face.vertices = {
-					glm::vec3(back_x, 0.0f, ShearBack),
-					glm::vec3(x, 0.0f, ShearFront),
-					glm::vec3(x, FaceHeight, ShearFront),
-					glm::vec3(back_x, FaceHeight, ShearBack),
-				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, live_to_surround.count, FaceEdge::FlipNo);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, live_to_surround.count, FaceEdge::FlipYes);
+					faces.emplace_back(source);
+					gizmo.faces.emplace_back(faces.size()-1);
+					Face &face = faces.back();
+					std::string Y = std::to_string(live_to_surround.count);
+					face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
+					float back_x = stitch_x(needle_index(needle), (dir == Right ? Left : Right));
+					//float x = stitch_x(surround_index, (dir == Right ? Left : Right));
+					float x = travel_x(bring_index, (dir == Right ? Right : Left));
+					face.vertices = {
+						glm::vec3(back_x, 0.0f, ShearBack),
+						glm::vec3(x, 0.0f, ShearFront),
+						glm::vec3(x, FaceHeight, ShearFront),
+						glm::vec3(back_x, FaceHeight, ShearBack),
+					};
+					FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, live_to_surround.count, FaceEdge::FlipNo);
+					FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, live_to_surround.count, FaceEdge::FlipYes);
 
-				gizmo.connections.emplace_back(live_to_surround, yarn_in, "shear front to back");
+					gizmo.connections.emplace_back(live_to_surround, yarn_in, "shear front to back");
 
-				live_to_surround = yarn_out;
+					live_to_surround = yarn_out;
 
-				//lift management for bed crossing:
-				int32_t back_bring_index = side_index(needle, (dir == Right ? Left : Right));
-				gizmo.lift = std::max(gizmo.lift, crossings.check_crossing(bring_index, back_bring_index));
-				gizmo.set_lift.emplace_back([this,bring_index,back_bring_index](float lift){
-					crossings.add_crossing(bring_index, back_bring_index, lift + FaceHeight); //<-- set to top of stitch for crossing
-				});
+					//lift management for bed crossing:
+					int32_t back_bring_index = side_index(needle, (dir == Right ? Left : Right));
+					gizmo.lift = std::max(gizmo.lift, crossings.check_crossing(bring_index, back_bring_index));
+					gizmo.set_lift.emplace_back([this,bring_index,back_bring_index](float lift){
+						crossings.add_crossing(bring_index, back_bring_index, lift + FaceHeight); //<-- set to top of stitch for crossing
+					});
 
-			}
+				}
 
-			{
+				{
 
-				assert(live_to_travel.is_valid());
+					assert(live_to_travel.is_valid());
 
-				faces.emplace_back(source);
-				gizmo.faces.emplace_back(faces.size()-1);
-				Face &face = faces.back();
-				std::string Y = std::to_string(live_to_travel.count);
-				face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
-				float back_x = stitch_x(needle_index(needle), dir);
-				//float x = stitch_x(surround_index, dir);
-				float x = travel_x(leave_index, (dir == Right ? Left : Right));
-				face.vertices = {
-					glm::vec3(back_x, 0.0f, ShearBack),
-					glm::vec3(x, 0.0f, ShearFront),
-					glm::vec3(x, FaceHeight, ShearFront),
-					glm::vec3(back_x, FaceHeight, ShearBack),
-				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, live_to_travel.count, FaceEdge::FlipYes);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, live_to_travel.count, FaceEdge::FlipNo);
+					faces.emplace_back(source);
+					gizmo.faces.emplace_back(faces.size()-1);
+					Face &face = faces.back();
+					std::string Y = std::to_string(live_to_travel.count);
+					face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
+					float back_x = stitch_x(needle_index(needle), dir);
+					//float x = stitch_x(surround_index, dir);
+					float x = travel_x(leave_index, (dir == Right ? Left : Right));
+					face.vertices = {
+						glm::vec3(back_x, 0.0f, ShearBack),
+						glm::vec3(x, 0.0f, ShearFront),
+						glm::vec3(x, FaceHeight, ShearFront),
+						glm::vec3(back_x, FaceHeight, ShearBack),
+					};
+					FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, live_to_travel.count, FaceEdge::FlipYes);
+					FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, live_to_travel.count, FaceEdge::FlipNo);
 
-				gizmo.connections.emplace_back(yarn_out, live_to_travel, "shear front to live");
+					gizmo.connections.emplace_back(yarn_out, live_to_travel, "shear front to live");
 
-				//NOTE: I don't think this needs lift management
+					//NOTE: I don't think this needs lift management
 
-				live_to_travel = yarn_in;
+					live_to_travel = yarn_in;
 
-				//lift management for bed crossing:
-				int32_t back_leave_index = side_index(needle, dir);
-				gizmo.lift = std::max(gizmo.lift, crossings.check_crossing(leave_index, back_leave_index));
-				gizmo.set_lift.emplace_back([this,leave_index,back_leave_index](float lift){
-					crossings.add_crossing(leave_index, back_leave_index, lift + FaceHeight); //<-- set to top of stitch for crossing
-				});
+					//lift management for bed crossing:
+					int32_t back_leave_index = side_index(needle, dir);
+					gizmo.lift = std::max(gizmo.lift, crossings.check_crossing(leave_index, back_leave_index));
+					gizmo.set_lift.emplace_back([this,leave_index,back_leave_index](float lift){
+						crossings.add_crossing(leave_index, back_leave_index, lift + FaceHeight); //<-- set to top of stitch for crossing
+					});
 
-			}
+				}
 
 
-			//connect live edges to stitch:
-			{
-				assert(live_to_surround.is_valid());
+				//connect live edges to stitch:
+				{
+					assert(live_to_surround.is_valid());
 
-				faces.emplace_back(source);
-				gizmo.faces.emplace_back(faces.size()-1);
-				Face &face = faces.back();
-				std::string Y = std::to_string(live_to_surround.count);
-				face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
-				float back_x = stitch_x(needle_index(needle), (dir == Right ? Left : Right));
-				face.vertices = {
-					glm::vec3(back_x, 0.0f, bed.depth),
-					glm::vec3(back_x, 0.0f, ShearBack),
-					glm::vec3(back_x, FaceHeight, ShearBack),
-					glm::vec3(back_x, FaceHeight, bed.depth),
-				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, live_to_surround.count, FaceEdge::FlipNo);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, live_to_surround.count, FaceEdge::FlipYes);
+					faces.emplace_back(source);
+					gizmo.faces.emplace_back(faces.size()-1);
+					Face &face = faces.back();
+					std::string Y = std::to_string(live_to_surround.count);
+					face.type = "yarn-to-left x -y" + Y + " x +y" + Y;
+					float back_x = stitch_x(needle_index(needle), (dir == Right ? Left : Right));
+					face.vertices = {
+						glm::vec3(back_x, 0.0f, bed.depth),
+						glm::vec3(back_x, 0.0f, ShearBack),
+						glm::vec3(back_x, FaceHeight, ShearBack),
+						glm::vec3(back_x, FaceHeight, bed.depth),
+					};
+					FaceEdge yarn_in = FaceEdge(faces.size()-1, 1, live_to_surround.count, FaceEdge::FlipNo);
+					FaceEdge yarn_out = FaceEdge(faces.size()-1, 3, live_to_surround.count, FaceEdge::FlipYes);
 
-				gizmo.connections.emplace_back(live_to_surround, yarn_in, "shear back to bed");
+					gizmo.connections.emplace_back(live_to_surround, yarn_in, "shear back to bed");
 
-				//NOTE: I don't think this needs lift management
+					//NOTE: I don't think this needs lift management
 
-				yarn_to_stitch = yarn_out;
-			}
+					yarn_to_stitch = yarn_out;
+				}
 
-			//connect live edge *from* stitch:
-			{
-				assert(live_to_travel.is_valid());
+				//connect live edge *from* stitch:
+				{
+					assert(live_to_travel.is_valid());
 
-				faces.emplace_back(source);
-				gizmo.faces.emplace_back(faces.size()-1);
-				Face &face = faces.back();
-				std::string Y = std::to_string(live_to_travel.count);
-				face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
-				float back_x = stitch_x(needle_index(needle), dir);
-				face.vertices = {
-					glm::vec3(back_x, 0.0f, bed.depth),
-					glm::vec3(back_x, 0.0f, ShearBack),
-					glm::vec3(back_x, FaceHeight, ShearBack),
-					glm::vec3(back_x, FaceHeight, bed.depth),
-				};
-				FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, live_to_travel.count, FaceEdge::FlipYes);
-				FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, live_to_travel.count, FaceEdge::FlipNo);
+					faces.emplace_back(source);
+					gizmo.faces.emplace_back(faces.size()-1);
+					Face &face = faces.back();
+					std::string Y = std::to_string(live_to_travel.count);
+					face.type = "yarn-to-right x +y" + Y + " x -y" + Y;
+					float back_x = stitch_x(needle_index(needle), dir);
+					face.vertices = {
+						glm::vec3(back_x, 0.0f, bed.depth),
+						glm::vec3(back_x, 0.0f, ShearBack),
+						glm::vec3(back_x, FaceHeight, ShearBack),
+						glm::vec3(back_x, FaceHeight, bed.depth),
+					};
+					FaceEdge yarn_in = FaceEdge(faces.size()-1, 3, live_to_travel.count, FaceEdge::FlipYes);
+					FaceEdge yarn_out = FaceEdge(faces.size()-1, 1, live_to_travel.count, FaceEdge::FlipNo);
 
-				gizmo.connections.emplace_back(yarn_out, live_to_travel, "bed to shear back");
+					gizmo.connections.emplace_back(yarn_out, live_to_travel, "bed to shear back");
 
-				//NOTE: I don't think this needs lift management
+					//NOTE: I don't think this needs lift management
 
-				yarn_from_stitch = yarn_in;
-			}
+					yarn_from_stitch = yarn_in;
+				}
+
+			} //if not stopping at shear front
 
 		}
 
@@ -1000,8 +1008,16 @@ struct Translator {
 			}
 			//this stitch:
 			before_stitch.unit = get_loop_length_unit();
-			before_stitch.length = 1.0f;
+			before_stitch.length = 0.25f;
 			checkpoints.emplace_back(before_stitch);
+
+			//record indices:
+			loop_checkpoints.emplace_back(checkpoints.size(), checkpoints.size() + 1);
+			//edge/face/crossing need to be filled in by the thing that makes the stitch face(!)
+			Checkpoint to_loop(-1U, -1U, -1U, 0.5f, get_loop_length_unit());
+			Checkpoint from_loop(-1U, -1U, -1U, 0.25f, get_loop_length_unit());
+			checkpoints.emplace_back(to_loop);
+			checkpoints.emplace_back(from_loop);
 
 			//last checkpoint:
 			after_stitch.unit = get_unit("1");
@@ -1016,6 +1032,8 @@ struct Translator {
 			c->anchor_depth.clear();
 			c->anchor_side = dir;
 		}
+
+		assert(loop_checkpoints.size() == cs.size());
 
 	}
 
@@ -1797,7 +1815,8 @@ struct Translator {
 
 		//set up yarn to/from stitch:
 		FaceEdge yarn_to_stitch, yarn_from_stitch;
-		setup_carriers(dir, bed, needle, cs, &gizmo, &yarn_to_stitch, &yarn_from_stitch);
+		std::vector< std::pair< uint32_t, uint32_t > > loop_checkpoints;
+		setup_carriers(dir, bed, needle, cs, &gizmo, &yarn_to_stitch, &yarn_from_stitch, &loop_checkpoints);
 
 		FaceEdge loop_in = bed[needle_index(needle)].top_edge;
 
@@ -1818,10 +1837,41 @@ struct Translator {
 					face.type = "tuck-" + behind_or_infront + "-to-right -l" + L + " +y" + Y + " +l" + S + " -y" + Y;
 					stitch_yarn_out = FaceEdge(gizmo.faces.back(), 1, cs.size(), FaceEdge::FlipNo);
 					stitch_yarn_in = FaceEdge(gizmo.faces.back(), 3, cs.size(), FaceEdge::FlipYes);
+
+
 				} else {
 					face.type = "tuck-" + behind_or_infront + "-to-left -l" + L + " -y" + Y + " +l" + S + " +y" + Y;
 					stitch_yarn_in = FaceEdge(gizmo.faces.back(), 1, cs.size(), FaceEdge::FlipNo);
 					stitch_yarn_out = FaceEdge(gizmo.faces.back(), 3, cs.size(), FaceEdge::FlipYes);
+				}
+
+				//assumption: crossings ordered begin-to-end, ties broken back-to-front along edge
+				assert(yarn_to_stitch.count == cs.size());
+				{ //fix up loop checkpoints:
+					//front bed, going right.
+					//  (new are behind)
+					//    <---- edge ----
+					//   [ 5 4 3    2 1 0 ]
+					//     ^ ^ ^    v v v   <-- if going right, swap if going left
+					//     o n n    o n n
+
+					//back bed -- new are in front
+					//    <---- edge ----
+					//   [ 5 4 3    2 1 0 ]
+					//     ^ ^ ^    v v v   <-- if going right, swap if going left
+					//     n n o    n n o
+					uint32_t ofs = (&bed == &front_bed ? 0 : loop_in.count);
+					for (uint32_t i = 0; i < cs.size(); ++i) {
+						//if going right, low inds (right side of edge) are outs, otherwise ins:
+						uint32_t low = (dir == Right ? loop_checkpoints[i].second : loop_checkpoints[i].first);
+						uint32_t high = (dir == Right ? loop_checkpoints[i].first : loop_checkpoints[i].second);
+						checkpoints[low].face = faces.size()-1;
+						checkpoints[low].edge = 2;
+						checkpoints[low].crossing = ofs + i;
+						checkpoints[high].face = faces.size()-1;
+						checkpoints[high].edge = 2;
+						checkpoints[high].crossing = yarn_to_stitch.count + loop_in.count + ofs + i;
+					}
 				}
 			}
 			int32_t stitch_index = needle_index(needle);
@@ -1857,6 +1907,12 @@ struct Translator {
 			//register loop with column:
 			bed[needle_index(needle)].top_edge = FaceEdge(gizmo.faces.back(), 2, yarn_to_stitch.count + loop_in.count, FaceEdge::FlipYes);
 			bed[needle_index(needle)].top_y = faces[gizmo.faces.back()].vertices[2].y;
+			bed[needle_index(needle)].loop_checkpoints.insert(
+				bed[needle_index(needle)].loop_checkpoints.end(),
+				//NOTE: if order ever matters, might need to take some care here on front vs back w/ plating:
+				loop_checkpoints.begin(),
+				loop_checkpoints.end()
+			);
 		}
 
 	}
@@ -1896,7 +1952,7 @@ struct Translator {
 		commit(gizmo);
 	}
 
-	void knit(Direction dir, BedColumns &bed, int32_t needle, std::vector< Carrier * > cs) {
+	void knit(Direction dir, BedColumns &bed, int32_t needle, std::vector< Carrier * > cs, float min_lift = -std::numeric_limits< float >::infinity()) {
 		assert(&bed == &back_bed || &bed == &front_bed);
 
 		Gizmo gizmo;
@@ -1912,7 +1968,8 @@ struct Translator {
 
 		//set up yarn to/from stitch:
 		FaceEdge yarn_to_stitch, yarn_from_stitch;
-		setup_carriers(dir, bed, needle, cs, &gizmo, &yarn_to_stitch, &yarn_from_stitch);
+		std::vector< std::pair< uint32_t, uint32_t > > loop_checkpoints;
+		setup_carriers(dir, bed, needle, cs, &gizmo, &yarn_to_stitch, &yarn_from_stitch, &loop_checkpoints);
 
 		FaceEdge loop_in = bed[needle_index(needle)].top_edge;
 
@@ -1942,6 +1999,24 @@ struct Translator {
 					stitch_yarn_in = FaceEdge(gizmo.faces.back(), 1, cs.size(), FaceEdge::FlipNo);
 					stitch_yarn_out = FaceEdge(gizmo.faces.back(), 3, cs.size(), FaceEdge::FlipYes);
 				}
+
+				{ //fixup loop checkpoints:
+					// <---- edge ----
+					// [ 5 4 3  2 1 0 ]
+					//   ^ ^ ^  v v v  <-- swap if to left
+					//   n n n  n n n
+					for (uint32_t i = 0; i < cs.size(); ++i) {
+						//if going right, low inds (right side of edge) are from loop, otherwise to loop:
+						uint32_t low = (dir == Right ? loop_checkpoints[i].second : loop_checkpoints[i].first);
+						uint32_t high = (dir == Right ? loop_checkpoints[i].first : loop_checkpoints[i].second);
+						checkpoints[low].face = faces.size()-1;
+						checkpoints[low].edge = 2;
+						checkpoints[low].crossing = i;
+						checkpoints[high].face = faces.size()-1;
+						checkpoints[high].edge = 2;
+						checkpoints[high].crossing = cs.size() + i;
+					}
+				}
 			}
 			int32_t stitch_index = needle_index(needle);
 			face.vertices = {
@@ -1970,12 +2045,16 @@ struct Translator {
 			//increase lift based on edge conflicts in stitch column:
 			gizmo.lift = std::max(gizmo.lift, bed[needle_index(needle)].top_y);
 
+			//increase lift if min_lift parameter demands it:
+			gizmo.lift = std::max(gizmo.lift, min_lift);
+
 			//apply lift and create merge faces:
 			commit(gizmo);
 
 			//register loop with column:
 			bed[needle_index(needle)].top_edge = FaceEdge(gizmo.faces.back(), 2, cs.size(), FaceEdge::FlipYes);
 			bed[needle_index(needle)].top_y = faces[gizmo.faces.back()].vertices[2].y;
+			bed[needle_index(needle)].loop_checkpoints = loop_checkpoints;
 		}
 	}
 
@@ -2028,7 +2107,8 @@ struct Translator {
 
 		//set up yarn to/from stitch @ shear plane:
 		FaceEdge yarn_to_stitch, yarn_from_stitch;
-		setup_carriers(dir, back_bed, back_needle, cs, &gizmo, &yarn_to_stitch, &yarn_from_stitch, SpecialStopAtShearFront);
+		std::vector< std::pair< uint32_t, uint32_t > > loop_checkpoints;
+		setup_carriers(dir, back_bed, back_needle, cs, &gizmo, &yarn_to_stitch, &yarn_from_stitch, &loop_checkpoints, SpecialStopAtShearFront);
 
 		{ //determine lift based on a clear lane to front and back:
 			//(this is a bit heavy-handed, as it could clear based on front/back loop existence)
@@ -2056,6 +2136,23 @@ struct Translator {
 				}
 				crossings.add_crossing(front_index, back_index, top);
 			});
+		}
+
+		//handle organizing existing checkpoints:
+		if (is_front_to_back) {
+			back_bed[back_index].loop_checkpoints.insert(
+				back_bed[back_index].loop_checkpoints.end(),
+				front_bed[front_index].loop_checkpoints.rbegin(),
+				front_bed[front_index].loop_checkpoints.rend()
+			);
+			front_bed[front_index].loop_checkpoints.clear();
+		} else {
+			front_bed[front_index].loop_checkpoints.insert(
+				front_bed[front_index].loop_checkpoints.end(),
+				back_bed[back_index].loop_checkpoints.rbegin(),
+				back_bed[back_index].loop_checkpoints.rend()
+			);
+			back_bed[back_index].loop_checkpoints.clear();
 		}
 
 		//set up connections to front/back beds:
@@ -2170,7 +2267,6 @@ struct Translator {
 				back_bed[back_index].top_edge = FaceEdge();
 			}
 
-
 		}
 
 		
@@ -2202,6 +2298,34 @@ struct Translator {
 					glm::vec3(glm::mix(left,right,0.5f), FaceHeight, ShearFront),
 					glm::vec3(left, FaceHeight, ShearFront),
 			};
+
+			{ //fixup loop checkpoints:
+				// <---- edge ----
+				// [ 5 4 3  2 1 0 ]
+				//   ^ ^ ^  v v v  <-- swap if to left
+				//   n n n  n n n
+				assert(loop_checkpoints.size() == cs.size()); //this is already asserted by setup_carriers
+				uint32_t edge = (is_front_to_back ? 4 : 3);
+				for (uint32_t i = 0; i < cs.size(); ++i) {
+					//if going right, low inds (right side of edge) are from loop, otherwise to loop:
+					uint32_t low = (dir == Right ? loop_checkpoints[i].second : loop_checkpoints[i].first);
+					uint32_t high = (dir == Right ? loop_checkpoints[i].first : loop_checkpoints[i].second);
+					checkpoints[low].face = faces.size()-1;
+					checkpoints[low].edge = edge;
+					checkpoints[low].crossing = i;
+					checkpoints[high].face = faces.size()-1;
+					checkpoints[high].edge = edge;
+					checkpoints[high].crossing = cs.size() + i;
+				}
+			}
+
+			if (is_front_to_back) {
+				front_bed[front_index].loop_checkpoints = loop_checkpoints;
+			} else {
+				//NOTE: if ordering really matters for something, then revisit this when thinking about plating:
+				back_bed[back_index].loop_checkpoints = loop_checkpoints;
+			}
+
 
 			//connect to loops/yarns:
 			if (dir == Right) {
@@ -2325,6 +2449,7 @@ int main(int argc, char **argv) {
 		std::string out_smobj = "";
 		bool drop_all = true;
 		bool compact = false;
+		bool checkpoints = true;
 	} args;
 
 	{ //parse arguments:
@@ -2342,7 +2467,9 @@ int main(int argc, char **argv) {
 					args.compact = true;
 				} else if (option == "no-drop") {
 					args.drop_all = false;
-				} else {
+				} else if (option == "no-checkpoints"){
+					args.checkpoints = false;
+				}else {
 					std::cerr << "Unrecognized option '" << arg << "'" << std::endl;
 					usage = true;
 				}
@@ -2359,7 +2486,10 @@ int main(int argc, char **argv) {
 		}
 
 		if (usage) {
-			std::cerr << "Usage:\n\t./knitout-to-smobj [--compact] [--no-drop] [--] <in.knitout> <out.smobj>" << std::endl;
+			std::cerr << "Usage:\n\t./knitout-to-smobj [--compact] [--no-drop] [--no-checkpoints] [--] <in.knitout> <out.smobj>\n"
+			"You can use the 'x-carrier-checkpoint <carrier name> <length> <unit>' instruction to mark parked yarns\n"
+			"You can use the 'x-loop-checkpoint <needle name> <length> <unit>' instruction to mark the yarn-in side of all loops held on a needle (marked at creation, which may not be current face).\n"
+			<< std::endl;
 			return 1;
 		}
 	}
@@ -2610,6 +2740,50 @@ int main(int argc, char **argv) {
 			if (str >> temp) throw std::runtime_error("x-stitch-number value had trailing junk: '" + temp + "...'.");
 			if (!(0 <= stitch_number && stitch_number <= 120)) throw std::runtime_error("expecting stitch number in the interval [0,120]");
 			translator->stitch_index = stitch_number;
+		} else if (tokens[0] == "x-carrier-checkpoint") {
+			if (tokens.size() != 4) throw std::runtime_error("x-carrier-checkpoint should have a carrier, length, and unit");
+			//std::string carrier = tokens[1];
+			Carrier *carrier = translator->lookup_carriers({ tokens[1] }).at(0);
+			float length;
+			{
+				std::istringstream str(tokens[2]);
+				if (!(str >> length)) throw std::runtime_error("length value should be a number.");
+				std::string temp;
+				if (str >> temp) throw std::runtime_error("length value had trailing junk: '" + temp + "...'.");
+			}
+			Unit const *unit = translator->get_unit(tokens[3], 0.0f);
+
+			if (!carrier->parked_edge.is_valid()) throw std::runtime_error("can't checkpoint carrier that isn't in.");
+
+			//okay, add checkpoint to parked_edge:
+			translator->checkpoints.emplace_back(carrier->parked_edge.face, carrier->parked_edge.edge, 0, length, unit);
+
+		} else if (tokens[0] == "x-needle-checkpoint") {
+			if (tokens.size() != 4) throw std::runtime_error("x-needle-checkpoint should have a needle, length, and unit");
+			Bed bed;
+			int32_t needle;
+			parse_bedneedle(tokens[1], &bed, &needle);
+			float length;
+			{
+				std::istringstream str(tokens[2]);
+				if (!(str >> length)) throw std::runtime_error("length value should be a number.");
+				std::string temp;
+				if (str >> temp) throw std::runtime_error("length value had trailing junk: '" + temp + "...'.");
+			}
+			Unit const *unit = translator->get_unit(tokens[3], 0.0f);
+
+			BedColumns const &columns = translator->lookup_bed(bed);
+			auto f = columns.find(needle_index(needle));
+			if (f == columns.end() || f->second.loop_checkpoints.empty()) {
+				throw std::runtime_error("cannot checkpoint empty needle '" + tokens[1] + "'.");
+			}
+
+			for (auto const &cps : f->second.loop_checkpoints) {
+				assert(cps.first < translator->checkpoints.size());
+				Checkpoint const &ref = translator->checkpoints[cps.first];
+				translator->checkpoints.emplace_back( ref.face, ref.edge, ref.crossing, length, unit );
+			}
+
 		} else {
 			std::cout << "WARNING: unsupported operation '" << line << "'" << std::endl;
 		}
@@ -2662,21 +2836,21 @@ int main(int argc, char **argv) {
 		check_bed(translator->front_sliders, 0);
 		check_bed(translator->front_bed, 0);
 		
+		std::vector< std::tuple< BedColumns &, int32_t > > to_drop;
 		std::vector< std::string > dropped;
 
-		auto check_drop = [&translator,&dropped](BedColumns &bed, int32_t index, std::string const &bed_name) {
+		float min_lift = 0.0f;
+
+		auto check_drop = [&dropped, &to_drop, &min_lift](BedColumns &bed, int32_t index, std::string const &bed_name) {
 			if ((index % 4) != 0) return; //not a needle
 			int32_t needle = index / 4;
 			auto f = bed.find(index);
 			if (f == bed.end()) return; //nothing here
 			if (f->second.top_edge.count == 0) return; //no loop to drop
-			//okay, need to drop:
-			translator->knit(
-				Right,
-				bed,
-				needle,
-				std::vector< Carrier * >()
-			);
+
+			min_lift = std::max(min_lift, f->second.top_y);
+
+			to_drop.emplace_back(bed, needle);
 			dropped.emplace_back(bed_name + std::to_string(needle));
 		};
 
@@ -2686,6 +2860,17 @@ int main(int argc, char **argv) {
 			check_drop(translator->front_sliders, idx, "fs");
 			check_drop(translator->front_bed, idx, "f");
 		}
+
+		for (auto &[bed, needle] : to_drop) {
+			translator->knit(
+				Right,
+				bed,
+				needle,
+				std::vector< Carrier * >(),
+				min_lift
+			);
+		}
+
 		if (!dropped.empty()) {
 			std::cerr << "NOTE: dropped " << dropped.size() << " loops that remained on the bed at end of pattern:\n";
 			for (auto const &d : dropped) {
@@ -2694,6 +2879,32 @@ int main(int argc, char **argv) {
 			std::cerr << "\n";
 		}
 
+	} else {
+		//*not* dropping all -- need to zero out any end-of-yarn checkpoints:
+		std::string trimmed = "";
+		auto do_bed = [&](BedColumns const &bed, std::string const &bed_name) {
+			for (auto const &pc : bed) {
+				if (pc.second.loop_checkpoints.empty()) continue;
+				assert(pc.first % 4 == 0);
+				int32_t needle = pc.first / 4;
+				if (trimmed != "") trimmed += " ";
+				trimmed += std::to_string(pc.second.loop_checkpoints.size()) + "@" + bed_name + std::to_string(needle);
+				for (auto const &cps : pc.second.loop_checkpoints) {
+					if (translator->checkpoints[cps.first].length != 0.0f) {
+						translator->checkpoints[cps.first].length = 0.0f;
+					}
+				}
+			}
+		};
+		do_bed(translator->back_bed, "b");
+		do_bed(translator->back_sliders, "bs");
+		do_bed(translator->front_sliders, "fs");
+		do_bed(translator->front_bed, "f");
+		if (trimmed == "") {
+			std::cout << "Didn't need to truncate any checkpoints." << std::endl;
+		} else {
+			std::cout << "Truncated checkpoints:\n " << trimmed << std::endl;
+		}
 	}
 
 	//write smobj file:
@@ -2777,43 +2988,44 @@ int main(int argc, char **argv) {
 		out << "\n";
 	}
 
-	//units:
-	for (auto const &u : translator->units) {
-		out << "U " << u.name << " " << u.length << "\n";
-	}
-
-	{ //checkpoints:
-		std::unordered_map< Unit const *, uint32_t > unit_index;
+	if ( args.checkpoints) {
+		//units:
 		for (auto const &u : translator->units) {
-			unit_index[&u] = unit_index.size() + 1; //1-based
+			out << "U " << u.name << " " << u.length << "\n";
 		}
 
-		std::unordered_map< glm::uvec3, std::map< uint32_t, float > > checkpoints;
-		//aggregate checkpoints:
-		for (auto const &c : translator->checkpoints) {
-			glm::uvec3 key = glm::uvec3(c.face, c.edge, c.crossing);
-			checkpoints[key].insert( std::make_pair( unit_index[c.unit], 0.0f )).first->second += c.length;
-		}
-
-		//output aggregated checkpoints:
-		for (auto const &c : translator->checkpoints) {
-			glm::uvec3 key = glm::uvec3(c.face, c.edge, c.crossing);
-			auto f = checkpoints.find(key);
-			if (f == checkpoints.end()) continue; //I guess we already got this one
-
-			out << "c " << (c.face+1) << "/" << (c.edge+1) << "/" << (c.crossing+1);
-			for (auto const &l : f->second) {
-				if (l.first == 0 && l.second == 0.0f) {
-					continue; //remove 0.0*'1' -- any other zero-length checkpoints shouldn't exist but we'll leave 'em in anyway.
-				}
-				assert(l.first != 0 && "this process should *never* use an absolute unit.");
-				out << ' ' << l.second << ' ' << l.first;
+		{ //checkpoints:
+			std::unordered_map< Unit const *, uint32_t > unit_index;
+			for (auto const &u : translator->units) {
+				unit_index[&u] = unit_index.size() + 1; //1-based
 			}
-			out << '\n';
-			checkpoints.erase(f);
-		}
-		
-	}
 
+			std::unordered_map< glm::uvec3, std::map< uint32_t, float > > checkpoints;
+			//aggregate checkpoints:
+			for (auto const &c : translator->checkpoints) {
+				glm::uvec3 key = glm::uvec3(c.face, c.edge, c.crossing);
+				checkpoints[key].insert( std::make_pair( unit_index[c.unit], 0.0f )).first->second += c.length;
+			}
+
+			//output aggregated checkpoints:
+			for (auto const &c : translator->checkpoints) {
+				glm::uvec3 key = glm::uvec3(c.face, c.edge, c.crossing);
+				auto f = checkpoints.find(key);
+				if (f == checkpoints.end()) continue; //I guess we already got this one
+
+				out << "c " << (c.face+1) << "/" << (c.edge+1) << "/" << (c.crossing+1);
+				for (auto const &l : f->second) {
+					if (l.first == 0 && l.second == 0.0f) {
+						continue; //remove 0.0*'1' -- any other zero-length checkpoints shouldn't exist but we'll leave 'em in anyway.
+					}
+					assert(l.first != 0 && "this process should *never* use an absolute unit.");
+					out << ' ' << l.second << ' ' << l.first;
+				}
+				out << '\n';
+				checkpoints.erase(f);
+			}
+
+		}
+	}
 	return 0;
 }
